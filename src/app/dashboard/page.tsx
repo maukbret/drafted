@@ -80,7 +80,7 @@ export default async function DashboardPage() {
           <h2 className="text-lg font-semibold mb-4">Recent imports</h2>
           <ProjectList projects={(recentProjects || []).map(p => ({
             ...p,
-            klaviyo_connections: p.klaviyo_connections as { account_name: string | null } | null
+            klaviyo_connections: p.klaviyo_connections?.[0] || null
           }))} />
         </section>
       </div>
