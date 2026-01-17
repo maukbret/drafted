@@ -4,7 +4,7 @@ import { GeistMono } from 'geist/font/mono'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Figma to Klaviyo',
+  title: 'Drafted - Figma to Klaviyo',
   description: 'Transform Figma designs into Klaviyo email drafts',
 }
 

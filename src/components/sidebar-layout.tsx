@@ -23,7 +23,7 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-            <h1 className="font-bold text-lg">Figma → Klaviyo</h1>
+            <h1 className="font-bold text-lg">Drafted</h1>
           </div>
 
           {/* Navigation */}

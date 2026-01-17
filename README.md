@@ -1,4 +1,4 @@
-# Figma to Klaviyo
+# Drafted - Figma to Klaviyo
 
 Transform Figma email designs into Klaviyo drafts.
 
