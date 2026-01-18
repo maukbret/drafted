@@ -31,3 +31,34 @@ export interface Frame {
   display_order: number
   created_at: string
 }
+
+export interface Campaign {
+  id: string
+  user_id: string
+  klaviyo_connection_id: string
+  project_id: string | null
+
+  name: string
+  subject_line: string
+  preview_text: string | null
+
+  included_audiences: KlaviyoAudience[]
+  excluded_audiences: KlaviyoAudience[]
+
+  klaviyo_campaign_id: string | null
+  klaviyo_template_id: string | null
+
+  status: 'draft' | 'ready' | 'scheduled' | 'sent' | 'error'
+  scheduled_at: string | null
+  wizard_step: number
+  figma_url: string | null
+
+  created_at: string
+  updated_at: string
+}
+
+export interface KlaviyoAudience {
+  id: string
+  name: string
+  type: 'list' | 'segment'
+}

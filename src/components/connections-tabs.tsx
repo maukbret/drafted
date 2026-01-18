@@ -48,7 +48,7 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
         response_type: 'code',
         client_id: process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID!,
         redirect_uri: process.env.NEXT_PUBLIC_KLAVIYO_REDIRECT_URI!,
-        scope: 'accounts:read images:write templates:write',
+        scope: 'accounts:read images:write templates:write lists:read segments:read campaigns:write',
         code_challenge: codeChallenge,
         code_challenge_method: 'S256',
         state,

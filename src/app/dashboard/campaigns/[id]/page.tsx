@@ -1,0 +1,131 @@
+import { createClient } from '@/lib/supabase/server'
+import { redirect, notFound } from 'next/navigation'
+import Link from 'next/link'
+import { CampaignWizard } from '@/components/campaign-wizard'
+
+interface CampaignPageProps {
+  params: Promise<{ id: string }>
+}
+
+export default async function CampaignPage({ params }: CampaignPageProps) {
+  const { id } = await params
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
+  // Fetch the campaign with related data
+  const { data: campaign, error } = await supabase
+    .from('campaigns')
+    .select('*, klaviyo_connections(account_name), projects(*, frames(*))')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (error || !campaign) {
+    notFound()
+  }
+
+  // If campaign is already sent or scheduled, show a different view
+  if (campaign.status === 'sent' || campaign.status === 'scheduled') {
+    return (
+      <div className="p-8">
+        <div className="mb-6">
+          <Link
+            href="/dashboard/campaigns"
+            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Campaigns
+          </Link>
+        </div>
+
+        <div className="max-w-2xl">
+          <h1 className="text-2xl font-bold mb-2">{campaign.name}</h1>
+
+          <div className="flex items-center gap-3 mb-6">
+            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+              campaign.status === 'sent'
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400'
+            }`}>
+              {campaign.status === 'sent' ? 'Sent' : 'Scheduled'}
+            </span>
+            {campaign.klaviyo_connections?.account_name && (
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                {campaign.klaviyo_connections.account_name}
+              </span>
+            )}
+          </div>
+
+          <div className="border border-gray-200 dark:border-gray-800 rounded-xl divide-y divide-gray-200 dark:divide-gray-800">
+            <div className="p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Subject line</p>
+              <p className="font-medium">{campaign.subject_line}</p>
+            </div>
+            {campaign.preview_text && (
+              <div className="p-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Preview text</p>
+                <p>{campaign.preview_text}</p>
+              </div>
+            )}
+            {campaign.scheduled_at && (
+              <div className="p-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Scheduled for</p>
+                <p>{new Date(campaign.scheduled_at).toLocaleString('en-GB')}</p>
+              </div>
+            )}
+            <div className="p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Created</p>
+              <p>{new Date(campaign.created_at).toLocaleString('en-GB')}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Fetch Klaviyo connections for the wizard
+  const { data: klaviyoConnections } = await supabase
+    .from('klaviyo_connections')
+    .select('id, account_name')
+    .eq('user_id', user.id)
+
+  // Check if Figma is connected
+  const { data: figmaConnection } = await supabase
+    .from('figma_connections')
+    .select('id')
+    .eq('user_id', user.id)
+    .single()
+
+  return (
+    <div className="p-8">
+      <div className="mb-6">
+        <Link
+          href="/dashboard/campaigns"
+          className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Campaigns
+        </Link>
+      </div>
+
+      <h1 className="text-2xl font-bold mb-8">
+        {campaign.name === 'Untitled Campaign' ? 'New Campaign' : campaign.name}
+      </h1>
+
+      <CampaignWizard
+        campaign={campaign}
+        klaviyoConnections={klaviyoConnections || []}
+        hasFigmaConnection={!!figmaConnection}
+      />
+    </div>
+  )
+}
