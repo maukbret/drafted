@@ -15,10 +15,10 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get campaign with all related data
+    // Get campaign
     const { data: campaign } = await supabase
       .from('campaigns')
-      .select('*, klaviyo_connections(access_token), projects(*, frames(*))')
+      .select('*')
       .eq('id', campaignId)
       .eq('user_id', user.id)
       .single()
@@ -27,11 +27,27 @@ export async function POST(
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     }
 
-    if (!campaign.klaviyo_connections) {
+    // Get Klaviyo connection with refresh token
+    const { data: klaviyoConnection } = await supabase
+      .from('klaviyo_connections')
+      .select('id, access_token, refresh_token, expires_at')
+      .eq('id', campaign.klaviyo_connection_id)
+      .single()
+
+    if (!klaviyoConnection) {
       return NextResponse.json({ error: 'Klaviyo connection not found' }, { status: 400 })
     }
 
-    if (!campaign.projects || !campaign.projects.frames?.length) {
+    // Get project with frames
+    const { data: project } = campaign.project_id
+      ? await supabase
+          .from('projects')
+          .select('*, frames(*)')
+          .eq('id', campaign.project_id)
+          .single()
+      : { data: null }
+
+    if (!project || !project.frames?.length) {
       return NextResponse.json({ error: 'No email content found' }, { status: 400 })
     }
 
@@ -43,8 +59,43 @@ export async function POST(
       return NextResponse.json({ error: 'At least one audience is required' }, { status: 400 })
     }
 
-    const klaviyoToken = (campaign.klaviyo_connections as any).access_token
-    const frames = campaign.projects.frames.sort((a: any, b: any) => a.display_order - b.display_order)
+    // Check if token is expired and refresh if needed
+    let klaviyoToken = klaviyoConnection.access_token
+    const expiresAt = new Date(klaviyoConnection.expires_at)
+    const now = new Date()
+
+    if (expiresAt <= now && klaviyoConnection.refresh_token) {
+      const refreshResponse = await fetch('https://a.klaviyo.com/oauth/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: klaviyoConnection.refresh_token,
+          client_id: process.env.KLAVIYO_CLIENT_ID!,
+          client_secret: process.env.KLAVIYO_CLIENT_SECRET!,
+        }),
+      })
+
+      if (refreshResponse.ok) {
+        const tokens = await refreshResponse.json()
+        klaviyoToken = tokens.access_token
+
+        await supabase
+          .from('klaviyo_connections')
+          .update({
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token || klaviyoConnection.refresh_token,
+            expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+          })
+          .eq('id', klaviyoConnection.id)
+      } else {
+        console.error('Failed to refresh Klaviyo token:', await refreshResponse.text())
+        return NextResponse.json({ error: 'Klaviyo token expired. Please reconnect Klaviyo.' }, { status: 401 })
+      }
+    }
+    const frames = project.frames.sort((a: any, b: any) => a.display_order - b.display_order)
 
     // Step 1: Upload images to Klaviyo
     const uploadedFrames = []
@@ -58,7 +109,7 @@ export async function POST(
             'Authorization': `Bearer ${klaviyoToken}`,
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'revision': '2024-10-15',
+            'revision': '2024-06-15',
           },
           body: JSON.stringify({
             data: {
@@ -111,7 +162,7 @@ export async function POST(
         'Authorization': `Bearer ${klaviyoToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'revision': '2024-10-15',
+        'revision': '2024-06-15',
       },
       body: JSON.stringify({
         data: {
@@ -134,51 +185,56 @@ export async function POST(
     const templateData = await templateResponse.json()
     const templateId = templateData.data?.id
 
-    // Step 4: Create campaign in Klaviyo
-    const campaignPayload: any = {
+    // Step 4: Create campaign in Klaviyo with embedded message (without template)
+    // Build the campaign attributes
+    const campaignAttributes: any = {
+      name: campaign.name,
+      audiences: {
+        included: campaign.included_audiences.map((a: any) => a.id),
+        excluded: campaign.excluded_audiences?.map((a: any) => a.id) || [],
+      },
+      'campaign-messages': {
+        data: [
+          {
+            type: 'campaign-message',
+            attributes: {
+              channel: 'email',
+              label: 'Email Message',
+              content: {
+                subject: campaign.subject_line,
+                preview_text: campaign.preview_text || '',
+                from_email: '{{ organization.email }}',
+                from_label: '{{ organization.name }}',
+              },
+              render_options: {
+                shorten_links: true,
+                add_org_prefix: true,
+                add_info_link: true,
+              },
+            },
+          },
+        ],
+      },
+      send_options: {
+        use_smart_sending: false,
+      },
+    }
+
+    // Add send_strategy if scheduling for later
+    if (campaign.scheduled_at) {
+      campaignAttributes.send_strategy = {
+        method: 'static',
+        options_static: {
+          datetime: campaign.scheduled_at,
+          is_local: false,
+        },
+      }
+    }
+
+    const campaignPayload = {
       data: {
         type: 'campaign',
-        attributes: {
-          name: campaign.name,
-          audiences: {
-            included: campaign.included_audiences.map((a: any) => a.id),
-            excluded: campaign.excluded_audiences?.map((a: any) => a.id) || [],
-          },
-          send_options: {
-            use_smart_sending: true,
-          },
-          campaign_messages: {
-            data: [
-              {
-                type: 'campaign-message',
-                attributes: {
-                  channel: 'email',
-                  label: 'Email Message',
-                  content: {
-                    subject: campaign.subject_line,
-                    preview_text: campaign.preview_text || '',
-                    from_email: '{{ organization.email }}',
-                    from_label: '{{ organization.name }}',
-                  },
-                  render_options: {
-                    shorten_links: true,
-                    add_org_prefix: true,
-                    add_info_link: true,
-                    add_opt_out_link: true,
-                  },
-                },
-                relationships: {
-                  template: {
-                    data: {
-                      type: 'template',
-                      id: templateId,
-                    },
-                  },
-                },
-              },
-            ],
-          },
-        },
+        attributes: campaignAttributes,
       },
     }
 
@@ -188,7 +244,7 @@ export async function POST(
         'Authorization': `Bearer ${klaviyoToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'revision': '2024-10-15',
+        'revision': '2024-06-15',
       },
       body: JSON.stringify(campaignPayload),
     })
@@ -202,75 +258,75 @@ export async function POST(
     const campaignData = await campaignResponse.json()
     const klaviyoCampaignId = campaignData.data?.id
 
-    // Step 5: Send or schedule the campaign
-    let finalStatus: 'scheduled' | 'sent' = 'sent'
+    // Get the message ID from the relationships in the create response
+    const messageId = campaignData.data?.relationships?.['campaign-messages']?.data?.[0]?.id
 
-    if (campaign.scheduled_at) {
-      // Schedule for later
-      const scheduleResponse = await fetch(`https://a.klaviyo.com/api/campaign-send-jobs`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${klaviyoToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'revision': '2024-10-15',
-        },
-        body: JSON.stringify({
-          data: {
-            type: 'campaign-send-job',
-            attributes: {
-              scheduled_at: campaign.scheduled_at,
-            },
-            relationships: {
-              campaign: {
-                data: {
-                  type: 'campaign',
-                  id: klaviyoCampaignId,
-                },
-              },
-            },
-          },
-        }),
-      })
+    console.log('Campaign created:', klaviyoCampaignId)
+    console.log('Message ID:', messageId)
 
-      if (!scheduleResponse.ok) {
-        const errorText = await scheduleResponse.text()
-        console.error('Klaviyo schedule error:', errorText)
-        return NextResponse.json({ error: 'Failed to schedule campaign' }, { status: 500 })
-      }
-
-      finalStatus = 'scheduled'
-    } else {
-      // Send immediately
-      const sendResponse = await fetch(`https://a.klaviyo.com/api/campaign-send-jobs`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${klaviyoToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'revision': '2024-10-15',
-        },
-        body: JSON.stringify({
-          data: {
-            type: 'campaign-send-job',
-            relationships: {
-              campaign: {
-                data: {
-                  type: 'campaign',
-                  id: klaviyoCampaignId,
-                },
-              },
-            },
-          },
-        }),
-      })
-
-      if (!sendResponse.ok) {
-        const errorText = await sendResponse.text()
-        console.error('Klaviyo send error:', errorText)
-        return NextResponse.json({ error: 'Failed to send campaign' }, { status: 500 })
-      }
+    if (!messageId) {
+      console.error('No message ID found in campaign response')
+      return NextResponse.json({ error: 'No message found in campaign' }, { status: 500 })
     }
+
+    // Assign the template to the message
+    const assignTemplateResponse = await fetch('https://a.klaviyo.com/api/campaign-message-assign-template', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${klaviyoToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'revision': '2024-06-15',
+      },
+      body: JSON.stringify({
+        data: {
+          type: 'campaign-message',
+          id: messageId,
+          relationships: {
+            template: {
+              data: {
+                type: 'template',
+                id: templateId,
+              },
+            },
+          },
+        },
+      }),
+    })
+
+    if (!assignTemplateResponse.ok) {
+      const errorText = await assignTemplateResponse.text()
+      console.error('Klaviyo assign template error:', errorText)
+      return NextResponse.json({ error: 'Failed to assign template to campaign' }, { status: 500 })
+    }
+
+    console.log('Template assigned successfully')
+
+    // Step 6: Trigger the send job (will send immediately or use the send_strategy schedule)
+    const sendResponse = await fetch('https://a.klaviyo.com/api/campaign-send-jobs', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${klaviyoToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'revision': '2024-06-15',
+      },
+      body: JSON.stringify({
+        data: {
+          type: 'campaign-send-job',
+          id: klaviyoCampaignId,
+        },
+      }),
+    })
+
+    if (!sendResponse.ok) {
+      const errorText = await sendResponse.text()
+      console.error('Klaviyo send error:', errorText)
+      return NextResponse.json({ error: 'Failed to send campaign' }, { status: 500 })
+    }
+
+    // Set status based on whether it was scheduled or sent immediately
+    const finalStatus = campaign.scheduled_at ? 'scheduled' : 'sent'
 
     // Update campaign in database
     await supabase

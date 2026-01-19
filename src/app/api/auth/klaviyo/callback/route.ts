@@ -14,21 +14,21 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('Klaviyo OAuth error:', error)
-    return NextResponse.redirect(new URL('/dashboard/connections?error=klaviyo_auth_failed', request.url))
+    return NextResponse.redirect(new URL('/connections?error=klaviyo_auth_failed', request.url))
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL('/dashboard/connections?error=no_code', request.url))
+    return NextResponse.redirect(new URL('/connections?error=no_code', request.url))
   }
 
   if (!state || state !== storedState) {
     console.error('State mismatch:', { state, storedState })
-    return NextResponse.redirect(new URL('/dashboard/connections?error=state_mismatch', request.url))
+    return NextResponse.redirect(new URL('/connections?error=state_mismatch', request.url))
   }
 
   if (!codeVerifier) {
     console.error('No code verifier found')
-    return NextResponse.redirect(new URL('/dashboard/connections?error=no_code_verifier', request.url))
+    return NextResponse.redirect(new URL('/connections?error=no_code_verifier', request.url))
   }
 
   try {
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
       throw new Error('Failed to save Klaviyo connection')
     }
 
-    const response = NextResponse.redirect(new URL('/dashboard/connections?success=klaviyo_connected', request.url))
+    const response = NextResponse.redirect(new URL('/connections?success=klaviyo_connected', request.url))
     response.cookies.delete('klaviyo_code_verifier')
     response.cookies.delete('klaviyo_oauth_state')
     response.cookies.delete('klaviyo_account_name')
@@ -93,6 +93,6 @@ export async function GET(request: NextRequest) {
     return response
   } catch (err) {
     console.error('Klaviyo callback error:', err)
-    return NextResponse.redirect(new URL('/dashboard/connections?error=klaviyo_auth_failed', request.url))
+    return NextResponse.redirect(new URL('/connections?error=klaviyo_auth_failed', request.url))
   }
 }

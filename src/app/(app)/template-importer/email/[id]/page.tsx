@@ -45,11 +45,11 @@ export default async function EmailEditorPage({ params }: PageProps) {
   return (
     <div className="p-8 h-full flex flex-col">
       <header className="mb-6 flex-shrink-0">
-        <Link 
-          href="/dashboard" 
+        <Link
+          href="/template-importer"
           className="text-sm text-gray-600 dark:text-gray-400 hover:text-black dark:hover:text-white mb-2 inline-block"
         >
-          ← Back to dashboard
+          ← Back to Template Importer
         </Link>
         <div className="flex items-center justify-between">
           <div>
@@ -67,7 +67,7 @@ export default async function EmailEditorPage({ params }: PageProps) {
       </header>
 
       <div className="flex-1 min-h-0">
-        <EmailEditor 
+        <EmailEditor
           projectId={project.id}
           frames={frames || []}
           klaviyoConnected={!!klaviyoConnection}

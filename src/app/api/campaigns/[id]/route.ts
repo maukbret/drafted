@@ -14,18 +14,42 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Fetch campaign without JOINs first
   const { data: campaign, error } = await supabase
     .from('campaigns')
-    .select('*, klaviyo_connections(account_name), projects(*, frames(*))')
+    .select('*')
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
 
   if (error || !campaign) {
+    console.error('Failed to fetch campaign:', error)
     return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
   }
 
-  return NextResponse.json({ campaign })
+  // Fetch related data separately
+  const { data: klaviyoConnection } = await supabase
+    .from('klaviyo_connections')
+    .select('account_name')
+    .eq('id', campaign.klaviyo_connection_id)
+    .single()
+
+  const { data: project } = campaign.project_id
+    ? await supabase
+        .from('projects')
+        .select('*, frames(*)')
+        .eq('id', campaign.project_id)
+        .single()
+    : { data: null }
+
+  // Combine the data
+  const campaignWithRelations = {
+    ...campaign,
+    klaviyo_connections: klaviyoConnection,
+    projects: project,
+  }
+
+  return NextResponse.json({ campaign: campaignWithRelations })
 }
 
 export async function PATCH(

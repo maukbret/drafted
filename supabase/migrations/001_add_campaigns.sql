@@ -1,3 +1,14 @@
+-- Add account_name column to klaviyo_connections if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'klaviyo_connections' AND column_name = 'account_name'
+  ) THEN
+    ALTER TABLE klaviyo_connections ADD COLUMN account_name TEXT DEFAULT 'Klaviyo Account';
+  END IF;
+END $$;
+
 -- Campaigns table for email campaign management
 CREATE TABLE campaigns (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

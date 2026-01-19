@@ -16,10 +16,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get project with its Klaviyo connection
+    // Get project
     const { data: project } = await supabase
       .from('projects')
-      .select('*, klaviyo_connections(access_token)')
+      .select('*')
       .eq('id', projectId)
       .eq('user_id', user.id)
       .single()
@@ -28,11 +28,57 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 })
     }
 
-    if (!project.klaviyo_connection_id || !project.klaviyo_connections) {
+    if (!project.klaviyo_connection_id) {
       return NextResponse.json({ error: 'No Klaviyo account linked to this project' }, { status: 400 })
     }
 
-    const klaviyoToken = (project.klaviyo_connections as any).access_token
+    // Get Klaviyo connection with refresh token
+    const { data: klaviyoConnection } = await supabase
+      .from('klaviyo_connections')
+      .select('id, access_token, refresh_token, expires_at')
+      .eq('id', project.klaviyo_connection_id)
+      .single()
+
+    if (!klaviyoConnection) {
+      return NextResponse.json({ error: 'Klaviyo connection not found' }, { status: 400 })
+    }
+
+    // Check if token is expired and refresh if needed
+    let klaviyoToken = klaviyoConnection.access_token
+    const expiresAt = new Date(klaviyoConnection.expires_at)
+    const now = new Date()
+
+    if (expiresAt <= now && klaviyoConnection.refresh_token) {
+      const refreshResponse = await fetch('https://a.klaviyo.com/oauth/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: klaviyoConnection.refresh_token,
+          client_id: process.env.KLAVIYO_CLIENT_ID!,
+          client_secret: process.env.KLAVIYO_CLIENT_SECRET!,
+        }),
+      })
+
+      if (refreshResponse.ok) {
+        const tokens = await refreshResponse.json()
+        klaviyoToken = tokens.access_token
+
+        await supabase
+          .from('klaviyo_connections')
+          .update({
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token || klaviyoConnection.refresh_token,
+            expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+          })
+          .eq('id', klaviyoConnection.id)
+      } else {
+        console.error('Failed to refresh Klaviyo token:', await refreshResponse.text())
+        return NextResponse.json({ error: 'Klaviyo token expired. Please reconnect Klaviyo.' }, { status: 401 })
+      }
+    }
 
     // Get frames
     const { data: frames } = await supabase

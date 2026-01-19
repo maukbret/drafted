@@ -98,7 +98,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 mb-1">
                 <Link
-                  href={`/dashboard/campaigns/${campaign.id}`}
+                  href={`/campaigns/${campaign.id}`}
                   className="font-medium hover:underline truncate"
                 >
                   {campaign.name}
@@ -121,7 +121,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
             <div className="flex items-center gap-2 ml-4">
               {campaign.status === 'draft' && (
                 <Link
-                  href={`/dashboard/campaigns/${campaign.id}`}
+                  href={`/campaigns/${campaign.id}`}
                   className="px-3 py-1.5 text-sm bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
                 >
                   Continue

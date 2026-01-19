@@ -32,7 +32,7 @@ export function Step3Settings({
   const [previewText, setPreviewText] = useState(initialPreviewText || '')
   const [includedAudiences, setIncludedAudiences] = useState<KlaviyoAudience[]>(initialIncludedAudiences || [])
   const [excludedAudiences, setExcludedAudiences] = useState<KlaviyoAudience[]>(initialExcludedAudiences || [])
-  const [sendOption, setSendOption] = useState<'now' | 'schedule'>('now')
+  const [sendOption, setSendOption] = useState<'now' | 'schedule'>('schedule')
   const [scheduledDate, setScheduledDate] = useState('')
   const [scheduledTime, setScheduledTime] = useState('')
   const [sending, setSending] = useState(false)
@@ -185,21 +185,6 @@ export function Step3Settings({
         <h3 className="font-medium mb-4">When to send</h3>
 
         <div className="space-y-3">
-          <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900">
-            <input
-              type="radio"
-              name="send-option"
-              value="now"
-              checked={sendOption === 'now'}
-              onChange={() => setSendOption('now')}
-              className="w-4 h-4"
-            />
-            <div>
-              <span className="font-medium">Send now</span>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Send immediately after review</p>
-            </div>
-          </label>
-
           <label className="flex items-start gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900">
             <input
               type="radio"
@@ -230,6 +215,21 @@ export function Step3Settings({
                   />
                 </div>
               )}
+            </div>
+          </label>
+
+          <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900">
+            <input
+              type="radio"
+              name="send-option"
+              value="now"
+              checked={sendOption === 'now'}
+              onChange={() => setSendOption('now')}
+              className="w-4 h-4"
+            />
+            <div>
+              <span className="font-medium">Send now</span>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Send immediately after review</p>
             </div>
           </label>
         </div>

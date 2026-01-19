@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { NewImportForm } from '@/components/new-import-form'
 import { ProjectList } from '@/components/project-list'
 
-export default async function DashboardPage() {
+export default async function TemplateImporterPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -48,12 +48,12 @@ export default async function DashboardPage() {
   return (
     <div className="p-8">
       <div className="max-w-4xl">
-        <h1 className="text-2xl font-bold mb-8">Dashboard</h1>
+        <h1 className="text-2xl font-bold mb-8">Template Importer</h1>
 
         {/* New import section */}
         <section className="mb-10">
           <h2 className="text-lg font-semibold mb-4">New import</h2>
-          
+
           {hasConnections ? (
             <NewImportForm klaviyoConnections={klaviyoConnections || []} />
           ) : (
@@ -66,7 +66,7 @@ export default async function DashboardPage() {
                   : 'Add a Klaviyo account to start importing designs.'}
               </p>
               <Link
-                href="/dashboard/connections"
+                href="/connections"
                 className="inline-flex items-center gap-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
               >
                 Set up connections

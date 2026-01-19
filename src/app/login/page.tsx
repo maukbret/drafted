@@ -38,7 +38,7 @@ export default function LoginPage() {
           password,
         })
         if (error) throw error
-        router.push('/dashboard')
+        router.push('/campaigns')
         router.refresh()
       }
     } catch (err) {

@@ -12,9 +12,9 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
   const pathname = usePathname()
 
   const navItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
-    { href: '/dashboard/campaigns', label: 'Campaigns', icon: CampaignIcon },
-    { href: '/dashboard/connections', label: 'Connections', icon: LinkIcon },
+    { href: '/campaigns', label: 'Campaigns', icon: CampaignIcon },
+    { href: '/template-importer', label: 'Template Importer', icon: HomeIcon },
+    { href: '/connections', label: 'Connections', icon: LinkIcon },
   ]
 
   return (
@@ -30,8 +30,7 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
           {/* Navigation */}
           <nav className="flex-1 p-3 space-y-1">
             {navItems.map((item) => {
-              const isActive = pathname === item.href || 
-                (item.href !== '/dashboard' && pathname.startsWith(item.href))
+              const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
               return (
                 <Link
                   key={item.href}

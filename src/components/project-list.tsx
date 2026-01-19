@@ -65,7 +65,7 @@ export function ProjectList({ projects: initialProjects }: ProjectListProps) {
           className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
         >
           <Link
-            href={`/dashboard/email/${project.id}`}
+            href={`/template-importer/email/${project.id}`}
             className="min-w-0 flex-1"
           >
             <p className="font-medium truncate">

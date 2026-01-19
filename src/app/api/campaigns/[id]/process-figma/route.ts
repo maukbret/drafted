@@ -33,15 +33,53 @@ export async function POST(
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     }
 
-    // Get user's Figma token
+    // Get user's Figma connection
     const { data: figmaConnection } = await supabase
       .from('figma_connections')
-      .select('access_token')
+      .select('access_token, refresh_token, expires_at')
       .eq('user_id', user.id)
       .single()
 
     if (!figmaConnection) {
       return NextResponse.json({ error: 'Figma not connected' }, { status: 400 })
+    }
+
+    // Check if token is expired and refresh if needed
+    let figmaToken = figmaConnection.access_token
+    const expiresAt = new Date(figmaConnection.expires_at)
+    const now = new Date()
+
+    if (expiresAt <= now && figmaConnection.refresh_token) {
+      // Token is expired, refresh it
+      const refreshResponse = await fetch('https://api.figma.com/v1/oauth/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          client_id: process.env.FIGMA_CLIENT_ID!,
+          client_secret: process.env.FIGMA_CLIENT_SECRET!,
+          refresh_token: figmaConnection.refresh_token,
+        }),
+      })
+
+      if (refreshResponse.ok) {
+        const tokens = await refreshResponse.json()
+        figmaToken = tokens.access_token
+
+        // Update the stored token
+        await supabase
+          .from('figma_connections')
+          .update({
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token || figmaConnection.refresh_token,
+            expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+          })
+          .eq('user_id', user.id)
+      } else {
+        console.error('Failed to refresh Figma token:', await refreshResponse.text())
+        return NextResponse.json({ error: 'Figma token expired. Please reconnect Figma.' }, { status: 401 })
+      }
     }
 
     // Parse Figma URL
@@ -58,8 +96,6 @@ export async function POST(
     if (!nodeId) {
       return NextResponse.json({ error: 'Invalid Figma URL - please include a node-id parameter' }, { status: 400 })
     }
-
-    const figmaToken = figmaConnection.access_token
 
     // Fetch frame children from Figma
     const nodesResponse = await fetch(

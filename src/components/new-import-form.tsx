@@ -55,7 +55,7 @@ export function NewImportForm({ klaviyoConnections }: NewImportFormProps) {
         throw new Error(data.error || 'Failed to process Figma file')
       }
 
-      router.push(`/dashboard/email/${data.projectId}`)
+      router.push(`/template-importer/email/${data.projectId}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {

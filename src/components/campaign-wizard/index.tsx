@@ -77,7 +77,7 @@ export function CampaignWizard({
   }
 
   const handleStep3Complete = () => {
-    router.push('/dashboard/campaigns')
+    router.push('/campaigns')
   }
 
   const goBack = () => {

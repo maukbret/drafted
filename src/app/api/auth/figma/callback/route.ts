@@ -16,13 +16,13 @@ export async function GET(request: NextRequest) {
   if (error) {
     console.error('Figma OAuth error:', error)
     return NextResponse.redirect(
-      new URL('/dashboard/connections?error=figma_auth_failed', request.url)
+      new URL('/connections?error=figma_auth_failed', request.url)
     )
   }
 
   if (!code) {
     return NextResponse.redirect(
-      new URL('/dashboard/connections?error=no_code', request.url)
+      new URL('/connections?error=no_code', request.url)
     )
   }
 
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   if (!state || state !== storedState) {
     console.error('State mismatch:', { state, storedState })
     return NextResponse.redirect(
-      new URL('/dashboard/connections?error=state_mismatch', request.url)
+      new URL('/connections?error=state_mismatch', request.url)
     )
   }
 
@@ -101,14 +101,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Clear the state cookie
-    const response = NextResponse.redirect(new URL('/dashboard/connections?success=figma_connected', request.url))
+    const response = NextResponse.redirect(new URL('/connections?success=figma_connected', request.url))
     response.cookies.delete('figma_oauth_state')
     
     return response
   } catch (err) {
     console.error('Figma callback error:', err)
     return NextResponse.redirect(
-      new URL('/dashboard/connections?error=figma_auth_failed', request.url)
+      new URL('/connections?error=figma_auth_failed', request.url)
     )
   }
 }

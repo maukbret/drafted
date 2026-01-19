@@ -17,7 +17,7 @@ export default async function NewCampaignPage() {
     .limit(1)
 
   if (!klaviyoConnections || klaviyoConnections.length === 0) {
-    redirect('/dashboard/connections')
+    redirect('/connections')
   }
 
   // Create a new campaign
@@ -36,9 +36,9 @@ export default async function NewCampaignPage() {
 
   if (error || !campaign) {
     console.error('Failed to create campaign:', error)
-    redirect('/dashboard/campaigns')
+    redirect('/campaigns')
   }
 
   // Redirect to the campaign wizard
-  redirect(`/dashboard/campaigns/${campaign.id}`)
+  redirect(`/campaigns/${campaign.id}`)
 }

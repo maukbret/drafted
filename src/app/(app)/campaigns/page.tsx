@@ -38,14 +38,14 @@ export default async function CampaignsPage() {
 
         {hasConnections ? (
           <Link
-            href="/dashboard/campaigns/new"
+            href="/campaigns/new"
             className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
           >
             New campaign
           </Link>
         ) : (
           <Link
-            href="/dashboard/connections"
+            href="/connections"
             className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
           >
             Connect Klaviyo first

@@ -20,13 +20,36 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
   // Fetch the campaign with related data
   const { data: campaign, error } = await supabase
     .from('campaigns')
-    .select('*, klaviyo_connections(account_name), projects(*, frames(*))')
+    .select('*')
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
 
   if (error || !campaign) {
+    console.error('Failed to fetch campaign:', { error, campaignId: id, userId: user.id })
     notFound()
+  }
+
+  // Fetch related data separately to avoid join issues
+  const { data: klaviyoConnection } = await supabase
+    .from('klaviyo_connections')
+    .select('account_name')
+    .eq('id', campaign.klaviyo_connection_id)
+    .single()
+
+  const { data: project } = campaign.project_id
+    ? await supabase
+        .from('projects')
+        .select('*, frames(*)')
+        .eq('id', campaign.project_id)
+        .single()
+    : { data: null }
+
+  // Combine the data
+  const campaignWithRelations = {
+    ...campaign,
+    klaviyo_connections: klaviyoConnection,
+    projects: project,
   }
 
   // If campaign is already sent or scheduled, show a different view
@@ -35,7 +58,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
       <div className="p-8">
         <div className="mb-6">
           <Link
-            href="/dashboard/campaigns"
+            href="/campaigns"
             className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -56,9 +79,9 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
             }`}>
               {campaign.status === 'sent' ? 'Sent' : 'Scheduled'}
             </span>
-            {campaign.klaviyo_connections?.account_name && (
+            {campaignWithRelations.klaviyo_connections?.account_name && (
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                {campaign.klaviyo_connections.account_name}
+                {campaignWithRelations.klaviyo_connections.account_name}
               </span>
             )}
           </div>
@@ -107,7 +130,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     <div className="p-8">
       <div className="mb-6">
         <Link
-          href="/dashboard/campaigns"
+          href="/campaigns"
           className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -122,7 +145,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
       </h1>
 
       <CampaignWizard
-        campaign={campaign}
+        campaign={campaignWithRelations}
         klaviyoConnections={klaviyoConnections || []}
         hasFigmaConnection={!!figmaConnection}
       />
