@@ -44,10 +44,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Verify the connection belongs to this user
+    // Verify the connection belongs to this user and get account ID
     const { data: connection } = await supabase
       .from('klaviyo_connections')
-      .select('id')
+      .select('id, klaviyo_account_id')
       .eq('id', klaviyoConnectionId)
       .eq('user_id', user.id)
       .single()
@@ -56,12 +56,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid Klaviyo connection' }, { status: 400 })
     }
 
-    // Create the campaign
+    // Create the campaign with klaviyo_account_id for persistence
     const { data: campaign, error } = await supabase
       .from('campaigns')
       .insert({
         user_id: user.id,
         klaviyo_connection_id: klaviyoConnectionId,
+        klaviyo_account_id: connection.klaviyo_account_id,
         name: name || 'Untitled Campaign',
         subject_line: '',
         status: 'draft',

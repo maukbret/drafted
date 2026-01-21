@@ -10,12 +10,27 @@ export default async function ConnectionsPage() {
     redirect('/login')
   }
 
-  // Get all Klaviyo connections
+  // Get all Klaviyo connections with account IDs
   const { data: klaviyoConnections } = await supabase
     .from('klaviyo_connections')
-    .select('id, account_name, created_at')
+    .select('id, account_name, klaviyo_account_id, created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
+
+  // Get all footers for this user
+  const { data: footers } = await supabase
+    .from('klaviyo_footers')
+    .select('klaviyo_account_id')
+    .eq('user_id', user.id)
+
+  // Create a set of account IDs that have footers
+  const accountsWithFooters = new Set(footers?.map(f => f.klaviyo_account_id) || [])
+
+  // Add hasFooter flag to each connection
+  const connectionsWithFooterStatus = (klaviyoConnections || []).map(conn => ({
+    ...conn,
+    hasFooter: conn.klaviyo_account_id ? accountsWithFooters.has(conn.klaviyo_account_id) : false,
+  }))
 
   // Get Figma connection
   const { data: figmaConnection } = await supabase
@@ -29,7 +44,7 @@ export default async function ConnectionsPage() {
       <div className="max-w-4xl">
         <h1 className="text-2xl font-bold mb-8">Connections</h1>
         <ConnectionsTabs
-          klaviyoConnections={klaviyoConnections || []}
+          klaviyoConnections={connectionsWithFooterStatus}
           figmaConnection={figmaConnection}
         />
       </div>

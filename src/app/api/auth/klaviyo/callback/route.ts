@@ -65,24 +65,55 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
+    // Fetch Klaviyo account ID for persistence across reconnects
+    let klaviyoAccountId: string | null = null
+    try {
+      const accountResponse = await fetch('https://a.klaviyo.com/api/accounts/', {
+        headers: {
+          'Authorization': `Bearer ${tokens.access_token}`,
+          'Accept': 'application/json',
+          'revision': '2024-10-15',
+        },
+      })
+      if (accountResponse.ok) {
+        const accountData = await accountResponse.json()
+        klaviyoAccountId = accountData.data?.[0]?.id || null
+      }
+    } catch (err) {
+      console.error('Failed to fetch Klaviyo account ID:', err)
+    }
+
     // Get account name from cookie (set by client before redirect)
     const accountName = cookieStore.get('klaviyo_account_name')?.value || 'Klaviyo Account'
 
     // Insert new connection (not upsert - we allow multiple)
-    const { error: dbError } = await supabase
+    const { data: newConnection, error: dbError } = await supabase
       .from('klaviyo_connections')
       .insert({
         user_id: user.id,
+        klaviyo_account_id: klaviyoAccountId,
         account_name: accountName,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
         scope: tokens.scope,
       })
+      .select('id')
+      .single()
 
     if (dbError) {
       console.error('Database error:', dbError)
       throw new Error('Failed to save Klaviyo connection')
+    }
+
+    // Reassign existing campaigns to the new connection
+    // This preserves campaigns across reconnections
+    if (klaviyoAccountId && newConnection) {
+      await supabase
+        .from('campaigns')
+        .update({ klaviyo_connection_id: newConnection.id })
+        .eq('user_id', user.id)
+        .eq('klaviyo_account_id', klaviyoAccountId)
     }
 
     const response = NextResponse.redirect(new URL('/connections?success=klaviyo_connected', request.url))

@@ -191,6 +191,7 @@ export function EmailEditor({ projectId, frames: initialFrames, klaviyoConnected
           </div>
         </div>
 
+
         {/* Actions */}
         <div className="mt-4 space-y-3">
           {message && (

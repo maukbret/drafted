@@ -6,15 +6,17 @@ interface WizardProgressProps {
 }
 
 export function WizardProgress({ currentStep, steps }: WizardProgressProps) {
+  // Circle is h-8 (32px), line is h-0.5 (2px)
+  // To center line on circle: margin-top = (32 - 2) / 2 = 15px
   return (
-    <div className="flex items-center justify-between mb-8">
+    <div className="flex items-start justify-between mb-8">
       {steps.map((step, index) => {
         const stepNumber = index + 1
         const isActive = stepNumber === currentStep
         const isCompleted = stepNumber < currentStep
 
         return (
-          <div key={index} className="flex items-center flex-1">
+          <div key={index} className="flex items-start flex-1">
             <div className="flex flex-col items-center">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
@@ -45,7 +47,7 @@ export function WizardProgress({ currentStep, steps }: WizardProgressProps) {
             </div>
             {index < steps.length - 1 && (
               <div
-                className={`flex-1 h-0.5 mx-4 ${
+                className={`flex-1 h-0.5 mx-4 mt-[15px] ${
                   isCompleted
                     ? 'bg-green-500'
                     : 'bg-gray-200 dark:bg-gray-800'

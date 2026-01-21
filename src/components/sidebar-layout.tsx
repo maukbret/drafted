@@ -20,7 +20,7 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside className="w-56 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
+      <aside className="w-56 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 sticky top-0 h-screen">
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="p-4 border-b border-gray-200 dark:border-gray-800">

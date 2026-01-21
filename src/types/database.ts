@@ -1,10 +1,22 @@
 export interface KlaviyoConnection {
   id: string
   user_id: string
+  klaviyo_account_id: string | null
+  account_name: string
   access_token: string
   refresh_token: string
   expires_at: string
   scope: string
+  created_at: string
+  updated_at: string
+}
+
+export interface KlaviyoFooter {
+  id: string
+  user_id: string
+  klaviyo_account_id: string
+  footer_html: string
+  source_url: string | null
   created_at: string
   updated_at: string
 }
@@ -35,7 +47,8 @@ export interface Frame {
 export interface Campaign {
   id: string
   user_id: string
-  klaviyo_connection_id: string
+  klaviyo_connection_id: string | null
+  klaviyo_account_id: string | null
   project_id: string | null
 
   name: string
@@ -50,6 +63,7 @@ export interface Campaign {
 
   status: 'draft' | 'ready' | 'scheduled' | 'sent' | 'error'
   scheduled_at: string | null
+  send_in_recipient_timezone: boolean
   wizard_step: number
   figma_url: string | null
 

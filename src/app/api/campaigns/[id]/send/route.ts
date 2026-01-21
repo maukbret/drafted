@@ -1,5 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
+
+// Helper to get timezone offset in milliseconds
+function getTimezoneOffset(timezone: string, date: Date): number {
+  const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }))
+  const tzDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }))
+  return tzDate.getTime() - utcDate.getTime()
+}
 
 export async function POST(
   request: NextRequest,
@@ -7,103 +14,553 @@ export async function POST(
 ) {
   const { id: campaignId } = await params
 
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+  // Parse request body for asDraft option and settings
+  const body = await request.json().catch(() => ({}))
+  const asDraft = body.asDraft === true
+  const settings = body.settings
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Get campaign
-    const { data: campaign } = await supabase
-      .from('campaigns')
-      .select('*')
-      .eq('id', campaignId)
-      .eq('user_id', user.id)
-      .single()
-
-    if (!campaign) {
-      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
-    }
-
-    // Get Klaviyo connection with refresh token
-    const { data: klaviyoConnection } = await supabase
-      .from('klaviyo_connections')
-      .select('id, access_token, refresh_token, expires_at')
-      .eq('id', campaign.klaviyo_connection_id)
-      .single()
-
-    if (!klaviyoConnection) {
-      return NextResponse.json({ error: 'Klaviyo connection not found' }, { status: 400 })
-    }
-
-    // Get project with frames
-    const { data: project } = campaign.project_id
-      ? await supabase
-          .from('projects')
-          .select('*, frames(*)')
-          .eq('id', campaign.project_id)
-          .single()
-      : { data: null }
-
-    if (!project || !project.frames?.length) {
-      return NextResponse.json({ error: 'No email content found' }, { status: 400 })
-    }
-
-    if (!campaign.subject_line) {
-      return NextResponse.json({ error: 'Subject line is required' }, { status: 400 })
-    }
-
-    if (!campaign.included_audiences || campaign.included_audiences.length === 0) {
-      return NextResponse.json({ error: 'At least one audience is required' }, { status: 400 })
-    }
-
-    // Check if token is expired and refresh if needed
-    let klaviyoToken = klaviyoConnection.access_token
-    const expiresAt = new Date(klaviyoConnection.expires_at)
-    const now = new Date()
-
-    if (expiresAt <= now && klaviyoConnection.refresh_token) {
-      const refreshResponse = await fetch('https://a.klaviyo.com/oauth/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: klaviyoConnection.refresh_token,
-          client_id: process.env.KLAVIYO_CLIENT_ID!,
-          client_secret: process.env.KLAVIYO_CLIENT_SECRET!,
-        }),
-      })
-
-      if (refreshResponse.ok) {
-        const tokens = await refreshResponse.json()
-        klaviyoToken = tokens.access_token
-
-        await supabase
-          .from('klaviyo_connections')
-          .update({
-            access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token || klaviyoConnection.refresh_token,
-            expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-          })
-          .eq('id', klaviyoConnection.id)
-      } else {
-        console.error('Failed to refresh Klaviyo token:', await refreshResponse.text())
-        return NextResponse.json({ error: 'Klaviyo token expired. Please reconnect Klaviyo.' }, { status: 401 })
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) => {
+        controller.enqueue(encoder.encode(JSON.stringify(data) + '\n'))
       }
-    }
-    const frames = project.frames.sort((a: any, b: any) => a.display_order - b.display_order)
-
-    // Step 1: Upload images to Klaviyo
-    const uploadedFrames = []
-    for (const frame of frames) {
-      if (!frame.image_url) continue
 
       try {
-        const imageResponse = await fetch('https://a.klaviyo.com/api/images', {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+
+        if (!user) {
+          send({ step: 'error', message: 'Unauthorized' })
+          controller.close()
+          return
+        }
+
+        // Step 1: Save settings
+        send({ step: 'settings', status: 'in_progress' })
+
+        // Extract timezone settings
+        const useRecipientTimezone = settings?.useRecipientTimezone === true
+        const timezone = settings?.timezone || 'Europe/Amsterdam'
+
+        // Calculate scheduled_at from date and time if provided in settings
+        let scheduled_at: string | null = null
+        if (settings?.scheduledDate && settings?.scheduledTime) {
+          if (useRecipientTimezone) {
+            // For recipient timezone, store the datetime as-is (Klaviyo will interpret it per recipient)
+            // Format: YYYY-MM-DDTHH:MM:SS (no timezone suffix, Klaviyo uses is_local flag)
+            scheduled_at = `${settings.scheduledDate}T${settings.scheduledTime}:00`
+          } else {
+            // Convert from selected timezone to UTC
+            // Create a date string with the timezone and convert to ISO
+            const dateTimeStr = `${settings.scheduledDate}T${settings.scheduledTime}:00`
+            const date = new Date(new Date(dateTimeStr).toLocaleString('en-US', { timeZone: timezone }))
+            // Get the actual time in the selected timezone and convert to UTC
+            const formatter = new Intl.DateTimeFormat('en-CA', {
+              timeZone: timezone,
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false,
+            })
+            // Parse the input as if it's in the selected timezone, then convert to UTC
+            const localDate = new Date(`${settings.scheduledDate}T${settings.scheduledTime}:00`)
+            // Calculate offset between local and target timezone
+            const targetOffset = getTimezoneOffset(timezone, localDate)
+            const utcDate = new Date(localDate.getTime() - targetOffset)
+            scheduled_at = utcDate.toISOString()
+          }
+        }
+
+        if (settings) {
+          const { error: updateError } = await supabase
+            .from('campaigns')
+            .update({
+              name: settings.name?.trim(),
+              subject_line: settings.subjectLine?.trim(),
+              preview_text: settings.previewText?.trim() || null,
+              included_audiences: settings.includedAudiences,
+              excluded_audiences: settings.excludedAudiences,
+              scheduled_at,
+              send_in_recipient_timezone: useRecipientTimezone,
+              status: 'ready',
+            })
+            .eq('id', campaignId)
+            .eq('user_id', user.id)
+
+          if (updateError) {
+            send({ step: 'error', message: 'Failed to save campaign settings' })
+            controller.close()
+            return
+          }
+        }
+
+        send({ step: 'settings', status: 'complete' })
+
+        // Get campaign
+        const { data: campaign } = await supabase
+          .from('campaigns')
+          .select('*')
+          .eq('id', campaignId)
+          .eq('user_id', user.id)
+          .single()
+
+        if (!campaign) {
+          send({ step: 'error', message: 'Campaign not found' })
+          controller.close()
+          return
+        }
+
+        // Get Klaviyo connection with refresh token and account ID
+        const { data: klaviyoConnection } = await supabase
+          .from('klaviyo_connections')
+          .select('id, klaviyo_account_id, access_token, refresh_token, expires_at')
+          .eq('id', campaign.klaviyo_connection_id)
+          .single()
+
+        if (!klaviyoConnection) {
+          send({ step: 'error', message: 'Klaviyo connection not found' })
+          controller.close()
+          return
+        }
+
+        // Get project with frames
+        const { data: project } = campaign.project_id
+          ? await supabase
+              .from('projects')
+              .select('*, frames(*)')
+              .eq('id', campaign.project_id)
+              .single()
+          : { data: null }
+
+        if (!project || !project.frames?.length) {
+          send({ step: 'error', message: 'No email content found' })
+          controller.close()
+          return
+        }
+
+        if (!campaign.subject_line) {
+          send({ step: 'error', message: 'Subject line is required' })
+          controller.close()
+          return
+        }
+
+        if (!campaign.included_audiences || campaign.included_audiences.length === 0) {
+          send({ step: 'error', message: 'At least one audience is required' })
+          controller.close()
+          return
+        }
+
+        // Check if token is expired and refresh if needed
+        let klaviyoToken = klaviyoConnection.access_token
+        const expiresAt = new Date(klaviyoConnection.expires_at)
+        const now = new Date()
+
+        if (expiresAt <= now && klaviyoConnection.refresh_token) {
+          const refreshResponse = await fetch('https://a.klaviyo.com/oauth/token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              grant_type: 'refresh_token',
+              refresh_token: klaviyoConnection.refresh_token,
+              client_id: process.env.KLAVIYO_CLIENT_ID!,
+              client_secret: process.env.KLAVIYO_CLIENT_SECRET!,
+            }),
+          })
+
+          if (refreshResponse.ok) {
+            const tokens = await refreshResponse.json()
+            klaviyoToken = tokens.access_token
+
+            await supabase
+              .from('klaviyo_connections')
+              .update({
+                access_token: tokens.access_token,
+                refresh_token: tokens.refresh_token || klaviyoConnection.refresh_token,
+                expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+              })
+              .eq('id', klaviyoConnection.id)
+          } else {
+            console.error('Failed to refresh Klaviyo token:', await refreshResponse.text())
+            send({ step: 'error', message: 'Klaviyo token expired. Please reconnect Klaviyo.' })
+            controller.close()
+            return
+          }
+        }
+
+        const frames = project.frames.sort((a: any, b: any) => a.display_order - b.display_order)
+
+        // Fetch stored footer HTML for this Klaviyo account
+        let footerHtml = ''
+        if (klaviyoConnection.klaviyo_account_id) {
+          const { data: footer } = await supabase
+            .from('klaviyo_footers')
+            .select('footer_html')
+            .eq('user_id', user.id)
+            .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
+            .single()
+
+          if (footer) {
+            footerHtml = footer.footer_html
+            console.log('Using stored footer, length:', footerHtml.length)
+          }
+        }
+
+        // Determine if this is a create or update operation
+        const isUpdate = !!(campaign.klaviyo_template_id && campaign.klaviyo_campaign_id)
+        const imagesNeedUpload = frames.some((f: any) => f.image_url && !f.klaviyo_image_url)
+
+        // Send init message with dynamic steps based on operation type
+        const finalStepLabel = asDraft ? 'Saving as draft' : 'Scheduling campaign'
+        send({
+          step: 'init',
+          steps: [
+            { id: 'settings', label: 'Saving settings' },
+            ...(imagesNeedUpload ? [{ id: 'images', label: 'Uploading images' }] : []),
+            { id: 'template', label: isUpdate ? 'Updating template' : 'Creating template' },
+            { id: 'campaign', label: isUpdate ? 'Updating campaign' : 'Creating campaign' },
+            { id: 'finalizing', label: finalStepLabel },
+          ],
+        })
+
+        // Step 2: Upload images to Klaviyo (skip if already uploaded)
+        if (imagesNeedUpload) {
+          send({ step: 'images', status: 'in_progress' })
+        }
+
+        const uploadedFrames = []
+        for (const frame of frames) {
+          if (!frame.image_url) continue
+
+          // Skip upload if image was already uploaded to Klaviyo
+          if (frame.klaviyo_image_url) {
+            console.log('Skipping image upload, already exists:', frame.name)
+            uploadedFrames.push(frame)
+            continue
+          }
+
+          try {
+            const imageResponse = await fetch('https://a.klaviyo.com/api/images', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${klaviyoToken}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'revision': '2024-06-15',
+              },
+              body: JSON.stringify({
+                data: {
+                  type: 'image',
+                  attributes: {
+                    name: frame.name,
+                    import_from_url: frame.image_url,
+                    hidden: false,
+                  },
+                },
+              }),
+            })
+
+            if (imageResponse.ok) {
+              const imageData = await imageResponse.json()
+              const klaviyoImageUrl = imageData.data?.attributes?.image_url || frame.image_url
+
+              uploadedFrames.push({
+                ...frame,
+                klaviyo_image_url: klaviyoImageUrl,
+              })
+
+              await supabase
+                .from('frames')
+                .update({ klaviyo_image_url: klaviyoImageUrl })
+                .eq('id', frame.id)
+            } else {
+              uploadedFrames.push({
+                ...frame,
+                klaviyo_image_url: frame.image_url,
+              })
+            }
+          } catch (err) {
+            console.error('Image upload error:', err)
+            uploadedFrames.push({
+              ...frame,
+              klaviyo_image_url: frame.image_url,
+            })
+          }
+        }
+
+        if (imagesNeedUpload) {
+          send({ step: 'images', status: 'complete' })
+        }
+
+        // Step 3: Create or update template in Klaviyo
+        send({ step: 'template', status: 'in_progress' })
+
+        const html = generateEmailHtml(uploadedFrames, footerHtml)
+
+        let templateId = campaign.klaviyo_template_id
+        let klaviyoCampaignId = campaign.klaviyo_campaign_id
+
+        const templateName = `${campaign.name} - Template`
+
+        if (templateId) {
+          // Update existing template
+          console.log('Updating existing template:', templateId)
+          const templateResponse = await fetch(`https://a.klaviyo.com/api/templates/${templateId}`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${klaviyoToken}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'revision': '2024-06-15',
+            },
+            body: JSON.stringify({
+              data: {
+                type: 'template',
+                id: templateId,
+                attributes: {
+                  name: templateName,
+                  html: html,
+                },
+              },
+            }),
+          })
+
+          if (!templateResponse.ok) {
+            const errorText = await templateResponse.text()
+            console.error('Klaviyo template update error:', errorText)
+            // If update fails, try creating a new one
+            templateId = null
+          }
+        }
+
+        if (!templateId) {
+          // Create new template
+          console.log('Creating new template')
+          const templateResponse = await fetch('https://a.klaviyo.com/api/templates', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${klaviyoToken}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'revision': '2024-06-15',
+            },
+            body: JSON.stringify({
+              data: {
+                type: 'template',
+                attributes: {
+                  name: templateName,
+                  editor_type: 'CODE',
+                  html: html,
+                },
+              },
+            }),
+          })
+
+          if (!templateResponse.ok) {
+            const errorText = await templateResponse.text()
+            console.error('Klaviyo template creation error:', errorText)
+            send({ step: 'error', message: 'Failed to create email template' })
+            controller.close()
+            return
+          }
+
+          const templateData = await templateResponse.json()
+          templateId = templateData.data?.id
+        }
+
+        send({ step: 'template', status: 'complete' })
+
+        // Step 4: Create or update campaign in Klaviyo
+        send({ step: 'campaign', status: 'in_progress' })
+
+        let messageId: string | null = null
+
+        if (klaviyoCampaignId) {
+          // Update existing campaign - first get the message ID
+          console.log('Updating existing campaign:', klaviyoCampaignId)
+
+          const getCampaignResponse = await fetch(`https://a.klaviyo.com/api/campaigns/${klaviyoCampaignId}?include=campaign-messages`, {
+            headers: {
+              'Authorization': `Bearer ${klaviyoToken}`,
+              'Accept': 'application/json',
+              'revision': '2024-06-15',
+            },
+          })
+
+          if (getCampaignResponse.ok) {
+            const existingCampaign = await getCampaignResponse.json()
+            messageId = existingCampaign.data?.relationships?.['campaign-messages']?.data?.[0]?.id
+
+            // Update campaign name and audiences
+            const updateCampaignResponse = await fetch(`https://a.klaviyo.com/api/campaigns/${klaviyoCampaignId}`, {
+              method: 'PATCH',
+              headers: {
+                'Authorization': `Bearer ${klaviyoToken}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'revision': '2024-06-15',
+              },
+              body: JSON.stringify({
+                data: {
+                  type: 'campaign',
+                  id: klaviyoCampaignId,
+                  attributes: {
+                    name: campaign.name,
+                    audiences: {
+                      included: campaign.included_audiences.map((a: any) => a.id),
+                      excluded: campaign.excluded_audiences?.map((a: any) => a.id) || [],
+                    },
+                    send_strategy: campaign.scheduled_at ? {
+                      method: 'static',
+                      options_static: {
+                        datetime: campaign.scheduled_at,
+                        is_local: campaign.send_in_recipient_timezone || false,
+                        send_past_recipients_immediately: true,
+                      },
+                    } : undefined,
+                  },
+                },
+              }),
+            })
+
+            if (!updateCampaignResponse.ok) {
+              const errorText = await updateCampaignResponse.text()
+              console.error('Klaviyo campaign update error:', errorText)
+              // If update fails, create a new campaign
+              klaviyoCampaignId = null
+              messageId = null
+            }
+
+            // Update campaign message (subject, preview text)
+            if (messageId) {
+              const updateMessageResponse = await fetch(`https://a.klaviyo.com/api/campaign-messages/${messageId}`, {
+                method: 'PATCH',
+                headers: {
+                  'Authorization': `Bearer ${klaviyoToken}`,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'revision': '2024-06-15',
+                },
+                body: JSON.stringify({
+                  data: {
+                    type: 'campaign-message',
+                    id: messageId,
+                    attributes: {
+                      content: {
+                        subject: campaign.subject_line,
+                        preview_text: campaign.preview_text || '',
+                        from_email: '{{ organization.email }}',
+                        from_label: '{{ organization.name }}',
+                      },
+                    },
+                  },
+                }),
+              })
+
+              if (!updateMessageResponse.ok) {
+                const errorText = await updateMessageResponse.text()
+                console.error('Klaviyo message update error:', errorText)
+              }
+            }
+          } else {
+            // Campaign not found, create new one
+            klaviyoCampaignId = null
+          }
+        }
+
+        if (!klaviyoCampaignId) {
+          // Create new campaign
+          console.log('Creating new campaign')
+          const campaignAttributes: any = {
+            name: campaign.name,
+            audiences: {
+              included: campaign.included_audiences.map((a: any) => a.id),
+              excluded: campaign.excluded_audiences?.map((a: any) => a.id) || [],
+            },
+            'campaign-messages': {
+              data: [
+                {
+                  type: 'campaign-message',
+                  attributes: {
+                    channel: 'email',
+                    label: 'Email Message',
+                    content: {
+                      subject: campaign.subject_line,
+                      preview_text: campaign.preview_text || '',
+                      from_email: '{{ organization.email }}',
+                      from_label: '{{ organization.name }}',
+                    },
+                    render_options: {
+                      shorten_links: true,
+                      add_org_prefix: true,
+                      add_info_link: true,
+                    },
+                  },
+                },
+              ],
+            },
+            send_options: {
+              use_smart_sending: false,
+            },
+          }
+
+          if (campaign.scheduled_at) {
+            campaignAttributes.send_strategy = {
+              method: 'static',
+              options_static: {
+                datetime: campaign.scheduled_at,
+                is_local: campaign.send_in_recipient_timezone || false,
+                send_past_recipients_immediately: true,
+              },
+            }
+          }
+
+          const campaignResponse = await fetch('https://a.klaviyo.com/api/campaigns', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${klaviyoToken}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'revision': '2024-06-15',
+            },
+            body: JSON.stringify({
+              data: {
+                type: 'campaign',
+                attributes: campaignAttributes,
+              },
+            }),
+          })
+
+          if (!campaignResponse.ok) {
+            const errorText = await campaignResponse.text()
+            console.error('Klaviyo campaign creation error:', errorText)
+            send({ step: 'error', message: 'Failed to create campaign in Klaviyo' })
+            controller.close()
+            return
+          }
+
+          const campaignData = await campaignResponse.json()
+          klaviyoCampaignId = campaignData.data?.id
+          messageId = campaignData.data?.relationships?.['campaign-messages']?.data?.[0]?.id
+        }
+
+        console.log('Campaign ID:', klaviyoCampaignId)
+        console.log('Message ID:', messageId)
+
+        if (!messageId) {
+          console.error('No message ID found')
+          send({ step: 'error', message: 'No message found in campaign' })
+          controller.close()
+          return
+        }
+
+        // Assign the template to the message
+        const assignTemplateResponse = await fetch('https://a.klaviyo.com/api/campaign-message-assign-template', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${klaviyoToken}`,
@@ -113,312 +570,193 @@ export async function POST(
           },
           body: JSON.stringify({
             data: {
-              type: 'image',
-              attributes: {
-                name: frame.name,
-                import_from_url: frame.image_url,
-                hidden: false,
+              type: 'campaign-message',
+              id: messageId,
+              relationships: {
+                template: {
+                  data: {
+                    type: 'template',
+                    id: templateId,
+                  },
+                },
               },
             },
           }),
         })
 
-        if (imageResponse.ok) {
-          const imageData = await imageResponse.json()
-          const klaviyoImageUrl = imageData.data?.attributes?.image_url || frame.image_url
-
-          uploadedFrames.push({
-            ...frame,
-            klaviyo_image_url: klaviyoImageUrl,
-          })
-
-          await supabase
-            .from('frames')
-            .update({ klaviyo_image_url: klaviyoImageUrl })
-            .eq('id', frame.id)
-        } else {
-          uploadedFrames.push({
-            ...frame,
-            klaviyo_image_url: frame.image_url,
-          })
+        if (!assignTemplateResponse.ok) {
+          const errorText = await assignTemplateResponse.text()
+          console.error('Klaviyo assign template error:', errorText)
+          send({ step: 'error', message: 'Failed to assign template to campaign' })
+          controller.close()
+          return
         }
-      } catch (err) {
-        console.error('Image upload error:', err)
-        uploadedFrames.push({
-          ...frame,
-          klaviyo_image_url: frame.image_url,
-        })
-      }
-    }
 
-    // Step 2: Generate HTML email
-    const html = generateEmailHtml(uploadedFrames)
+        console.log('Template assigned successfully')
 
-    // Step 3: Create template in Klaviyo
-    const templateName = `${campaign.name} - Template`
-    const templateResponse = await fetch('https://a.klaviyo.com/api/templates', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${klaviyoToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'revision': '2024-06-15',
-      },
-      body: JSON.stringify({
-        data: {
-          type: 'template',
-          attributes: {
-            name: templateName,
-            editor_type: 'CODE',
-            html: html,
-          },
-        },
-      }),
-    })
+        send({ step: 'campaign', status: 'complete' })
 
-    if (!templateResponse.ok) {
-      const errorText = await templateResponse.text()
-      console.error('Klaviyo template creation error:', errorText)
-      return NextResponse.json({ error: 'Failed to create email template' }, { status: 500 })
-    }
+        // Step 5: Finalize (schedule or save as draft)
+        send({ step: 'finalizing', status: 'in_progress' })
 
-    const templateData = await templateResponse.json()
-    const templateId = templateData.data?.id
+        let finalStatus: string
 
-    // Step 4: Create campaign in Klaviyo with embedded message (without template)
-    // Build the campaign attributes
-    const campaignAttributes: any = {
-      name: campaign.name,
-      audiences: {
-        included: campaign.included_audiences.map((a: any) => a.id),
-        excluded: campaign.excluded_audiences?.map((a: any) => a.id) || [],
-      },
-      'campaign-messages': {
-        data: [
-          {
-            type: 'campaign-message',
-            attributes: {
-              channel: 'email',
-              label: 'Email Message',
-              content: {
-                subject: campaign.subject_line,
-                preview_text: campaign.preview_text || '',
-                from_email: '{{ organization.email }}',
-                from_label: '{{ organization.name }}',
-              },
-              render_options: {
-                shorten_links: true,
-                add_org_prefix: true,
-                add_info_link: true,
-              },
+        if (asDraft) {
+          // Skip sending - leave campaign as draft in Klaviyo
+          console.log('Saving as draft in Klaviyo (not triggering send)')
+          finalStatus = 'ready'
+        } else {
+          // Trigger the send job (will send immediately or use the send_strategy schedule)
+          const sendResponse = await fetch('https://a.klaviyo.com/api/campaign-send-jobs', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${klaviyoToken}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'revision': '2024-06-15',
             },
-          },
-        ],
-      },
-      send_options: {
-        use_smart_sending: false,
-      },
-    }
-
-    // Add send_strategy if scheduling for later
-    if (campaign.scheduled_at) {
-      campaignAttributes.send_strategy = {
-        method: 'static',
-        options_static: {
-          datetime: campaign.scheduled_at,
-          is_local: false,
-        },
-      }
-    }
-
-    const campaignPayload = {
-      data: {
-        type: 'campaign',
-        attributes: campaignAttributes,
-      },
-    }
-
-    const campaignResponse = await fetch('https://a.klaviyo.com/api/campaigns', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${klaviyoToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'revision': '2024-06-15',
-      },
-      body: JSON.stringify(campaignPayload),
-    })
-
-    if (!campaignResponse.ok) {
-      const errorText = await campaignResponse.text()
-      console.error('Klaviyo campaign creation error:', errorText)
-      return NextResponse.json({ error: 'Failed to create campaign in Klaviyo' }, { status: 500 })
-    }
-
-    const campaignData = await campaignResponse.json()
-    const klaviyoCampaignId = campaignData.data?.id
-
-    // Get the message ID from the relationships in the create response
-    const messageId = campaignData.data?.relationships?.['campaign-messages']?.data?.[0]?.id
-
-    console.log('Campaign created:', klaviyoCampaignId)
-    console.log('Message ID:', messageId)
-
-    if (!messageId) {
-      console.error('No message ID found in campaign response')
-      return NextResponse.json({ error: 'No message found in campaign' }, { status: 500 })
-    }
-
-    // Assign the template to the message
-    const assignTemplateResponse = await fetch('https://a.klaviyo.com/api/campaign-message-assign-template', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${klaviyoToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'revision': '2024-06-15',
-      },
-      body: JSON.stringify({
-        data: {
-          type: 'campaign-message',
-          id: messageId,
-          relationships: {
-            template: {
+            body: JSON.stringify({
               data: {
-                type: 'template',
-                id: templateId,
+                type: 'campaign-send-job',
+                id: klaviyoCampaignId,
               },
-            },
-          },
-        },
-      }),
-    })
+            }),
+          })
 
-    if (!assignTemplateResponse.ok) {
-      const errorText = await assignTemplateResponse.text()
-      console.error('Klaviyo assign template error:', errorText)
-      return NextResponse.json({ error: 'Failed to assign template to campaign' }, { status: 500 })
+          if (!sendResponse.ok) {
+            const errorText = await sendResponse.text()
+            console.error('Klaviyo send error:', errorText)
+            send({ step: 'error', message: 'Failed to send campaign' })
+            controller.close()
+            return
+          }
+
+          // Set status based on whether it was scheduled or sent immediately
+          finalStatus = campaign.scheduled_at ? 'scheduled' : 'sent'
+        }
+
+        // Update campaign in database
+        await supabase
+          .from('campaigns')
+          .update({
+            status: finalStatus,
+            klaviyo_campaign_id: klaviyoCampaignId,
+            klaviyo_template_id: templateId,
+          })
+          .eq('id', campaignId)
+
+        // Update project status
+        if (campaign.project_id) {
+          await supabase
+            .from('projects')
+            .update({ status: 'exported' })
+            .eq('id', campaign.project_id)
+        }
+
+        send({ step: 'finalizing', status: 'complete' })
+
+        // Send completion signal
+        send({ step: 'done', klaviyoCampaignId, status: finalStatus })
+
+      } catch (err) {
+        console.error('Send campaign error:', err)
+        send({ step: 'error', message: err instanceof Error ? err.message : 'Internal server error' })
+      }
+
+      controller.close()
     }
+  })
 
-    console.log('Template assigned successfully')
-
-    // Step 6: Trigger the send job (will send immediately or use the send_strategy schedule)
-    const sendResponse = await fetch('https://a.klaviyo.com/api/campaign-send-jobs', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${klaviyoToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'revision': '2024-06-15',
-      },
-      body: JSON.stringify({
-        data: {
-          type: 'campaign-send-job',
-          id: klaviyoCampaignId,
-        },
-      }),
-    })
-
-    if (!sendResponse.ok) {
-      const errorText = await sendResponse.text()
-      console.error('Klaviyo send error:', errorText)
-      return NextResponse.json({ error: 'Failed to send campaign' }, { status: 500 })
-    }
-
-    // Set status based on whether it was scheduled or sent immediately
-    const finalStatus = campaign.scheduled_at ? 'scheduled' : 'sent'
-
-    // Update campaign in database
-    await supabase
-      .from('campaigns')
-      .update({
-        status: finalStatus,
-        klaviyo_campaign_id: klaviyoCampaignId,
-        klaviyo_template_id: templateId,
-      })
-      .eq('id', campaignId)
-
-    // Update project status
-    if (campaign.project_id) {
-      await supabase
-        .from('projects')
-        .update({ status: 'exported' })
-        .eq('id', campaign.project_id)
-    }
-
-    return NextResponse.json({
-      success: true,
-      status: finalStatus,
-      klaviyoCampaignId,
-      templateId,
-    })
-
-  } catch (err) {
-    console.error('Send campaign error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
+  return new Response(stream, {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+  })
 }
 
 function generateEmailHtml(frames: Array<{
   name: string
   klaviyo_image_url: string | null
   link_url: string | null
-}>): string {
-  const frameHtml = frames.map(frame => {
-    const imgTag = `<img src="${frame.klaviyo_image_url}" alt="${frame.name}" style="display: block; width: 100%; max-width: 600px; height: auto; border: 0;" />`
+}>, footerHtml: string = ''): string {
+  // Generate table rows for each frame
+  const frameRows = frames.map(frame => {
+    const imgTag = `<img src="${frame.klaviyo_image_url}" alt="${frame.name}" width="600" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
 
-    if (frame.link_url) {
-      return `<a href="${frame.link_url}" target="_blank" style="display: block;">${imgTag}</a>`
-    }
-    return imgTag
+    const content = frame.link_url
+      ? `<a href="${frame.link_url}" target="_blank" style="display: block; text-decoration: none;">${imgTag}</a>`
+      : imgTag
+
+    return `      <tr>
+        <td align="center" valign="top" style="padding: 0;">
+          ${content}
+        </td>
+      </tr>`
   }).join('\n')
 
+  const footerSection = footerHtml ? `
+        <!-- Footer -->
+${footerHtml}` : ''
+
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
   <title>Email</title>
   <!--[if mso]>
   <noscript>
     <xml>
       <o:OfficeDocumentSettings>
+        <o:AllowPNG/>
         <o:PixelsPerInch>96</o:PixelsPerInch>
       </o:OfficeDocumentSettings>
     </xml>
   </noscript>
   <![endif]-->
   <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #f4f4f4;
-      -webkit-font-smoothing: antialiased;
+    /* Reset styles */
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+    /* Responsive styles */
+    @media screen and (max-width: 600px) {
+      .email-container { width: 100% !important; }
+      .email-container img { width: 100% !important; height: auto !important; }
     }
-    .email-container {
-      max-width: 600px;
-      margin: 0 auto;
-      background-color: #ffffff;
-    }
-    img {
-      display: block;
-      width: 100%;
-      max-width: 600px;
-      height: auto;
-      border: 0;
-    }
-    a {
-      display: block;
-    }
+    /* iOS blue link fix */
+    a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; font-size: inherit !important; font-family: inherit !important; font-weight: inherit !important; line-height: inherit !important; }
+    /* Gmail blue link fix */
+    u + #body a { color: inherit; text-decoration: none; font-size: inherit; font-family: inherit; font-weight: inherit; line-height: inherit; }
+    /* Samsung Mail blue link fix */
+    #MessageViewBody a { color: inherit; text-decoration: none; font-size: inherit; font-family: inherit; font-weight: inherit; line-height: inherit; }
   </style>
 </head>
-<body>
-  <center style="width: 100%; background-color: #f4f4f4;">
-    <div class="email-container">
-      ${frameHtml}
-    </div>
-  </center>
+<body id="body" style="margin: 0 !important; padding: 0 !important; background-color: #f4f4f4;">
+  <!-- Wrapper table for centering -->
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f4f4f4;">
+    <tr>
+      <td align="center" valign="top" style="padding: 0;">
+        <!--[if mso]>
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" align="center">
+        <tr>
+        <td>
+        <![endif]-->
+        <!-- Email content table -->
+        <table class="email-container" role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; background-color: #ffffff;">
+${frameRows}
+${footerSection}
+        </table>
+        <!--[if mso]>
+        </td>
+        </tr>
+        </table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`
 }

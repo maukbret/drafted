@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { AudienceSelector } from '../audience-selector'
+import { ProgressToast, ProgressStep } from '../progress-toast'
 import { KlaviyoAudience } from '@/types/database'
 
 interface Step3SettingsProps {
@@ -12,9 +13,51 @@ interface Step3SettingsProps {
   initialPreviewText: string
   initialIncludedAudiences: KlaviyoAudience[]
   initialExcludedAudiences: KlaviyoAudience[]
+  initialScheduledAt: string | null
   onComplete: () => void
   onBack: () => void
 }
+
+function parseScheduledAt(scheduledAt: string | null): { date: string; time: string } {
+  if (!scheduledAt) return { date: '', time: '' }
+
+  try {
+    const date = new Date(scheduledAt)
+    // Format as YYYY-MM-DD for date input
+    const dateStr = date.toISOString().split('T')[0]
+    // Format as HH:MM for time input (in local time)
+    const hours = date.getHours().toString().padStart(2, '0')
+    const minutes = date.getMinutes().toString().padStart(2, '0')
+    const timeStr = `${hours}:${minutes}`
+    return { date: dateStr, time: timeStr }
+  } catch {
+    return { date: '', time: '' }
+  }
+}
+
+// Default steps shown while waiting for server init
+const DEFAULT_STEPS: ProgressStep[] = [
+  { id: 'settings', label: 'Saving settings', status: 'pending' },
+]
+
+// Common timezones with their UTC offsets
+const TIMEZONES = [
+  { value: 'Europe/Amsterdam', label: 'Amsterdam (CET/CEST)', offset: '+01:00' },
+  { value: 'Europe/London', label: 'London (GMT/BST)', offset: '+00:00' },
+  { value: 'Europe/Paris', label: 'Paris (CET/CEST)', offset: '+01:00' },
+  { value: 'Europe/Berlin', label: 'Berlin (CET/CEST)', offset: '+01:00' },
+  { value: 'America/New_York', label: 'New York (EST/EDT)', offset: '-05:00' },
+  { value: 'America/Chicago', label: 'Chicago (CST/CDT)', offset: '-06:00' },
+  { value: 'America/Denver', label: 'Denver (MST/MDT)', offset: '-07:00' },
+  { value: 'America/Los_Angeles', label: 'Los Angeles (PST/PDT)', offset: '-08:00' },
+  { value: 'America/Sao_Paulo', label: 'São Paulo (BRT)', offset: '-03:00' },
+  { value: 'Asia/Tokyo', label: 'Tokyo (JST)', offset: '+09:00' },
+  { value: 'Asia/Shanghai', label: 'Shanghai (CST)', offset: '+08:00' },
+  { value: 'Asia/Singapore', label: 'Singapore (SGT)', offset: '+08:00' },
+  { value: 'Asia/Dubai', label: 'Dubai (GST)', offset: '+04:00' },
+  { value: 'Australia/Sydney', label: 'Sydney (AEST/AEDT)', offset: '+10:00' },
+  { value: 'Pacific/Auckland', label: 'Auckland (NZST/NZDT)', offset: '+12:00' },
+]
 
 export function Step3Settings({
   campaignId,
@@ -24,87 +67,161 @@ export function Step3Settings({
   initialPreviewText,
   initialIncludedAudiences,
   initialExcludedAudiences,
+  initialScheduledAt,
   onComplete,
   onBack,
 }: Step3SettingsProps) {
+  const parsedSchedule = parseScheduledAt(initialScheduledAt)
   const [name, setName] = useState(initialName)
   const [subjectLine, setSubjectLine] = useState(initialSubjectLine)
   const [previewText, setPreviewText] = useState(initialPreviewText || '')
   const [includedAudiences, setIncludedAudiences] = useState<KlaviyoAudience[]>(initialIncludedAudiences || [])
   const [excludedAudiences, setExcludedAudiences] = useState<KlaviyoAudience[]>(initialExcludedAudiences || [])
-  const [sendOption, setSendOption] = useState<'now' | 'schedule'>('schedule')
-  const [scheduledDate, setScheduledDate] = useState('')
-  const [scheduledTime, setScheduledTime] = useState('')
-  const [sending, setSending] = useState(false)
+  const [scheduledDate, setScheduledDate] = useState(parsedSchedule.date)
+  const [scheduledTime, setScheduledTime] = useState(parsedSchedule.time)
+  const [timezone, setTimezone] = useState('Europe/Amsterdam')
+  const [useRecipientTimezone, setUseRecipientTimezone] = useState(false)
+  const [publishOption, setPublishOption] = useState<'draft' | 'schedule'>('draft')
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleSend = async () => {
+  // Progress toast state
+  const [showProgress, setShowProgress] = useState(false)
+  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>(DEFAULT_STEPS)
+  const [progressError, setProgressError] = useState<string | null>(null)
+  const [klaviyoCampaignId, setKlaviyoCampaignId] = useState<string | null>(null)
+  const [isComplete, setIsComplete] = useState(false)
+
+  const validateForm = () => {
     if (!name.trim()) {
       setError('Campaign name is required')
-      return
+      return false
     }
 
     if (!subjectLine.trim()) {
       setError('Subject line is required')
-      return
+      return false
     }
 
     if (includedAudiences.length === 0) {
       setError('Please select at least one audience')
+      return false
+    }
+
+    return true
+  }
+
+  const handleSubmit = async () => {
+    if (!validateForm()) return
+
+    if (!scheduledDate || !scheduledTime) {
+      setError('Please select a date and time')
       return
     }
 
-    if (sendOption === 'schedule' && (!scheduledDate || !scheduledTime)) {
-      setError('Please select a date and time to schedule')
-      return
-    }
-
-    setSending(true)
+    setSaving(true)
     setError(null)
 
-    try {
-      // Calculate scheduled_at if scheduling
-      let scheduled_at: string | null = null
-      if (sendOption === 'schedule' && scheduledDate && scheduledTime) {
-        const scheduledDateTime = new Date(`${scheduledDate}T${scheduledTime}`)
-        scheduled_at = scheduledDateTime.toISOString()
-      }
+    // Reset and show progress toast with default steps (server will send actual steps)
+    setProgressSteps(DEFAULT_STEPS)
+    setProgressError(null)
+    setKlaviyoCampaignId(null)
+    setIsComplete(false)
+    setShowProgress(true)
 
-      // Update campaign settings
-      const updateResponse = await fetch(`/api/campaigns/${campaignId}`, {
-        method: 'PATCH',
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/send`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name.trim(),
-          subject_line: subjectLine.trim(),
-          preview_text: previewText.trim() || null,
-          included_audiences: includedAudiences,
-          excluded_audiences: excludedAudiences,
-          scheduled_at,
+          asDraft: publishOption === 'draft',
+          settings: {
+            name: name.trim(),
+            subjectLine: subjectLine.trim(),
+            previewText: previewText.trim() || null,
+            includedAudiences,
+            excludedAudiences,
+            scheduledDate,
+            scheduledTime,
+            timezone,
+            useRecipientTimezone,
+          },
         }),
       })
 
-      if (!updateResponse.ok) {
-        const data = await updateResponse.json()
-        throw new Error(data.error || 'Failed to update campaign')
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      if (!reader) {
+        throw new Error('Failed to read response')
       }
 
-      // Send the campaign
-      const sendResponse = await fetch(`/api/campaigns/${campaignId}/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
 
-      if (!sendResponse.ok) {
-        const data = await sendResponse.json()
-        throw new Error(data.error || 'Failed to send campaign')
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+
+          try {
+            const data = JSON.parse(line)
+
+            if (data.step === 'init' && data.steps) {
+              // Server sends the actual steps to display
+              setProgressSteps(data.steps.map((s: { id: string; label: string }) => ({
+                ...s,
+                status: 'pending' as const,
+              })))
+            } else if (data.step === 'done') {
+              setKlaviyoCampaignId(data.klaviyoCampaignId)
+              setIsComplete(true)
+            } else if (data.step === 'error') {
+              setProgressError(data.message)
+            } else if (data.status) {
+              setProgressSteps(prev => prev.map(step => {
+                if (step.id === data.step) {
+                  return { ...step, status: data.status }
+                }
+                return step
+              }))
+            }
+          } catch (e) {
+            console.error('Failed to parse line:', line, e)
+          }
+        }
       }
 
-      onComplete()
+      // Process any remaining buffer
+      if (buffer.trim()) {
+        try {
+          const data = JSON.parse(buffer)
+          if (data.step === 'done') {
+            setKlaviyoCampaignId(data.klaviyoCampaignId)
+            setIsComplete(true)
+          } else if (data.step === 'error') {
+            setProgressError(data.message)
+          }
+        } catch (e) {
+          console.error('Failed to parse final buffer:', buffer, e)
+        }
+      }
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
+      setProgressError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
-      setSending(false)
+      setSaving(false)
+    }
+  }
+
+  const handleCloseProgress = () => {
+    setShowProgress(false)
+    if (isComplete && !progressError) {
+      onComplete()
     }
   }
 
@@ -183,53 +300,104 @@ export function Step3Settings({
 
       <div className="border-t border-gray-200 dark:border-gray-800 pt-6">
         <h3 className="font-medium mb-4">When to send</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Choose the date and time for this campaign</p>
+
+        <div className="space-y-4">
+          <div className="flex gap-3">
+            <input
+              type="date"
+              value={scheduledDate}
+              onChange={(e) => setScheduledDate(e.target.value)}
+              min={minDate}
+              className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+            />
+            <input
+              type="time"
+              value={scheduledTime}
+              onChange={(e) => setScheduledTime(e.target.value)}
+              className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+            />
+          </div>
+
+          <div className="relative">
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              disabled={useRecipientTimezone}
+              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed pr-10"
+            >
+              {TIMEZONES.map((tz) => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}
+                </option>
+              ))}
+            </select>
+            <svg
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useRecipientTimezone}
+              onChange={(e) => setUseRecipientTimezone(e.target.checked)}
+              className="w-4 h-4 mt-0.5 rounded border-gray-300 dark:border-gray-700"
+            />
+            <div>
+              <span className="text-sm font-medium">Send in recipient&apos;s timezone</span>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Each recipient receives the email at the selected time in their local timezone
+              </p>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div className="border-t border-gray-200 dark:border-gray-800 pt-6">
+        <h3 className="font-medium mb-4">How to publish</h3>
 
         <div className="space-y-3">
-          <label className="flex items-start gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900">
+          <label className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+            publishOption === 'draft'
+              ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-900'
+              : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900'
+          }`}>
             <input
               type="radio"
-              name="send-option"
-              value="schedule"
-              checked={sendOption === 'schedule'}
-              onChange={() => setSendOption('schedule')}
-              className="w-4 h-4 mt-1"
+              name="publish-option"
+              value="draft"
+              checked={publishOption === 'draft'}
+              onChange={() => setPublishOption('draft')}
+              className="w-4 h-4 mt-0.5"
             />
-            <div className="flex-1">
-              <span className="font-medium">Schedule for later</span>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Choose a specific date and time</p>
-
-              {sendOption === 'schedule' && (
-                <div className="flex gap-3">
-                  <input
-                    type="date"
-                    value={scheduledDate}
-                    onChange={(e) => setScheduledDate(e.target.value)}
-                    min={minDate}
-                    className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-                  />
-                  <input
-                    type="time"
-                    value={scheduledTime}
-                    onChange={(e) => setScheduledTime(e.target.value)}
-                    className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-                  />
-                </div>
-              )}
+            <div>
+              <span className="font-medium">Save as draft</span>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Review and schedule manually in Klaviyo</p>
             </div>
           </label>
 
-          <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900">
+          <label className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+            publishOption === 'schedule'
+              ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-900'
+              : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900'
+          }`}>
             <input
               type="radio"
-              name="send-option"
-              value="now"
-              checked={sendOption === 'now'}
-              onChange={() => setSendOption('now')}
-              className="w-4 h-4"
+              name="publish-option"
+              value="schedule"
+              checked={publishOption === 'schedule'}
+              onChange={() => setPublishOption('schedule')}
+              className="w-4 h-4 mt-0.5"
             />
             <div>
-              <span className="font-medium">Send now</span>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Send immediately after review</p>
+              <span className="font-medium">Schedule immediately</span>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Schedule the campaign for the selected date and time</p>
             </div>
           </label>
         </div>
@@ -245,20 +413,35 @@ export function Step3Settings({
         <button
           type="button"
           onClick={onBack}
-          disabled={sending}
-          className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors disabled:opacity-50"
+          disabled={saving}
+          className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors disabled:opacity-50"
         >
           Back
         </button>
         <button
           type="button"
-          onClick={handleSend}
-          disabled={sending}
+          onClick={handleSubmit}
+          disabled={saving}
           className="flex-1 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50"
         >
-          {sending ? 'Sending...' : sendOption === 'now' ? 'Send Campaign' : 'Schedule Campaign'}
+          {saving
+            ? 'Processing...'
+            : publishOption === 'draft'
+              ? 'Save Draft to Klaviyo'
+              : 'Schedule Campaign'
+          }
         </button>
       </div>
+
+      {showProgress && (
+        <ProgressToast
+          steps={progressSteps}
+          error={progressError}
+          onClose={handleCloseProgress}
+          klaviyoCampaignId={klaviyoCampaignId}
+          isComplete={isComplete}
+        />
+      )}
     </div>
   )
 }

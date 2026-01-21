@@ -32,10 +32,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No Klaviyo account linked to this project' }, { status: 400 })
     }
 
-    // Get Klaviyo connection with refresh token
+    // Get Klaviyo connection with refresh token and account ID
     const { data: klaviyoConnection } = await supabase
       .from('klaviyo_connections')
-      .select('id, access_token, refresh_token, expires_at')
+      .select('id, klaviyo_account_id, access_token, refresh_token, expires_at')
       .eq('id', project.klaviyo_connection_id)
       .single()
 
@@ -89,6 +89,21 @@ export async function POST(request: NextRequest) {
 
     if (!frames || frames.length === 0) {
       return NextResponse.json({ error: 'No frames found' }, { status: 400 })
+    }
+
+    // Fetch stored footer HTML for this Klaviyo account
+    let footerHtml = ''
+    if (klaviyoConnection.klaviyo_account_id) {
+      const { data: footer } = await supabase
+        .from('klaviyo_footers')
+        .select('footer_html')
+        .eq('user_id', user.id)
+        .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
+        .single()
+
+      if (footer) {
+        footerHtml = footer.footer_html
+      }
     }
 
     // Step 1: Upload images to Klaviyo and get hosted URLs
@@ -149,8 +164,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 2: Generate HTML email
-    const html = generateEmailHtml(uploadedFrames)
+    // Step 2: Generate HTML email with footer
+    const html = generateEmailHtml(uploadedFrames, footerHtml)
 
     // Step 3: Create template in Klaviyo
     const templateName = project.name || `Figma Import - ${new Date().toLocaleDateString('en-GB')}`
@@ -203,62 +218,87 @@ function generateEmailHtml(frames: Array<{
   name: string
   klaviyo_image_url: string | null
   link_url: string | null
-}>): string {
-  const frameHtml = frames.map(frame => {
-    const imgTag = `<img src="${frame.klaviyo_image_url}" alt="${frame.name}" style="display: block; width: 100%; max-width: 600px; height: auto; border: 0;" />`
-    
-    if (frame.link_url) {
-      return `<a href="${frame.link_url}" target="_blank" style="display: block;">${imgTag}</a>`
-    }
-    return imgTag
+}>, footerHtml: string = ''): string {
+  // Generate table rows for each frame
+  const frameRows = frames.map(frame => {
+    const imgTag = `<img src="${frame.klaviyo_image_url}" alt="${frame.name}" width="600" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+
+    const content = frame.link_url
+      ? `<a href="${frame.link_url}" target="_blank" style="display: block; text-decoration: none;">${imgTag}</a>`
+      : imgTag
+
+    return `      <tr>
+        <td align="center" valign="top" style="padding: 0;">
+          ${content}
+        </td>
+      </tr>`
   }).join('\n')
 
+  const footerSection = footerHtml ? `
+        <!-- Footer -->
+${footerHtml}` : ''
+
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
   <title>Email</title>
   <!--[if mso]>
   <noscript>
     <xml>
       <o:OfficeDocumentSettings>
+        <o:AllowPNG/>
         <o:PixelsPerInch>96</o:PixelsPerInch>
       </o:OfficeDocumentSettings>
     </xml>
   </noscript>
   <![endif]-->
   <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #f4f4f4;
-      -webkit-font-smoothing: antialiased;
+    /* Reset styles */
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+    /* Responsive styles */
+    @media screen and (max-width: 600px) {
+      .email-container { width: 100% !important; }
+      .email-container img { width: 100% !important; height: auto !important; }
     }
-    .email-container {
-      max-width: 600px;
-      margin: 0 auto;
-      background-color: #ffffff;
-    }
-    img {
-      display: block;
-      width: 100%;
-      max-width: 600px;
-      height: auto;
-      border: 0;
-    }
-    a {
-      display: block;
-    }
+    /* iOS blue link fix */
+    a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; font-size: inherit !important; font-family: inherit !important; font-weight: inherit !important; line-height: inherit !important; }
+    /* Gmail blue link fix */
+    u + #body a { color: inherit; text-decoration: none; font-size: inherit; font-family: inherit; font-weight: inherit; line-height: inherit; }
+    /* Samsung Mail blue link fix */
+    #MessageViewBody a { color: inherit; text-decoration: none; font-size: inherit; font-family: inherit; font-weight: inherit; line-height: inherit; }
   </style>
 </head>
-<body>
-  <center style="width: 100%; background-color: #f4f4f4;">
-    <div class="email-container">
-      ${frameHtml}
-    </div>
-  </center>
+<body id="body" style="margin: 0 !important; padding: 0 !important; background-color: #f4f4f4;">
+  <!-- Wrapper table for centering -->
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f4f4f4;">
+    <tr>
+      <td align="center" valign="top" style="padding: 0;">
+        <!--[if mso]>
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" align="center">
+        <tr>
+        <td>
+        <![endif]-->
+        <!-- Email content table -->
+        <table class="email-container" role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; background-color: #ffffff;">
+${frameRows}
+${footerSection}
+        </table>
+        <!--[if mso]>
+        </td>
+        </tr>
+        </table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`
 }

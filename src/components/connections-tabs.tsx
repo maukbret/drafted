@@ -2,10 +2,13 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { FooterSetup } from './footer-setup'
 
 interface KlaviyoConnection {
   id: string
   account_name: string | null
+  klaviyo_account_id: string | null
+  hasFooter: boolean
   created_at: string
 }
 
@@ -25,6 +28,7 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
   const [accountName, setAccountName] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [footerSetupConnection, setFooterSetupConnection] = useState<KlaviyoConnection | null>(null)
   const router = useRouter()
 
   const startKlaviyoOAuth = () => {
@@ -48,7 +52,7 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
         response_type: 'code',
         client_id: process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID!,
         redirect_uri: process.env.NEXT_PUBLIC_KLAVIYO_REDIRECT_URI!,
-        scope: 'accounts:read images:write templates:write lists:read segments:read campaigns:write',
+        scope: 'accounts:read images:write templates:read templates:write lists:read segments:read campaigns:write campaigns:read',
         code_challenge: codeChallenge,
         code_challenge_method: 'S256',
         state,
@@ -127,20 +131,44 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
           {klaviyoConnections.length > 0 && (
             <div className="border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800">
               {klaviyoConnections.map((conn) => (
-                <div key={conn.id} className="flex items-center justify-between p-4">
-                  <div>
-                    <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Added {new Date(conn.created_at).toLocaleDateString('en-GB')}
-                    </p>
+                <div key={conn.id} className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Added {new Date(conn.created_at).toLocaleDateString('en-GB')}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => deleteConnection('klaviyo', conn.id)}
+                      disabled={deletingId === conn.id}
+                      className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50"
+                    >
+                      {deletingId === conn.id ? 'Removing...' : 'Remove'}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => deleteConnection('klaviyo', conn.id)}
-                    disabled={deletingId === conn.id}
-                    className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50"
-                  >
-                    {deletingId === conn.id ? 'Removing...' : 'Remove'}
-                  </button>
+                  {/* Footer status */}
+                  <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {conn.hasFooter ? (
+                        <>
+                          <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Footer configured</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="w-2 h-2 bg-gray-300 dark:bg-gray-600 rounded-full"></span>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">No footer set up</span>
+                        </>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setFooterSetupConnection(conn)}
+                      className="text-sm text-black dark:text-white hover:underline"
+                    >
+                      {conn.hasFooter ? 'Update footer' : 'Setup footer'}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -229,6 +257,19 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
             </div>
           )}
         </div>
+      )}
+
+      {/* Footer Setup Modal */}
+      {footerSetupConnection && (
+        <FooterSetup
+          connectionId={footerSetupConnection.id}
+          hasFooter={footerSetupConnection.hasFooter}
+          onComplete={() => {
+            setFooterSetupConnection(null)
+            router.refresh()
+          }}
+          onCancel={() => setFooterSetupConnection(null)}
+        />
       )}
     </div>
   )
