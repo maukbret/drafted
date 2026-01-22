@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { JSDOM } from 'jsdom'
+import * as cheerio from 'cheerio'
 
 export async function POST(request: NextRequest) {
   try {
@@ -191,11 +191,10 @@ interface EmailSection {
 }
 
 function parseEmailSections(html: string): EmailSection[] {
-  const dom = new JSDOM(html)
-  const document = dom.window.document
-
+  const $ = cheerio.load(html)
   const sections: EmailSection[] = []
-  const tables: Element[] = []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tables: any[] = []
 
   console.log('Starting to parse HTML for tables...')
 
@@ -203,32 +202,28 @@ function parseEmailSections(html: string): EmailSection[] {
   // Common patterns: center > table, body > table, or nested wrapper tables
 
   // Strategy 1: Look for tables inside center tags (most common Klaviyo pattern)
-  const centerTags = document.querySelectorAll('center')
-  if (centerTags.length > 0) {
-    centerTags.forEach(center => {
-      // Get direct child tables or tables inside a wrapper div
-      const directTables = center.querySelectorAll(':scope > table, :scope > div > table')
-      directTables.forEach(t => tables.push(t))
-    })
+  const centerTables = $('center > table, center > div > table')
+  if (centerTables.length > 0) {
+    centerTables.each((_, el) => { tables.push(el) })
     console.log('Strategy 1 - tables in center tags:', tables.length)
   }
 
   // Strategy 2: If no center tags, look for top-level tables in body
   if (tables.length === 0) {
-    const bodyTables = document.querySelectorAll('body > table, body > div > table')
-    bodyTables.forEach(t => tables.push(t))
+    const bodyTables = $('body > table, body > div > table')
+    bodyTables.each((_, el) => { tables.push(el) })
     console.log('Strategy 2 - body tables:', tables.length)
   }
 
   // Strategy 3: If still nothing, find all tables and deduplicate
   if (tables.length === 0) {
-    const allTables = document.querySelectorAll('table')
+    const allTables = $('table')
     console.log('Strategy 3 - all tables found:', allTables.length)
 
     // Only keep tables that have content and aren't deeply nested layout tables
-    allTables.forEach(table => {
-      const text = table.textContent?.trim() || ''
-      const hasContent = text.length > 5 || table.querySelector('img')
+    allTables.each((_, table) => {
+      const text = $(table).text().trim()
+      const hasContent = text.length > 5 || $(table).find('img').length > 0
       if (hasContent) {
         tables.push(table)
       }
@@ -240,7 +235,7 @@ function parseEmailSections(html: string): EmailSection[] {
   // Deduplicate - remove tables that are children of other tables in the list
   const deduped = tables.filter((el, idx) => {
     for (let i = 0; i < tables.length; i++) {
-      if (i !== idx && tables[i].contains(el) && tables[i] !== el) {
+      if (i !== idx && $.contains(tables[i], el)) {
         return false
       }
     }
@@ -251,8 +246,8 @@ function parseEmailSections(html: string): EmailSection[] {
 
   // Convert to sections
   deduped.forEach((element, index) => {
-    const outerHtml = element.outerHTML
-    const textContent = element.textContent?.trim() || ''
+    const outerHtml = $.html(element)
+    const textContent = $(element).text().trim()
 
     // Create a text preview (first 150 chars)
     const preview = textContent.substring(0, 150).replace(/\s+/g, ' ').trim()

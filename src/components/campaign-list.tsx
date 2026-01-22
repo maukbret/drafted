@@ -227,7 +227,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
             </div>
 
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
-              Are you sure you want to delete <span className="font-medium">&quot;{deleteModalCampaign.name}&quot;</span>? This will permanently remove the campaign from your account.
+              Are you sure you want to delete <span className="font-medium">&quot;{deleteModalCampaign.name}&quot;</span>? This will permanently remove the campaign from your Drafted account.
             </p>
 
             <div className="flex gap-3 justify-end">
