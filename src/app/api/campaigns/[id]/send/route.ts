@@ -36,6 +36,62 @@ export async function POST(
           return
         }
 
+        // ============================================================
+        // PHASE 1: Gather all data first to determine the steps needed
+        // ============================================================
+
+        // Get current campaign data
+        const { data: existingCampaign } = await supabase
+          .from('campaigns')
+          .select('*')
+          .eq('id', campaignId)
+          .eq('user_id', user.id)
+          .single()
+
+        if (!existingCampaign) {
+          send({ step: 'error', message: 'Campaign not found' })
+          controller.close()
+          return
+        }
+
+        // Get Klaviyo connection
+        const { data: klaviyoConnection } = await supabase
+          .from('klaviyo_connections')
+          .select('id, klaviyo_account_id, access_token, refresh_token, expires_at')
+          .eq('id', existingCampaign.klaviyo_connection_id)
+          .single()
+
+        if (!klaviyoConnection) {
+          send({ step: 'error', message: 'Klaviyo connection not found' })
+          controller.close()
+          return
+        }
+
+        // Get project with frames
+        const { data: project } = existingCampaign.project_id
+          ? await supabase
+              .from('projects')
+              .select('*, frames(*)')
+              .eq('id', existingCampaign.project_id)
+              .single()
+          : { data: null }
+
+        if (!project || !project.frames?.length) {
+          send({ step: 'error', message: 'No email content found' })
+          controller.close()
+          return
+        }
+
+        const frames = project.frames.sort((a: any, b: any) => a.display_order - b.display_order)
+
+        // Determine operation type and what steps are needed
+        const isUpdate = !!(existingCampaign.klaviyo_template_id && existingCampaign.klaviyo_campaign_id)
+        const imagesNeedUpload = frames.some((f: any) => f.image_url && !f.klaviyo_image_url)
+
+        // ============================================================
+        // PHASE 2: Process each step (client shows all steps from start)
+        // ============================================================
+
         // Step 1: Save settings
         send({ step: 'settings', status: 'in_progress' })
 
@@ -48,27 +104,10 @@ export async function POST(
         if (settings?.scheduledDate && settings?.scheduledTime) {
           if (useRecipientTimezone) {
             // For recipient timezone, store the datetime as-is (Klaviyo will interpret it per recipient)
-            // Format: YYYY-MM-DDTHH:MM:SS (no timezone suffix, Klaviyo uses is_local flag)
             scheduled_at = `${settings.scheduledDate}T${settings.scheduledTime}:00`
           } else {
             // Convert from selected timezone to UTC
-            // Create a date string with the timezone and convert to ISO
-            const dateTimeStr = `${settings.scheduledDate}T${settings.scheduledTime}:00`
-            const date = new Date(new Date(dateTimeStr).toLocaleString('en-US', { timeZone: timezone }))
-            // Get the actual time in the selected timezone and convert to UTC
-            const formatter = new Intl.DateTimeFormat('en-CA', {
-              timeZone: timezone,
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-              hour12: false,
-            })
-            // Parse the input as if it's in the selected timezone, then convert to UTC
             const localDate = new Date(`${settings.scheduledDate}T${settings.scheduledTime}:00`)
-            // Calculate offset between local and target timezone
             const targetOffset = getTimezoneOffset(timezone, localDate)
             const utcDate = new Date(localDate.getTime() - targetOffset)
             scheduled_at = utcDate.toISOString()
@@ -92,7 +131,8 @@ export async function POST(
             .eq('user_id', user.id)
 
           if (updateError) {
-            send({ step: 'error', message: 'Failed to save campaign settings' })
+            console.error('Campaign settings update error:', updateError)
+            send({ step: 'error', message: `Failed to save campaign settings: ${updateError.message}` })
             controller.close()
             return
           }
@@ -100,7 +140,7 @@ export async function POST(
 
         send({ step: 'settings', status: 'complete' })
 
-        // Get campaign
+        // Re-fetch campaign with updated settings
         const { data: campaign } = await supabase
           .from('campaigns')
           .select('*')
@@ -109,39 +149,12 @@ export async function POST(
           .single()
 
         if (!campaign) {
-          send({ step: 'error', message: 'Campaign not found' })
+          send({ step: 'error', message: 'Campaign not found after update' })
           controller.close()
           return
         }
 
-        // Get Klaviyo connection with refresh token and account ID
-        const { data: klaviyoConnection } = await supabase
-          .from('klaviyo_connections')
-          .select('id, klaviyo_account_id, access_token, refresh_token, expires_at')
-          .eq('id', campaign.klaviyo_connection_id)
-          .single()
-
-        if (!klaviyoConnection) {
-          send({ step: 'error', message: 'Klaviyo connection not found' })
-          controller.close()
-          return
-        }
-
-        // Get project with frames
-        const { data: project } = campaign.project_id
-          ? await supabase
-              .from('projects')
-              .select('*, frames(*)')
-              .eq('id', campaign.project_id)
-              .single()
-          : { data: null }
-
-        if (!project || !project.frames?.length) {
-          send({ step: 'error', message: 'No email content found' })
-          controller.close()
-          return
-        }
-
+        // Validate required fields
         if (!campaign.subject_line) {
           send({ step: 'error', message: 'Subject line is required' })
           controller.close()
@@ -153,6 +166,8 @@ export async function POST(
           controller.close()
           return
         }
+
+        console.log('Using Klaviyo connection:', klaviyoConnection.id, 'Account:', klaviyoConnection.klaviyo_account_id)
 
         // Check if token is expired and refresh if needed
         let klaviyoToken = klaviyoConnection.access_token
@@ -193,8 +208,6 @@ export async function POST(
           }
         }
 
-        const frames = project.frames.sort((a: any, b: any) => a.display_order - b.display_order)
-
         // Fetch stored footer HTML for this Klaviyo account
         let footerHtml = ''
         if (klaviyoConnection.klaviyo_account_id) {
@@ -211,26 +224,11 @@ export async function POST(
           }
         }
 
-        // Determine if this is a create or update operation
-        const isUpdate = !!(campaign.klaviyo_template_id && campaign.klaviyo_campaign_id)
-        const imagesNeedUpload = frames.some((f: any) => f.image_url && !f.klaviyo_image_url)
-
-        // Send init message with dynamic steps based on operation type
-        const finalStepLabel = asDraft ? 'Saving as draft' : 'Scheduling campaign'
-        send({
-          step: 'init',
-          steps: [
-            { id: 'settings', label: 'Saving settings' },
-            ...(imagesNeedUpload ? [{ id: 'images', label: 'Uploading images' }] : []),
-            { id: 'template', label: isUpdate ? 'Updating template' : 'Creating template' },
-            { id: 'campaign', label: isUpdate ? 'Updating campaign' : 'Creating campaign' },
-            { id: 'finalizing', label: finalStepLabel },
-          ],
-        })
-
         // Step 2: Upload images to Klaviyo (skip if already uploaded)
         if (imagesNeedUpload) {
           send({ step: 'images', status: 'in_progress' })
+        } else {
+          send({ step: 'images', status: 'skip' })
         }
 
         const uploadedFrames = []
@@ -298,7 +296,7 @@ export async function POST(
         }
 
         // Step 3: Create or update template in Klaviyo
-        send({ step: 'template', status: 'in_progress' })
+        send({ step: 'template', status: 'in_progress', label: isUpdate ? 'Updating template' : 'Creating template' })
 
         const html = generateEmailHtml(uploadedFrames, footerHtml)
 
@@ -376,7 +374,7 @@ export async function POST(
         send({ step: 'template', status: 'complete' })
 
         // Step 4: Create or update campaign in Klaviyo
-        send({ step: 'campaign', status: 'in_progress' })
+        send({ step: 'campaign', status: 'in_progress', label: isUpdate ? 'Updating campaign' : 'Creating campaign' })
 
         let messageId: string | null = null
 
@@ -393,8 +391,8 @@ export async function POST(
           })
 
           if (getCampaignResponse.ok) {
-            const existingCampaign = await getCampaignResponse.json()
-            messageId = existingCampaign.data?.relationships?.['campaign-messages']?.data?.[0]?.id
+            const existingCampaignData = await getCampaignResponse.json()
+            messageId = existingCampaignData.data?.relationships?.['campaign-messages']?.data?.[0]?.id
 
             // Update campaign name and audiences
             const updateCampaignResponse = await fetch(`https://a.klaviyo.com/api/campaigns/${klaviyoCampaignId}`, {
@@ -420,7 +418,7 @@ export async function POST(
                       options_static: {
                         datetime: campaign.scheduled_at,
                         is_local: campaign.send_in_recipient_timezone || false,
-                        send_past_recipients_immediately: true,
+                        ...(campaign.send_in_recipient_timezone ? { send_past_recipients_immediately: true } : {}),
                       },
                     } : undefined,
                   },
@@ -476,6 +474,8 @@ export async function POST(
         if (!klaviyoCampaignId) {
           // Create new campaign
           console.log('Creating new campaign')
+          console.log('Included audiences:', JSON.stringify(campaign.included_audiences))
+          console.log('Excluded audiences:', JSON.stringify(campaign.excluded_audiences))
           const campaignAttributes: any = {
             name: campaign.name,
             audiences: {
@@ -515,7 +515,7 @@ export async function POST(
               options_static: {
                 datetime: campaign.scheduled_at,
                 is_local: campaign.send_in_recipient_timezone || false,
-                send_past_recipients_immediately: true,
+                ...(campaign.send_in_recipient_timezone ? { send_past_recipients_immediately: true } : {}),
               },
             }
           }
@@ -597,7 +597,8 @@ export async function POST(
         send({ step: 'campaign', status: 'complete' })
 
         // Step 5: Finalize (schedule or save as draft)
-        send({ step: 'finalizing', status: 'in_progress' })
+        const finalStepLabel = asDraft ? 'Saving as draft' : 'Scheduling campaign'
+        send({ step: 'finalizing', status: 'in_progress', label: finalStepLabel })
 
         let finalStatus: string
 

@@ -196,7 +196,7 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
                 <button
                   onClick={startKlaviyoOAuth}
                   disabled={!accountName.trim()}
-                  className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50"
+                  className="btn-primary"
                 >
                   Connect to Klaviyo
                 </button>
@@ -214,7 +214,7 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
           ) : (
             <button
               onClick={() => setShowAddForm(true)}
-              className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
+              className="btn-primary"
             >
               Add Klaviyo account
             </button>
@@ -250,7 +250,7 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
               </p>
               <button
                 onClick={startFigmaOAuth}
-                className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
+                className="btn-primary"
               >
                 Connect Figma
               </button>

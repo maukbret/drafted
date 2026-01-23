@@ -80,6 +80,7 @@ export async function PATCH(
       'wizard_step',
       'figma_url',
       'project_id',
+      'klaviyo_connection_id',
       'klaviyo_campaign_id',
       'klaviyo_template_id',
     ]

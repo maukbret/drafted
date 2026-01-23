@@ -14,6 +14,7 @@ interface Step3SettingsProps {
   initialIncludedAudiences: KlaviyoAudience[]
   initialExcludedAudiences: KlaviyoAudience[]
   initialScheduledAt: string | null
+  isUpdate: boolean
   onComplete: () => void
   onBack: () => void
 }
@@ -35,10 +36,17 @@ function parseScheduledAt(scheduledAt: string | null): { date: string; time: str
   }
 }
 
-// Default steps shown while waiting for server init
-const DEFAULT_STEPS: ProgressStep[] = [
-  { id: 'settings', label: 'Saving settings', status: 'pending' },
-]
+// Generate steps based on whether it's an update or create
+function getInitialSteps(isUpdate: boolean, asDraft: boolean): ProgressStep[] {
+  return [
+    { id: 'settings', label: 'Saving settings', status: 'pending' },
+    // Only show images step for new campaigns (updates already have images uploaded)
+    ...(!isUpdate ? [{ id: 'images', label: 'Uploading images', status: 'pending' as const }] : []),
+    { id: 'template', label: isUpdate ? 'Updating template' : 'Creating template', status: 'pending' },
+    { id: 'campaign', label: isUpdate ? 'Updating campaign' : 'Creating campaign', status: 'pending' },
+    { id: 'finalizing', label: asDraft ? 'Saving as draft' : 'Scheduling campaign', status: 'pending' },
+  ]
+}
 
 // Common timezones with their UTC offsets
 const TIMEZONES = [
@@ -68,6 +76,7 @@ export function Step3Settings({
   initialIncludedAudiences,
   initialExcludedAudiences,
   initialScheduledAt,
+  isUpdate,
   onComplete,
   onBack,
 }: Step3SettingsProps) {
@@ -77,8 +86,20 @@ export function Step3Settings({
   const [previewText, setPreviewText] = useState(initialPreviewText || '')
   const [includedAudiences, setIncludedAudiences] = useState<KlaviyoAudience[]>(initialIncludedAudiences || [])
   const [excludedAudiences, setExcludedAudiences] = useState<KlaviyoAudience[]>(initialExcludedAudiences || [])
-  const [scheduledDate, setScheduledDate] = useState(parsedSchedule.date)
+  const [scheduledDate, setScheduledDate] = useState(() => {
+    // Default to today's date if no initial date
+    if (parsedSchedule.date) return parsedSchedule.date
+    return new Date().toISOString().split('T')[0]
+  })
   const [scheduledTime, setScheduledTime] = useState(parsedSchedule.time)
+  const [dateOption, setDateOption] = useState<'today' | 'tomorrow' | 'other'>(() => {
+    if (!parsedSchedule.date) return 'today'
+    const today = new Date().toISOString().split('T')[0]
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+    if (parsedSchedule.date === today) return 'today'
+    if (parsedSchedule.date === tomorrow) return 'tomorrow'
+    return 'other'
+  })
   const [timezone, setTimezone] = useState('Europe/Amsterdam')
   const [useRecipientTimezone, setUseRecipientTimezone] = useState(false)
   const [publishOption, setPublishOption] = useState<'draft' | 'schedule'>('draft')
@@ -87,7 +108,7 @@ export function Step3Settings({
 
   // Progress toast state
   const [showProgress, setShowProgress] = useState(false)
-  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>(DEFAULT_STEPS)
+  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([])
   const [progressError, setProgressError] = useState<string | null>(null)
   const [klaviyoCampaignId, setKlaviyoCampaignId] = useState<string | null>(null)
   const [isComplete, setIsComplete] = useState(false)
@@ -122,8 +143,9 @@ export function Step3Settings({
     setSaving(true)
     setError(null)
 
-    // Reset and show progress toast with default steps (server will send actual steps)
-    setProgressSteps(DEFAULT_STEPS)
+    // Reset and show progress toast with correct steps for create vs update
+    const asDraft = publishOption === 'draft'
+    setProgressSteps(getInitialSteps(isUpdate, asDraft))
     setProgressError(null)
     setKlaviyoCampaignId(null)
     setIsComplete(false)
@@ -171,24 +193,30 @@ export function Step3Settings({
           try {
             const data = JSON.parse(line)
 
-            if (data.step === 'init' && data.steps) {
-              // Server sends the actual steps to display
-              setProgressSteps(data.steps.map((s: { id: string; label: string }) => ({
-                ...s,
-                status: 'pending' as const,
-              })))
-            } else if (data.step === 'done') {
+            if (data.step === 'done') {
               setKlaviyoCampaignId(data.klaviyoCampaignId)
               setIsComplete(true)
             } else if (data.step === 'error') {
               setProgressError(data.message)
             } else if (data.status) {
-              setProgressSteps(prev => prev.map(step => {
-                if (step.id === data.step) {
-                  return { ...step, status: data.status }
+              // Update step status (in_progress, complete, or skip)
+              setProgressSteps(prev => {
+                if (data.status === 'skip') {
+                  // Remove skipped steps entirely
+                  return prev.filter(step => step.id !== data.step)
                 }
-                return step
-              }))
+                return prev.map(step => {
+                  if (step.id === data.step) {
+                    // Update label if provided (e.g., "Updating" vs "Creating")
+                    return {
+                      ...step,
+                      status: data.status,
+                      label: data.label || step.label
+                    }
+                  }
+                  return step
+                })
+              })
             }
           } catch (e) {
             console.error('Failed to parse line:', line, e)
@@ -303,14 +331,63 @@ export function Step3Settings({
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Choose the date and time for this campaign</p>
 
         <div className="space-y-4">
+          {/* Quick date selection */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const today = new Date()
+                setScheduledDate(today.toISOString().split('T')[0])
+                setDateOption('today')
+              }}
+              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+                dateOption === 'today'
+                  ? 'border-black dark:border-white bg-black dark:bg-white text-white dark:text-black'
+                  : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const tomorrow = new Date()
+                tomorrow.setDate(tomorrow.getDate() + 1)
+                setScheduledDate(tomorrow.toISOString().split('T')[0])
+                setDateOption('tomorrow')
+              }}
+              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+                dateOption === 'tomorrow'
+                  ? 'border-black dark:border-white bg-black dark:bg-white text-white dark:text-black'
+                  : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+            >
+              Tomorrow
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateOption('other')}
+              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+                dateOption === 'other'
+                  ? 'border-black dark:border-white bg-black dark:bg-white text-white dark:text-black'
+                  : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+            >
+              Other
+            </button>
+          </div>
+
+          {/* Date picker (only shown when "Other" is selected) */}
           <div className="flex gap-3">
-            <input
-              type="date"
-              value={scheduledDate}
-              onChange={(e) => setScheduledDate(e.target.value)}
-              min={minDate}
-              className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-            />
+            {dateOption === 'other' && (
+              <input
+                type="date"
+                value={scheduledDate}
+                onChange={(e) => setScheduledDate(e.target.value)}
+                min={minDate}
+                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+              />
+            )}
             <input
               type="time"
               value={scheduledTime}

@@ -149,7 +149,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                     href={`https://www.klaviyo.com/campaign/${campaign.klaviyo_campaign_id}/scheduled`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3 py-1.5 text-sm bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
+                    className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                   >
                     View in Klaviyo
                   </a>

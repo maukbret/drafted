@@ -63,8 +63,15 @@ export function CampaignWizard({
   }, [step, campaign.id, campaign.wizard_step])
 
   const handleStep1Complete = async (data: { connectionId: string; figmaUrl: string }) => {
-    // Store the selected connection ID
+    // Store the selected connection ID in state and database
     setConnectionId(data.connectionId)
+
+    // Save the connection ID to the campaign
+    await fetch(`/api/campaigns/${campaign.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ klaviyo_connection_id: data.connectionId }),
+    })
 
     // Fetch updated campaign with frames
     const response = await fetch(`/api/campaigns/${campaign.id}`)
@@ -123,6 +130,7 @@ export function CampaignWizard({
             initialIncludedAudiences={campaign.included_audiences as KlaviyoAudience[] || []}
             initialExcludedAudiences={campaign.excluded_audiences as KlaviyoAudience[] || []}
             initialScheduledAt={campaign.scheduled_at || null}
+            isUpdate={!!(campaign.klaviyo_template_id && campaign.klaviyo_campaign_id)}
             onComplete={handleStep3Complete}
             onBack={goBack}
           />

@@ -13,7 +13,7 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
 
   const navItems = [
     { href: '/campaigns', label: 'Campaigns', icon: CampaignIcon },
-    { href: '/template-importer', label: 'Template Importer', icon: HomeIcon },
+    { href: '/images', label: 'Upload images', icon: ImageIcon },
     { href: '/connections', label: 'Connections', icon: LinkIcon },
   ]
 
@@ -24,7 +24,7 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-            <h1 className="font-bold text-lg">Drafted</h1>
+            <img className="logo-img" src="https://i.postimg.cc/mk26ky4p/Frame-3.png" width="120px" alt="logo"></img>
           </div>
 
           {/* Navigation */}
@@ -37,7 +37,7 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
                   href={item.href}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     isActive
-                      ? 'bg-black text-white dark:bg-white dark:text-black'
+                      ? 'nav-item-active'
                       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -78,14 +78,6 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
   )
 }
 
-function HomeIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-    </svg>
-  )
-}
-
 function LinkIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -98,6 +90,14 @@ function CampaignIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  )
+}
+
+function ImageIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
     </svg>
   )
 }
