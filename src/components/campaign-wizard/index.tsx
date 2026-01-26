@@ -17,6 +17,7 @@ interface Frame {
   id: string
   figma_node_id: string
   name: string
+  width: number | null
   image_url: string | null
   link_url: string | null
   display_order: number

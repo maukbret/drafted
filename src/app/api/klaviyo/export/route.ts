@@ -214,25 +214,71 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// Half-width threshold: 50% of 600px email width
+const HALF_WIDTH_THRESHOLD = 300
+
 function generateEmailHtml(frames: Array<{
   name: string
+  width: number | null
   klaviyo_image_url: string | null
   link_url: string | null
 }>, footerHtml: string = ''): string {
-  // Generate table rows for each frame
-  const frameRows = frames.map(frame => {
-    const imgTag = `<img src="${frame.klaviyo_image_url}" alt="${frame.name}" width="600" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+  // Group frames for side-by-side layout
+  const rows: string[] = []
+  let i = 0
 
-    const content = frame.link_url
-      ? `<a href="${frame.link_url}" target="_blank" style="display: block; text-decoration: none;">${imgTag}</a>`
-      : imgTag
+  while (i < frames.length) {
+    const current = frames[i]
+    const next = frames[i + 1]
 
-    return `      <tr>
+    const currentIsHalf = (current.width ?? 600) <= HALF_WIDTH_THRESHOLD
+    const nextIsHalf = next && (next.width ?? 600) <= HALF_WIDTH_THRESHOLD
+
+    if (currentIsHalf && nextIsHalf) {
+      // Two-column row using nested table for reliable rendering
+      const leftImg = `<img src="${current.klaviyo_image_url}" alt="${current.name}" width="300" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+      const rightImg = `<img src="${next.klaviyo_image_url}" alt="${next.name}" width="300" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+
+      const leftContent = current.link_url
+        ? `<a href="${current.link_url}" target="_blank" style="display: block; text-decoration: none;">${leftImg}</a>`
+        : leftImg
+      const rightContent = next.link_url
+        ? `<a href="${next.link_url}" target="_blank" style="display: block; text-decoration: none;">${rightImg}</a>`
+        : rightImg
+
+      rows.push(`      <tr>
+        <td align="center" valign="top" style="padding: 0;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width: 100%; max-width: 600px;">
+            <tr>
+              <td width="300" valign="top" style="width: 50%;">
+                ${leftContent}
+              </td>
+              <td width="300" valign="top" style="width: 50%;">
+                ${rightContent}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>`)
+      i += 2
+    } else {
+      // Single full-width frame
+      const imgTag = `<img src="${current.klaviyo_image_url}" alt="${current.name}" width="600" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+
+      const content = current.link_url
+        ? `<a href="${current.link_url}" target="_blank" style="display: block; text-decoration: none;">${imgTag}</a>`
+        : imgTag
+
+      rows.push(`      <tr>
         <td align="center" valign="top" style="padding: 0;">
           ${content}
         </td>
-      </tr>`
-  }).join('\n')
+      </tr>`)
+      i += 1
+    }
+  }
+
+  const frameRows = rows.join('\n')
 
   const footerSection = footerHtml ? `
         <!-- Footer -->
@@ -267,6 +313,8 @@ ${footerHtml}` : ''
     @media screen and (max-width: 600px) {
       .email-container { width: 100% !important; }
       .email-container img { width: 100% !important; height: auto !important; }
+      .email-container table[width="600"] { width: 100% !important; }
+      .email-container td[width="300"] { width: 50% !important; display: inline-block !important; }
     }
     /* iOS blue link fix */
     a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; font-size: inherit !important; font-family: inherit !important; font-weight: inherit !important; line-height: inherit !important; }

@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import myLogo from '@/assets/logo.png'
+import Image from 'next/image'
 
 export default async function Home() {
   const supabase = await createClient()
@@ -14,10 +16,8 @@ export default async function Home() {
     <main className="flex min-h-screen flex-col items-center justify-center p-8">
       <div className="max-w-md w-full space-y-8 text-center">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight">
-            Drafted
-          </h1>
-          <p className="mt-4 text-lg text-gray-600 dark:text-gray-400">
+          <Image src={myLogo} alt="logo" className="loginLogo"></Image>
+          <p className="mt-4 text-lg text-gray-600 dark:text-gray-400 loginText">
             Transform your Figma email designs into Klaviyo drafts in seconds.
           </p>
         </div>

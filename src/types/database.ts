@@ -37,6 +37,7 @@ export interface Frame {
   project_id: string
   figma_node_id: string
   name: string
+  width: number | null
   image_url: string | null
   klaviyo_image_url: string | null
   link_url: string | null
@@ -61,7 +62,7 @@ export interface Campaign {
   klaviyo_campaign_id: string | null
   klaviyo_template_id: string | null
 
-  status: 'draft' | 'ready' | 'scheduled' | 'sent' | 'error'
+  status: 'in_progress' | 'klaviyo_draft' | 'scheduled' | 'sent' | 'error'
   scheduled_at: string | null
   send_in_recipient_timezone: boolean
   wizard_step: number

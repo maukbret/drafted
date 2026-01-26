@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
         klaviyo_account_id: connection.klaviyo_account_id,
         name: name || 'Untitled Campaign',
         subject_line: '',
-        status: 'draft',
+        status: 'in_progress',
         wizard_step: 1,
       })
       .select()

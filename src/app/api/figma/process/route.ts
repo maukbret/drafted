@@ -95,9 +95,10 @@ export async function POST(request: NextRequest) {
         id: child.id,
         name: child.name,
         type: child.type,
+        width: Math.round(child.absoluteBoundingBox?.width || 0),
       }))
 
-    let nodesToExport: Array<{ id: string; name: string; type: string }>
+    let nodesToExport: Array<{ id: string; name: string; type: string; width: number }>
     if (frameChildren.length > 0) {
       nodesToExport = frameChildren
     } else {
@@ -105,6 +106,7 @@ export async function POST(request: NextRequest) {
         id: nodeId,
         name: parentNode.document.name || 'Main Frame',
         type: parentNode.document.type,
+        width: Math.round(parentNode.document.absoluteBoundingBox?.width || 600),
       }]
     }
 
@@ -153,6 +155,7 @@ export async function POST(request: NextRequest) {
       project_id: project.id,
       figma_node_id: node.id,
       name: node.name,
+      width: node.width,
       image_url: images[node.id] || null,
       display_order: index,
     }))

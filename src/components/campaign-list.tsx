@@ -15,16 +15,16 @@ interface CampaignListProps {
   campaigns: CampaignWithConnection[]
 }
 
-const STATUS_STYLES: Record<Campaign['status'], { bg: string; text: string; label: string }> = {
-  draft: {
+const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  in_progress: {
     bg: 'bg-gray-100 dark:bg-gray-800',
     text: 'text-gray-600 dark:text-gray-400',
-    label: 'Draft',
+    label: 'In progress',
   },
-  ready: {
+  klaviyo_draft: {
     bg: 'bg-blue-100 dark:bg-blue-900/30',
     text: 'text-blue-600 dark:text-blue-400',
-    label: 'Ready',
+    label: 'Klaviyo draft',
   },
   scheduled: {
     bg: 'bg-yellow-100 dark:bg-yellow-900/30',
@@ -40,6 +40,17 @@ const STATUS_STYLES: Record<Campaign['status'], { bg: string; text: string; labe
     bg: 'bg-red-100 dark:bg-red-900/30',
     text: 'text-red-600 dark:text-red-400',
     label: 'Error',
+  },
+  // Legacy status aliases (for existing database records)
+  draft: {
+    bg: 'bg-gray-100 dark:bg-gray-800',
+    text: 'text-gray-600 dark:text-gray-400',
+    label: 'In progress',
+  },
+  ready: {
+    bg: 'bg-blue-100 dark:bg-blue-900/30',
+    text: 'text-blue-600 dark:text-blue-400',
+    label: 'Klaviyo draft',
   },
 }
 
@@ -104,13 +115,15 @@ export function CampaignList({ campaigns }: CampaignListProps) {
   return (
     <>
       <div className="border border-gray-200 dark:border-gray-800 rounded-xl divide-y divide-gray-200 dark:divide-gray-800">
-        {campaigns.map((campaign) => {
+        {campaigns.map((campaign, index) => {
           const status = STATUS_STYLES[campaign.status]
+          const isFirst = index === 0
+          const isLast = index === campaigns.length - 1
 
           return (
             <div
               key={campaign.id}
-              className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
+              className={`flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors ${isFirst ? 'rounded-t-xl' : ''} ${isLast ? 'rounded-b-xl' : ''}`}
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 mb-1">
@@ -136,7 +149,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
               </div>
 
               <div className="flex items-center gap-2 ml-4">
-                {campaign.status === 'draft' && (
+                {(campaign.status === 'in_progress' || (campaign.status as string) === 'draft') && (
                   <Link
                     href={`/campaigns/${campaign.id}`}
                     className="px-3 py-1.5 text-sm bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
@@ -144,12 +157,12 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                     Continue
                   </Link>
                 )}
-                {campaign.status === 'ready' && campaign.klaviyo_campaign_id && (
+                {(campaign.status === 'klaviyo_draft' || (campaign.status as string) === 'ready') && campaign.klaviyo_campaign_id && (
                   <a
                     href={`https://www.klaviyo.com/campaign/${campaign.klaviyo_campaign_id}/scheduled`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                    className="px-3 py-1.5 text-sm font-medium bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                   >
                     View in Klaviyo
                   </a>

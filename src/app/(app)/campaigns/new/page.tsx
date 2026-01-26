@@ -28,7 +28,7 @@ export default async function NewCampaignPage() {
       klaviyo_connection_id: klaviyoConnections[0].id,
       name: 'Untitled Campaign',
       subject_line: '',
-      status: 'draft',
+      status: 'in_progress',
       wizard_step: 1,
     })
     .select()

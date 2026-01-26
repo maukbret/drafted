@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
           }]
         }
 
-        send({ type: 'progress', message: `Found ${nodesToExport.length} frame(s). Generating images...` })
+        send({ type: 'progress', message: `Found ${nodesToExport.length} frame(s). Creating images...` })
 
         // Get image URLs for all nodes
         const nodeIds = nodesToExport.map(n => n.id).join(',')

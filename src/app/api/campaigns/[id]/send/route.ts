@@ -1,11 +1,16 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest } from 'next/server'
 
-// Helper to get timezone offset in milliseconds
-function getTimezoneOffset(timezone: string, date: Date): number {
+// Helper to get timezone offset as a string (e.g., "+01:00" or "-05:00")
+function getTimezoneOffsetString(timezone: string, date: Date): string {
   const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }))
   const tzDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }))
-  return tzDate.getTime() - utcDate.getTime()
+  const offsetMs = tzDate.getTime() - utcDate.getTime()
+  const offsetMinutes = offsetMs / 60000
+  const hours = Math.floor(Math.abs(offsetMinutes) / 60)
+  const minutes = Math.abs(offsetMinutes) % 60
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
 }
 
 export async function POST(
@@ -106,11 +111,11 @@ export async function POST(
             // For recipient timezone, store the datetime as-is (Klaviyo will interpret it per recipient)
             scheduled_at = `${settings.scheduledDate}T${settings.scheduledTime}:00`
           } else {
-            // Convert from selected timezone to UTC
-            const localDate = new Date(`${settings.scheduledDate}T${settings.scheduledTime}:00`)
-            const targetOffset = getTimezoneOffset(timezone, localDate)
-            const utcDate = new Date(localDate.getTime() - targetOffset)
-            scheduled_at = utcDate.toISOString()
+            // Include timezone offset so Klaviyo displays in the selected timezone
+            // e.g., "2024-01-26T14:30:00+01:00" for Amsterdam
+            const dateForOffset = new Date(`${settings.scheduledDate}T${settings.scheduledTime}:00Z`)
+            const offset = getTimezoneOffsetString(timezone, dateForOffset)
+            scheduled_at = `${settings.scheduledDate}T${settings.scheduledTime}:00${offset}`
           }
         }
 
@@ -125,7 +130,7 @@ export async function POST(
               excluded_audiences: settings.excludedAudiences,
               scheduled_at,
               send_in_recipient_timezone: useRecipientTimezone,
-              status: 'ready',
+              status: 'in_progress',
             })
             .eq('id', campaignId)
             .eq('user_id', user.id)
@@ -231,65 +236,61 @@ export async function POST(
           send({ step: 'images', status: 'skip' })
         }
 
-        const uploadedFrames = []
-        for (const frame of frames) {
-          if (!frame.image_url) continue
+        // Upload images in parallel using Promise.all for faster processing
+        const uploadedFrames = await Promise.all(
+          frames.map(async (frame) => {
+            if (!frame.image_url) return frame
 
-          // Skip upload if image was already uploaded to Klaviyo
-          if (frame.klaviyo_image_url) {
-            console.log('Skipping image upload, already exists:', frame.name)
-            uploadedFrames.push(frame)
-            continue
-          }
-
-          try {
-            const imageResponse = await fetch('https://a.klaviyo.com/api/images', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${klaviyoToken}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'revision': '2024-06-15',
-              },
-              body: JSON.stringify({
-                data: {
-                  type: 'image',
-                  attributes: {
-                    name: frame.name,
-                    import_from_url: frame.image_url,
-                    hidden: false,
-                  },
-                },
-              }),
-            })
-
-            if (imageResponse.ok) {
-              const imageData = await imageResponse.json()
-              const klaviyoImageUrl = imageData.data?.attributes?.image_url || frame.image_url
-
-              uploadedFrames.push({
-                ...frame,
-                klaviyo_image_url: klaviyoImageUrl,
-              })
-
-              await supabase
-                .from('frames')
-                .update({ klaviyo_image_url: klaviyoImageUrl })
-                .eq('id', frame.id)
-            } else {
-              uploadedFrames.push({
-                ...frame,
-                klaviyo_image_url: frame.image_url,
-              })
+            // Skip upload if image was already uploaded to Klaviyo
+            if (frame.klaviyo_image_url) {
+              console.log('Skipping image upload, already exists:', frame.name)
+              return frame
             }
-          } catch (err) {
-            console.error('Image upload error:', err)
-            uploadedFrames.push({
-              ...frame,
-              klaviyo_image_url: frame.image_url,
-            })
-          }
-        }
+
+            try {
+              const imageResponse = await fetch('https://a.klaviyo.com/api/images', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${klaviyoToken}`,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'revision': '2024-06-15',
+                },
+                body: JSON.stringify({
+                  data: {
+                    type: 'image',
+                    attributes: {
+                      name: frame.name,
+                      import_from_url: frame.image_url,
+                      hidden: false,
+                    },
+                  },
+                }),
+              })
+
+              if (imageResponse.ok) {
+                const imageData = await imageResponse.json()
+                const klaviyoImageUrl = imageData.data?.attributes?.image_url || frame.image_url
+
+                // Update database (non-blocking, don't await)
+                supabase
+                  .from('frames')
+                  .update({ klaviyo_image_url: klaviyoImageUrl })
+                  .eq('id', frame.id)
+                  .then(() => console.log('Updated frame:', frame.name))
+                  .catch((err) => console.error('Frame update error:', err))
+
+                return { ...frame, klaviyo_image_url: klaviyoImageUrl }
+              } else {
+                console.error('Image upload failed:', frame.name)
+                return { ...frame, klaviyo_image_url: frame.image_url }
+              }
+            } catch (err) {
+              console.error('Image upload error:', err)
+              return { ...frame, klaviyo_image_url: frame.image_url }
+            }
+          })
+        )
 
         if (imagesNeedUpload) {
           send({ step: 'images', status: 'complete' })
@@ -605,7 +606,7 @@ export async function POST(
         if (asDraft) {
           // Skip sending - leave campaign as draft in Klaviyo
           console.log('Saving as draft in Klaviyo (not triggering send)')
-          finalStatus = 'ready'
+          finalStatus = 'klaviyo_draft'
         } else {
           // Trigger the send job (will send immediately or use the send_strategy schedule)
           const sendResponse = await fetch('https://a.klaviyo.com/api/campaign-send-jobs', {
@@ -673,25 +674,71 @@ export async function POST(
   })
 }
 
+// Half-width threshold: 50% of 600px email width
+const HALF_WIDTH_THRESHOLD = 300
+
 function generateEmailHtml(frames: Array<{
   name: string
+  width: number | null
   klaviyo_image_url: string | null
   link_url: string | null
 }>, footerHtml: string = ''): string {
-  // Generate table rows for each frame
-  const frameRows = frames.map(frame => {
-    const imgTag = `<img src="${frame.klaviyo_image_url}" alt="${frame.name}" width="600" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+  // Group frames for side-by-side layout
+  const rows: string[] = []
+  let i = 0
 
-    const content = frame.link_url
-      ? `<a href="${frame.link_url}" target="_blank" style="display: block; text-decoration: none;">${imgTag}</a>`
-      : imgTag
+  while (i < frames.length) {
+    const current = frames[i]
+    const next = frames[i + 1]
 
-    return `      <tr>
+    const currentIsHalf = (current.width ?? 600) <= HALF_WIDTH_THRESHOLD
+    const nextIsHalf = next && (next.width ?? 600) <= HALF_WIDTH_THRESHOLD
+
+    if (currentIsHalf && nextIsHalf) {
+      // Two-column row using nested table for reliable rendering
+      const leftImg = `<img src="${current.klaviyo_image_url}" alt="${current.name}" width="300" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+      const rightImg = `<img src="${next.klaviyo_image_url}" alt="${next.name}" width="300" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+
+      const leftContent = current.link_url
+        ? `<a href="${current.link_url}" target="_blank" style="display: block; text-decoration: none;">${leftImg}</a>`
+        : leftImg
+      const rightContent = next.link_url
+        ? `<a href="${next.link_url}" target="_blank" style="display: block; text-decoration: none;">${rightImg}</a>`
+        : rightImg
+
+      rows.push(`      <tr>
+        <td align="center" valign="top" style="padding: 0;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width: 100%; max-width: 600px;">
+            <tr>
+              <td width="300" valign="top" style="width: 50%;">
+                ${leftContent}
+              </td>
+              <td width="300" valign="top" style="width: 50%;">
+                ${rightContent}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>`)
+      i += 2
+    } else {
+      // Single full-width frame
+      const imgTag = `<img src="${current.klaviyo_image_url}" alt="${current.name}" width="600" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+
+      const content = current.link_url
+        ? `<a href="${current.link_url}" target="_blank" style="display: block; text-decoration: none;">${imgTag}</a>`
+        : imgTag
+
+      rows.push(`      <tr>
         <td align="center" valign="top" style="padding: 0;">
           ${content}
         </td>
-      </tr>`
-  }).join('\n')
+      </tr>`)
+      i += 1
+    }
+  }
+
+  const frameRows = rows.join('\n')
 
   const footerSection = footerHtml ? `
         <!-- Footer -->
@@ -726,6 +773,8 @@ ${footerHtml}` : ''
     @media screen and (max-width: 600px) {
       .email-container { width: 100% !important; }
       .email-container img { width: 100% !important; height: auto !important; }
+      .email-container table[width="600"] { width: 100% !important; }
+      .email-container td[width="300"] { width: 50% !important; display: inline-block !important; }
     }
     /* iOS blue link fix */
     a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; font-size: inherit !important; font-family: inherit !important; font-weight: inherit !important; line-height: inherit !important; }
