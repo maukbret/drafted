@@ -27,10 +27,10 @@ export async function DELETE(
     }
 
     // Verify the user owns this frame through the project
-    const project = frame.projects as { user_id: string } | null
-    if (!project || project.user_id !== user.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-    }
+   const project = (frame.projects as { user_id: string }[] | null)?.[0] ?? null
+if (!project || project.user_id !== user.id) {
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+}
 
     // Delete the frame
     const { error: deleteError } = await supabase
