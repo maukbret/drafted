@@ -238,7 +238,7 @@ export async function POST(
 
         // Upload images in parallel using Promise.all for faster processing
         const uploadedFrames = await Promise.all(
-          frames.map(async (frame) => {
+          frames.map(async (frame: any) => {
             if (!frame.image_url) return frame
 
             // Skip upload if image was already uploaded to Klaviyo
