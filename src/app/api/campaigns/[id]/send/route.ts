@@ -75,10 +75,10 @@ export async function POST(
         // Get project with frames
         const { data: project } = existingCampaign.project_id
           ? await supabase
-              .from('projects')
-              .select('*, frames(*)')
-              .eq('id', existingCampaign.project_id)
-              .single()
+            .from('projects')
+            .select('*, frames(*)')
+            .eq('id', existingCampaign.project_id)
+            .single()
           : { data: null }
 
         if (!project || !project.frames?.length) {
@@ -277,9 +277,10 @@ export async function POST(
                   .from('frames')
                   .update({ klaviyo_image_url: klaviyoImageUrl })
                   .eq('id', frame.id)
-                  .then(() => console.log('Updated frame:', frame.name))
-                  .catch((err) => console.error('Frame update error:', err))
-
+                  .then(
+                    () => console.log('Updated frame:', frame.name),
+                    (err) => console.error('Frame update error:', err)
+                  )
                 return { ...frame, klaviyo_image_url: klaviyoImageUrl }
               } else {
                 console.error('Image upload failed:', frame.name)
