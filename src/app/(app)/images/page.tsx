@@ -31,17 +31,20 @@ export default async function ImagesPage() {
 
   return (
     <div className="p-8">
-      <div className="max-w-4xl">
-        <h1 className="text-2xl font-bold mb-2">Images</h1>
-        <p className="text-muted-foreground mb-8">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+        <h1 className="text-2xl font-bold">Upload images</h1>
+        <p className="text-muted-foreground text-sm mt-1">
           Upload images from Figma to Klaviyo for use in drag &amp; drop templates or dynamic content blocks.
         </p>
-
-        {hasConnections ? (
+        </div>
+      </div>
+      <div className="max-w-4xl">
+      {hasConnections ? (
           <ImageUploader klaviyoConnections={klaviyoConnections || []} />
         ) : (
           <Card>
-            <CardContent className="p-6">
+            <CardContent className="p-6 ">
               <p className="text-muted-foreground mb-4">
                 {!figmaConnection && !klaviyoConnections?.length
                   ? 'Connect your Figma and Klaviyo accounts to start uploading images.'
@@ -55,7 +58,7 @@ export default async function ImagesPage() {
             </CardContent>
           </Card>
         )}
-      </div>
+        </div>
     </div>
   )
 }
