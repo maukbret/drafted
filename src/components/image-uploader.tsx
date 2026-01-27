@@ -1,6 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Loader2, Check, Copy, Upload } from 'lucide-react'
 
 interface KlaviyoConnection {
   id: string
@@ -103,7 +108,6 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
         }
       }
 
-      // Process remaining buffer
       if (buffer.trim()) {
         try {
           const data = JSON.parse(buffer)
@@ -158,106 +162,96 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
   return (
     <div className="space-y-6">
       {/* Upload form */}
-      <form onSubmit={handleSubmit} className="p-6 border border-gray-200 dark:border-gray-800 rounded-xl space-y-4">
-        <div>
-          <label htmlFor="klaviyo-account" className="block text-sm font-medium mb-1">
-            Klaviyo account
-          </label>
-          <div className="relative">
-            <select
-              id="klaviyo-account"
-              value={selectedKlaviyoId}
-              onChange={(e) => setSelectedKlaviyoId(e.target.value)}
-              disabled={loading}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white text-sm appearance-none cursor-pointer disabled:opacity-50 pr-10"
+      <Card>
+        <CardContent className="p-6">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="klaviyo-account">Klaviyo account</Label>
+              <select
+                id="klaviyo-account"
+                value={selectedKlaviyoId}
+                onChange={(e) => setSelectedKlaviyoId(e.target.value)}
+                disabled={loading}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {klaviyoConnections.map((conn) => (
+                  <option key={conn.id} value={conn.id}>
+                    {conn.account_name || 'Unnamed account'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="figma-url">Figma URL</Label>
+              <Input
+                id="figma-url"
+                type="url"
+                value={figmaUrl}
+                onChange={(e) => setFigmaUrl(e.target.value)}
+                placeholder="https://www.figma.com/design/..."
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Copy the link to your email design frame in Figma (must include node-id)
+              </p>
+            </div>
+
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
+            )}
+
+            {progress && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {progress}
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              disabled={loading || !figmaUrl.trim() || !selectedKlaviyoId}
+              className="w-full"
             >
-              {klaviyoConnections.map((conn) => (
-                <option key={conn.id} value={conn.id}>
-                  {conn.account_name || 'Unnamed account'}
-                </option>
-              ))}
-            </select>
-            <svg
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="figma-url" className="block text-sm font-medium mb-1">
-            Figma URL
-          </label>
-          <input
-            id="figma-url"
-            type="url"
-            value={figmaUrl}
-            onChange={(e) => setFigmaUrl(e.target.value)}
-            placeholder="https://www.figma.com/design/..."
-            disabled={loading}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white text-sm disabled:opacity-50"
-          />
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Copy the link to your email design frame in Figma (must include node-id)
-          </p>
-        </div>
-
-        {error && (
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-        )}
-
-        {progress && (
-          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            {progress}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading || !figmaUrl.trim() || !selectedKlaviyoId}
-          className="w-full px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-        >
-          {loading ? 'Uploading...' : 'Upload Images to Klaviyo'}
-        </button>
-      </form>
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Images to Klaviyo
+                </>
+              )}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
       {/* Uploaded images */}
       {uploadedImages.length > 0 && (
-        <div className="p-6 border border-gray-200 dark:border-gray-800 rounded-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Uploaded Images ({uploadedImages.length})</h2>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <CardTitle className="text-lg">Uploaded Images ({uploadedImages.length})</CardTitle>
             <div className="flex gap-2">
-              <button
-                onClick={copyAllUrls}
-                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-              >
+              <Button variant="outline" size="sm" onClick={copyAllUrls}>
+                <Copy className="h-4 w-4 mr-2" />
                 Copy all URLs
-              </button>
-              <button
-                onClick={resetForm}
-                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-              >
+              </Button>
+              <Button variant="outline" size="sm" onClick={resetForm}>
                 Upload more
-              </button>
+              </Button>
             </div>
-          </div>
-
-          <div className="space-y-3">
+          </CardHeader>
+          <CardContent className="space-y-3">
             {uploadedImages.map((image, index) => (
               <div
                 key={index}
-                className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg"
+                className="flex items-center gap-4 p-3 bg-muted rounded-lg"
               >
                 {/* Thumbnail */}
-                <div className="w-16 h-16 flex-shrink-0 bg-gray-200 dark:bg-gray-800 rounded overflow-hidden">
+                <div className="w-16 h-16 flex-shrink-0 bg-muted-foreground/10 rounded overflow-hidden">
                   <img
                     src={image.klaviyoUrl}
                     alt={image.name}
@@ -268,30 +262,35 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{image.name}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
+                  <p className="text-xs text-muted-foreground truncate mt-1">
                     {image.klaviyoUrl}
                   </p>
                 </div>
 
                 {/* Copy button */}
-                <button
+                <Button
+                  variant={image.copied ? 'default' : 'secondary'}
+                  size="sm"
                   onClick={() => copyToClipboard(image.klaviyoUrl, index)}
-                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex-shrink-0 ${
-                    image.copied
-                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                      : 'bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700'
-                  }`}
+                  className={image.copied ? 'bg-green-600 hover:bg-green-600' : ''}
                 >
-                  {image.copied ? 'Copied!' : 'Copy URL'}
-                </button>
+                  {image.copied ? (
+                    <>
+                      <Check className="h-4 w-4 mr-1" />
+                      Copied!
+                    </>
+                  ) : (
+                    'Copy URL'
+                  )}
+                </Button>
               </div>
             ))}
-          </div>
 
-          <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-            Use these URLs in Klaviyo&apos;s drag &amp; drop editor or in dynamic content blocks.
-          </p>
-        </div>
+            <p className="text-xs text-muted-foreground pt-2">
+              Use these URLs in Klaviyo&apos;s drag &amp; drop editor or in dynamic content blocks.
+            </p>
+          </CardContent>
+        </Card>
       )}
     </div>
   )

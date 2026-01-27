@@ -41,13 +41,10 @@ export default async function ConnectionsPage() {
 
   return (
     <div className="p-8">
-      <div className="max-w-4xl">
-        <h1 className="text-2xl font-bold mb-8">Connections</h1>
-        <ConnectionsTabs
-          klaviyoConnections={connectionsWithFooterStatus}
-          figmaConnection={figmaConnection}
-        />
-      </div>
+      <ConnectionsTabs
+        klaviyoConnections={connectionsWithFooterStatus}
+        figmaConnection={figmaConnection}
+      />
     </div>
   )
 }

@@ -4,6 +4,10 @@ import { useState } from 'react'
 import { AudienceSelector } from '../audience-selector'
 import { ProgressToast, ProgressStep } from '../progress-toast'
 import { KlaviyoAudience } from '@/types/database'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
 
 interface Step3SettingsProps {
   campaignId: string
@@ -259,52 +263,45 @@ export function Step3Settings({
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div>
-        <label htmlFor="campaign-name" className="block text-sm font-medium mb-1">
-          Campaign name
-        </label>
-        <input
+      <div className="space-y-2">
+        <Label htmlFor="campaign-name">Campaign name</Label>
+        <Input
           id="campaign-name"
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="My Email Campaign"
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white text-sm"
         />
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        <p className="text-xs text-muted-foreground">
           Internal name for this campaign
         </p>
       </div>
 
-      <div>
-        <label htmlFor="subject-line" className="block text-sm font-medium mb-1">
-          Subject line
-        </label>
-        <input
+      <div className="space-y-2">
+        <Label htmlFor="subject-line">Subject line</Label>
+        <Input
           id="subject-line"
           type="text"
           value={subjectLine}
           onChange={(e) => setSubjectLine(e.target.value)}
           placeholder="Your email subject"
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white text-sm"
         />
       </div>
 
-      <div>
-        <label htmlFor="preview-text" className="block text-sm font-medium mb-1">
-          Preview text <span className="text-gray-400">(optional)</span>
-        </label>
-        <input
+      <div className="space-y-2">
+        <Label htmlFor="preview-text">
+          Preview text <span className="text-muted-foreground">(optional)</span>
+        </Label>
+        <Input
           id="preview-text"
           type="text"
           value={previewText}
           onChange={(e) => setPreviewText(e.target.value)}
           placeholder="Preview text shown in inbox"
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white text-sm"
         />
       </div>
 
-      <div className="border-t border-gray-200 dark:border-gray-800 pt-6">
+      <div className="border-t pt-6">
         <h3 className="font-medium mb-4">Audience</h3>
 
         <div className="space-y-4">
@@ -326,109 +323,90 @@ export function Step3Settings({
         </div>
       </div>
 
-      <div className="border-t border-gray-200 dark:border-gray-800 pt-6">
+      <div className="border-t pt-6">
         <h3 className="font-medium mb-4">When to send</h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Choose the date and time for this campaign</p>
+        <p className="text-sm text-muted-foreground mb-3">Choose the date and time for this campaign</p>
 
         <div className="space-y-4">
           {/* Quick date selection */}
           <div className="flex gap-2">
-            <button
+            <Button
               type="button"
+              variant={dateOption === 'today' ? 'default' : 'outline'}
+              size="sm"
               onClick={() => {
                 const today = new Date()
                 setScheduledDate(today.toISOString().split('T')[0])
                 setDateOption('today')
               }}
-              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
-                dateOption === 'today'
-                  ? 'border-black dark:border-white bg-black dark:bg-white text-white dark:text-black'
-                  : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
             >
               Today
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant={dateOption === 'tomorrow' ? 'default' : 'outline'}
+              size="sm"
               onClick={() => {
                 const tomorrow = new Date()
                 tomorrow.setDate(tomorrow.getDate() + 1)
                 setScheduledDate(tomorrow.toISOString().split('T')[0])
                 setDateOption('tomorrow')
               }}
-              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
-                dateOption === 'tomorrow'
-                  ? 'border-black dark:border-white bg-black dark:bg-white text-white dark:text-black'
-                  : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
             >
               Tomorrow
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant={dateOption === 'other' ? 'default' : 'outline'}
+              size="sm"
               onClick={() => setDateOption('other')}
-              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
-                dateOption === 'other'
-                  ? 'border-black dark:border-white bg-black dark:bg-white text-white dark:text-black'
-                  : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
             >
               Other
-            </button>
+            </Button>
           </div>
 
           {/* Date picker (only shown when "Other" is selected) */}
           <div className="flex gap-3">
             {dateOption === 'other' && (
-              <input
+              <Input
                 type="date"
                 value={scheduledDate}
                 onChange={(e) => setScheduledDate(e.target.value)}
                 min={minDate}
-                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+                className="w-auto"
               />
             )}
-            <input
+            <Input
               type="time"
               value={scheduledTime}
               onChange={(e) => setScheduledTime(e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+              className="w-auto"
             />
           </div>
 
-          <div className="relative">
-            <select
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              disabled={useRecipientTimezone}
-              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed pr-10"
-            >
-              {TIMEZONES.map((tz) => (
-                <option key={tz.value} value={tz.value}>
-                  {tz.label}
-                </option>
-              ))}
-            </select>
-            <svg
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-gray-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
+          <select
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+            disabled={useRecipientTimezone}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {TIMEZONES.map((tz) => (
+              <option key={tz.value} value={tz.value}>
+                {tz.label}
+              </option>
+            ))}
+          </select>
 
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
               checked={useRecipientTimezone}
               onChange={(e) => setUseRecipientTimezone(e.target.checked)}
-              className="w-4 h-4 mt-0.5 rounded border-gray-300 dark:border-gray-700"
+              className="w-4 h-4 mt-1 rounded border-input"
             />
             <div>
-              <span className="text-sm font-medium">Send in recipient&apos;s timezone</span>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <span className="text-sm font-medium leading-none">Send in recipient&apos;s timezone</span>
+              <p className="text-xs text-muted-foreground mt-1">
                 Each recipient receives the email at the selected time in their local timezone
               </p>
             </div>
@@ -436,15 +414,16 @@ export function Step3Settings({
         </div>
       </div>
 
-      <div className="border-t border-gray-200 dark:border-gray-800 pt-6">
+      <div className="border-t pt-6">
         <h3 className="font-medium mb-4">How to publish</h3>
 
         <div className="space-y-3">
-          <label className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+          <label className={cn(
+            'flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors',
             publishOption === 'draft'
-              ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-900'
-              : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900'
-          }`}>
+              ? 'border-primary bg-muted'
+              : 'border-border hover:bg-muted/50'
+          )}>
             <input
               type="radio"
               name="publish-option"
@@ -455,15 +434,16 @@ export function Step3Settings({
             />
             <div>
               <span className="font-medium">Save as draft</span>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Review and schedule manually in Klaviyo</p>
+              <p className="text-xs text-muted-foreground">Review and schedule manually in Klaviyo</p>
             </div>
           </label>
 
-          <label className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+          <label className={cn(
+            'flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors',
             publishOption === 'schedule'
-              ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-900'
-              : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900'
-          }`}>
+              ? 'border-primary bg-muted'
+              : 'border-border hover:bg-muted/50'
+          )}>
             <input
               type="radio"
               name="publish-option"
@@ -474,32 +454,32 @@ export function Step3Settings({
             />
             <div>
               <span className="font-medium">Schedule immediately</span>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Schedule the campaign for the selected date and time</p>
+              <p className="text-xs text-muted-foreground">Schedule the campaign for the selected date and time</p>
             </div>
           </label>
         </div>
       </div>
 
       {error && (
-        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+          <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
       <div className="flex gap-3 pt-4">
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={onBack}
           disabled={saving}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors disabled:opacity-50"
         >
           Back
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           onClick={handleSubmit}
           disabled={saving}
-          className="flex-1 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50"
+          className="flex-1"
         >
           {saving
             ? 'Processing...'
@@ -507,7 +487,7 @@ export function Step3Settings({
               ? 'Save Draft to Klaviyo'
               : 'Schedule Campaign'
           }
-        </button>
+        </Button>
       </div>
 
       {showProgress && (

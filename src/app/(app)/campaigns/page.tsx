@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { CampaignList } from '@/components/campaign-list'
+import { Button } from '@/components/ui/button'
+import { Plus } from 'lucide-react'
 
 export default async function CampaignsPage() {
   const supabase = await createClient()
@@ -31,25 +33,24 @@ export default async function CampaignsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Campaigns</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+          <p className="text-muted-foreground text-sm mt-1">
             Create and send email campaigns through Klaviyo
           </p>
         </div>
 
         {hasConnections ? (
-          <Link
-            href="/campaigns/new"
-            className="btn-primary"
-          >
-            New campaign
-          </Link>
+          <Button asChild>
+            <Link href="/campaigns/new">
+              <Plus className="h-4 w-4 mr-1.5" />
+              New campaign
+            </Link>
+          </Button>
         ) : (
-          <Link
-            href="/connections"
-            className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-          >
-            Connect Klaviyo first
-          </Link>
+          <Button variant="outline" asChild>
+            <Link href="/connections">
+              Connect Klaviyo first
+            </Link>
+          </Button>
         )}
       </div>
 

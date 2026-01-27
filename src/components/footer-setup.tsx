@@ -1,6 +1,19 @@
 'use client'
 
 import { useState } from 'react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
+import { Check, ChevronLeft } from 'lucide-react'
 
 interface EmailSection {
   id: string
@@ -80,14 +93,12 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
     setStep('confirm')
   }
 
-  // Get selected sections in order (by index)
   const getSelectedSectionsOrdered = () => {
     return sections
       .filter(s => selectedSections.has(s.id))
       .sort((a, b) => a.index - b.index)
   }
 
-  // Combine selected sections' HTML
   const getCombinedHtml = () => {
     return getSelectedSectionsOrdered()
       .map(s => s.html)
@@ -136,36 +147,25 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">
-              {step === 'input' && (hasFooter ? 'Update Footer' : 'Setup Footer')}
-              {step === 'select' && 'Select Footer Sections'}
-              {step === 'confirm' && 'Confirm Footer'}
-            </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {step === 'input' && 'Paste a Klaviyo campaign URL to extract your footer'}
-              {step === 'select' && 'Select the sections that make up your footer'}
-              {step === 'confirm' && 'Is this the correct footer?'}
-            </p>
-          </div>
-          <button
-            onClick={onCancel}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>
+            {step === 'input' && (hasFooter ? 'Update Footer' : 'Setup Footer')}
+            {step === 'select' && 'Select Footer Sections'}
+            {step === 'confirm' && 'Confirm Footer'}
+          </DialogTitle>
+          <DialogDescription>
+            {step === 'input' && 'Paste a Klaviyo campaign URL to extract your footer'}
+            {step === 'select' && 'Select the sections that make up your footer'}
+            {step === 'confirm' && 'Is this the correct footer?'}
+          </DialogDescription>
+        </DialogHeader>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto py-4">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
+            <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
               {error}
             </div>
           )}
@@ -173,38 +173,37 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
           {/* Step 1: Input URL */}
           {step === 'input' && (
             <div className="space-y-4">
-              <div>
-                <label htmlFor="preview-url" className="block text-sm font-medium mb-1">
-                  Campaign URL
-                </label>
-                <input
+              <div className="space-y-2">
+                <Label htmlFor="preview-url">Campaign URL</Label>
+                <Input
                   id="preview-url"
                   type="text"
                   value={previewUrl}
                   onChange={(e) => setPreviewUrl(e.target.value)}
                   placeholder="https://www.klaviyo.com/campaign/..."
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white text-sm"
                 />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-muted-foreground">
                   Paste any Klaviyo campaign URL that contains your footer
                 </p>
               </div>
 
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-                <h3 className="text-sm font-medium mb-2">How to get the campaign URL:</h3>
-                <ol className="text-sm text-gray-600 dark:text-gray-400 space-y-1 list-decimal list-inside">
-                  <li>Go to Klaviyo Campaigns</li>
-                  <li>Open any campaign that has your footer</li>
-                  <li>Copy the URL from your browser address bar</li>
-                </ol>
-              </div>
+              <Card>
+                <CardContent className="p-4">
+                  <h3 className="text-sm font-medium mb-2">How to get the campaign URL:</h3>
+                  <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+                    <li>Go to Klaviyo Campaigns</li>
+                    <li>Open any campaign that has your footer</li>
+                    <li>Copy the URL from your browser address bar</li>
+                  </ol>
+                </CardContent>
+              </Card>
             </div>
           )}
 
           {/* Step 2: Select Section */}
           {step === 'select' && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-sm text-muted-foreground">
                 Found {sections.length} section{sections.length !== 1 ? 's' : ''} in the email. Select all sections that make up your footer:
               </p>
               <div className="space-y-3">
@@ -214,33 +213,33 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
                     <button
                       key={section.id}
                       onClick={() => toggleSection(section)}
-                      className={`w-full text-left p-4 border rounded-lg transition-colors ${
+                      className={cn(
+                        'w-full text-left p-4 border rounded-lg transition-colors',
                         isSelected
-                          ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800'
-                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500'
-                      }`}
+                          ? 'border-primary bg-muted'
+                          : 'border-border hover:border-muted-foreground'
+                      )}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center ${
+                        <div className={cn(
+                          'flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center',
                           isSelected
-                            ? 'bg-black dark:bg-white border-black dark:border-white'
-                            : 'border-gray-300 dark:border-gray-600'
-                        }`}>
+                            ? 'bg-primary border-primary'
+                            : 'border-muted-foreground/30'
+                        )}>
                           {isSelected && (
-                            <svg className="w-4 h-4 text-white dark:text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
+                            <Check className="h-4 w-4 text-primary-foreground" />
                           )}
                         </div>
-                        <span className="flex-shrink-0 w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-sm font-medium">
+                        <span className="flex-shrink-0 w-8 h-8 bg-muted rounded-full flex items-center justify-center text-sm font-medium">
                           {section.index + 1}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                          <p className="text-sm text-muted-foreground line-clamp-2">
                             {section.preview || '(No text content)'}
                           </p>
                           <div
-                            className="mt-2 border border-gray-200 dark:border-gray-700 rounded overflow-hidden bg-white"
+                            className="mt-2 border rounded overflow-hidden bg-white"
                             style={{ maxHeight: '150px', overflow: 'hidden' }}
                           >
                             <div
@@ -261,19 +260,19 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
           {/* Step 3: Confirm */}
           {step === 'confirm' && selectedSections.size > 0 && (
             <div className="space-y-4">
-              <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white">
-                <div className="p-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+              <Card>
+                <CardHeader className="pb-2">
                   <p className="text-sm font-medium">
                     Preview of selected footer ({selectedSections.size} section{selectedSections.size !== 1 ? 's' : ''}):
                   </p>
-                </div>
-                <div className="p-4">
+                </CardHeader>
+                <CardContent className="bg-white rounded-b-lg">
                   <div
                     dangerouslySetInnerHTML={{ __html: getCombinedHtml() }}
                   />
-                </div>
-              </div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+                </CardContent>
+              </Card>
+              <p className="text-sm text-muted-foreground">
                 This footer will be automatically added to all emails exported from this Klaviyo account.
               </p>
             </div>
@@ -281,54 +280,46 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-800 flex justify-between">
+        <div className="flex justify-between pt-4 border-t">
           <div>
             {(step === 'select' || step === 'confirm') && (
-              <button
-                onClick={goBack}
-                className="px-4 py-2 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-              >
+              <Button variant="ghost" onClick={goBack}>
+                <ChevronLeft className="h-4 w-4 mr-2" />
                 Back
-              </button>
+              </Button>
             )}
           </div>
           <div className="flex gap-3">
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-            >
+            <Button variant="outline" onClick={onCancel}>
               Cancel
-            </button>
+            </Button>
             {step === 'input' && (
-              <button
+              <Button
                 onClick={fetchSections}
                 disabled={loading || !previewUrl.trim()}
-                className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50"
               >
                 {loading ? 'Fetching...' : 'Fetch Email'}
-              </button>
+              </Button>
             )}
             {step === 'select' && (
-              <button
+              <Button
                 onClick={proceedToConfirm}
                 disabled={selectedSections.size === 0}
-                className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50"
               >
                 Continue ({selectedSections.size} selected)
-              </button>
+              </Button>
             )}
             {step === 'confirm' && (
-              <button
+              <Button
                 onClick={saveFooter}
                 disabled={saving}
-                className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-sm font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Save Footer'}
-              </button>
+              </Button>
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

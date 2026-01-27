@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import myLogo from '@/assets/logo.png'
 import Image from 'next/image'
+import { Button } from '@/components/ui/button'
 
 export default async function Home() {
   const supabase = await createClient()
@@ -17,39 +18,36 @@ export default async function Home() {
       <div className="max-w-md w-full space-y-8 text-center">
         <div>
           <Image src={myLogo} alt="logo" className="loginLogo"></Image>
-          <p className="mt-4 text-lg text-gray-600 dark:text-gray-400 loginText">
+          <p className="mt-4 text-lg text-muted-foreground loginText">
             Transform your Figma email designs into Klaviyo drafts in seconds.
           </p>
         </div>
 
         <div className="space-y-4">
-          <Link
-            href="/login"
-            className="block w-full rounded-lg bg-black px-4 py-3 text-white font-medium hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200 transition-colors"
-          >
-            Get started
-          </Link>
+          <Button asChild className="w-full" size="lg">
+            <Link href="/login">Get started</Link>
+          </Button>
         </div>
 
-        <div className="pt-8 border-t border-gray-200 dark:border-gray-800">
-          <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
+        <div className="pt-8 border-t">
+          <h2 className="text-sm font-medium text-muted-foreground mb-4">
             How it works
           </h2>
-          <ol className="text-left space-y-3 text-sm text-gray-600 dark:text-gray-400">
+          <ol className="text-left space-y-3 text-sm text-muted-foreground">
             <li className="flex gap-3">
-              <span className="font-mono text-black dark:text-white">1.</span>
+              <span className="font-mono text-foreground">1.</span>
               Connect your Klaviyo account
             </li>
             <li className="flex gap-3">
-              <span className="font-mono text-black dark:text-white">2.</span>
+              <span className="font-mono text-foreground">2.</span>
               Paste your Figma design URL
             </li>
             <li className="flex gap-3">
-              <span className="font-mono text-black dark:text-white">3.</span>
+              <span className="font-mono text-foreground">3.</span>
               Add links to each section
             </li>
             <li className="flex gap-3">
-              <span className="font-mono text-black dark:text-white">4.</span>
+              <span className="font-mono text-foreground">4.</span>
               Export as a Klaviyo draft
             </li>
           </ol>

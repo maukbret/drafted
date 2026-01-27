@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getValidKlaviyoToken } from '@/lib/klaviyo'
 import { NextRequest } from 'next/server'
 
 export async function POST(request: NextRequest) {
@@ -150,44 +151,13 @@ export async function POST(request: NextRequest) {
         const imagesData = await imagesResponse.json()
         const images = imagesData.images || {}
 
-        // Check if Klaviyo token is expired and refresh if needed
-        let klaviyoToken = klaviyoConnection.access_token
-        const expiresAt = new Date(klaviyoConnection.expires_at)
-        const now = new Date()
+        // Get valid Klaviyo token (refreshes automatically if needed)
+        const klaviyoToken = await getValidKlaviyoToken(supabase, klaviyoConnection.id)
 
-        if (expiresAt <= now && klaviyoConnection.refresh_token) {
-          send({ type: 'progress', message: 'Refreshing Klaviyo token...' })
-
-          const refreshResponse = await fetch('https://a.klaviyo.com/oauth/token', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-              grant_type: 'refresh_token',
-              refresh_token: klaviyoConnection.refresh_token,
-              client_id: process.env.KLAVIYO_CLIENT_ID!,
-              client_secret: process.env.KLAVIYO_CLIENT_SECRET!,
-            }),
-          })
-
-          if (refreshResponse.ok) {
-            const tokens = await refreshResponse.json()
-            klaviyoToken = tokens.access_token
-
-            await supabase
-              .from('klaviyo_connections')
-              .update({
-                access_token: tokens.access_token,
-                refresh_token: tokens.refresh_token || klaviyoConnection.refresh_token,
-                expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-              })
-              .eq('id', klaviyoConnection.id)
-          } else {
-            send({ type: 'error', message: 'Klaviyo token expired. Please reconnect Klaviyo.' })
-            controller.close()
-            return
-          }
+        if (!klaviyoToken) {
+          send({ type: 'error', message: 'Klaviyo token expired. Please reconnect Klaviyo.' })
+          controller.close()
+          return
         }
 
         // Upload each image to Klaviyo

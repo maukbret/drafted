@@ -1,5 +1,9 @@
 'use client'
 
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardFooter } from '@/components/ui/card'
+import { Loader2, Check, AlertCircle, X, ExternalLink } from 'lucide-react'
+
 export interface ProgressStep {
   id: string
   label: string
@@ -26,9 +30,8 @@ export function ProgressToast({
     : null
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-80 bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+    <Card className="fixed bottom-4 right-4 z-50 w-80 shadow-xl">
+      <CardHeader className="py-3 px-4 flex flex-row items-center justify-between space-y-0 border-b">
         <span className="font-medium text-sm">
           {error
             ? 'Error'
@@ -37,24 +40,16 @@ export function ProgressToast({
               : 'Creating campaign...'}
         </span>
         {(isComplete || error) && (
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
         )}
-      </div>
+      </CardHeader>
 
-      {/* Steps */}
-      <div className="px-4 py-3 space-y-2">
+      <CardContent className="py-3 px-4 space-y-2">
         {error ? (
-          <div className="flex items-start gap-2 text-red-600 dark:text-red-400">
-            <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+          <div className="flex items-start gap-2 text-destructive">
+            <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
             <span className="text-sm">{error}</span>
           </div>
         ) : (
@@ -62,56 +57,45 @@ export function ProgressToast({
             <div
               key={step.id}
               className={`flex items-center gap-2 text-sm ${
-                step.status === 'complete' ? 'text-gray-400 dark:text-gray-500' : ''
+                step.status === 'complete' ? 'text-muted-foreground' : ''
               }`}
             >
               {step.status === 'pending' && (
                 <div className="w-5 h-5 flex items-center justify-center">
-                  <div className="w-3 h-3 rounded-full border-2 border-gray-300 dark:border-gray-600" />
+                  <div className="w-3 h-3 rounded-full border-2 border-muted-foreground/30" />
                 </div>
               )}
               {step.status === 'in_progress' && (
                 <div className="w-5 h-5 flex items-center justify-center">
-                  <svg className="w-4 h-4 animate-spin text-black dark:text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 </div>
               )}
               {step.status === 'complete' && (
                 <div className="w-5 h-5 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+                  <Check className="h-4 w-4 text-green-500" />
                 </div>
               )}
               <span>{step.label}</span>
             </div>
           ))
         )}
-      </div>
+      </CardContent>
 
-      {/* Footer with actions */}
       {(isComplete || error) && (
-        <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+        <CardFooter className="py-3 px-4 border-t flex justify-end gap-2">
           {klaviyoUrl && !error && (
-            <a
-              href={klaviyoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 text-sm bg-black dark:bg-white text-white dark:text-black rounded font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
-            >
-              View in Klaviyo
-            </a>
+            <Button size="sm" asChild>
+              <a href={klaviyoUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-4 w-4 mr-2" />
+                View in Klaviyo
+              </a>
+            </Button>
           )}
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          >
+          <Button variant="outline" size="sm" onClick={onClose}>
             Close
-          </button>
-        </div>
+          </Button>
+        </CardFooter>
       )}
-    </div>
+    </Card>
   )
 }

@@ -2,6 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { CampaignWizard } from '@/components/campaign-wizard'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { ChevronLeft } from 'lucide-react'
 
 interface CampaignPageProps {
   params: Promise<{ id: string }>
@@ -59,11 +62,9 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
         <div className="mb-6">
           <Link
             href="/campaigns"
-            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
+            className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
+            <ChevronLeft className="w-4 h-4" />
             Back to Campaigns
           </Link>
         </div>
@@ -72,42 +73,47 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
           <h1 className="text-2xl font-bold mb-2">{campaign.name}</h1>
 
           <div className="flex items-center gap-3 mb-6">
-            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-              campaign.status === 'sent'
-                ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400'
-            }`}>
+            <Badge
+              variant="default"
+              className={
+                campaign.status === 'sent'
+                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100'
+                  : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-yellow-100'
+              }
+            >
               {campaign.status === 'sent' ? 'Sent' : 'Scheduled'}
-            </span>
+            </Badge>
             {campaignWithRelations.klaviyo_connections?.account_name && (
-              <span className="text-sm text-gray-500 dark:text-gray-400">
+              <span className="text-sm text-muted-foreground">
                 {campaignWithRelations.klaviyo_connections.account_name}
               </span>
             )}
           </div>
 
-          <div className="border border-gray-200 dark:border-gray-800 rounded-xl divide-y divide-gray-200 dark:divide-gray-800">
-            <div className="p-4">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Subject line</p>
-              <p className="font-medium">{campaign.subject_line}</p>
-            </div>
-            {campaign.preview_text && (
+          <Card>
+            <CardContent className="p-0 divide-y">
               <div className="p-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Preview text</p>
-                <p>{campaign.preview_text}</p>
+                <p className="text-sm text-muted-foreground mb-1">Subject line</p>
+                <p className="font-medium">{campaign.subject_line}</p>
               </div>
-            )}
-            {campaign.scheduled_at && (
+              {campaign.preview_text && (
+                <div className="p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Preview text</p>
+                  <p>{campaign.preview_text}</p>
+                </div>
+              )}
+              {campaign.scheduled_at && (
+                <div className="p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Scheduled for</p>
+                  <p>{new Date(campaign.scheduled_at).toLocaleString('en-GB')}</p>
+                </div>
+              )}
               <div className="p-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Scheduled for</p>
-                <p>{new Date(campaign.scheduled_at).toLocaleString('en-GB')}</p>
+                <p className="text-sm text-muted-foreground mb-1">Created</p>
+                <p>{new Date(campaign.created_at).toLocaleString('en-GB')}</p>
               </div>
-            )}
-            <div className="p-4">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Created</p>
-              <p>{new Date(campaign.created_at).toLocaleString('en-GB')}</p>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     )
@@ -131,11 +137,9 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
       <div className="mb-6">
         <Link
           href="/campaigns"
-          className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
+          className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+          <ChevronLeft className="w-4 h-4" />
           Back to Campaigns
         </Link>
       </div>

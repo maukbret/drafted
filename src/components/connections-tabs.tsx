@@ -3,6 +3,13 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { FooterSetup } from './footer-setup'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { RefreshCw, Loader2 } from 'lucide-react'
 
 interface KlaviyoConnection {
   id: string
@@ -23,13 +30,42 @@ interface ConnectionsTabsProps {
   figmaConnection: FigmaConnection | null
 }
 
+type ConnectionStatus = 'active' | 'expired' | 'error' | 'checking' | 'unknown'
+
 export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: ConnectionsTabsProps) {
-  const [activeTab, setActiveTab] = useState<'klaviyo' | 'figma'>('klaviyo')
   const [accountName, setAccountName] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [footerSetupConnection, setFooterSetupConnection] = useState<KlaviyoConnection | null>(null)
+  const [connectionStatuses, setConnectionStatuses] = useState<Record<string, ConnectionStatus>>({})
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const router = useRouter()
+
+  const refreshConnectionStatuses = async () => {
+    setIsRefreshing(true)
+
+    const checkingStatuses: Record<string, ConnectionStatus> = {}
+    klaviyoConnections.forEach(conn => {
+      checkingStatuses[conn.id] = 'checking'
+    })
+    setConnectionStatuses(checkingStatuses)
+
+    try {
+      const response = await fetch('/api/connections/klaviyo/status')
+      if (response.ok) {
+        const { statuses } = await response.json()
+        const newStatuses: Record<string, ConnectionStatus> = {}
+        statuses.forEach((s: { id: string; status: ConnectionStatus }) => {
+          newStatuses[s.id] = s.status
+        })
+        setConnectionStatuses(newStatuses)
+      }
+    } catch (err) {
+      console.error('Failed to refresh statuses:', err)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   const startKlaviyoOAuth = () => {
     if (!accountName.trim()) {
@@ -37,10 +73,8 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
       return
     }
 
-    // Store account name in cookie for the callback
     document.cookie = `klaviyo_account_name=${encodeURIComponent(accountName.trim())}; path=/; max-age=600; SameSite=Lax`
 
-    // Generate PKCE values
     const codeVerifier = generateCodeVerifier()
     document.cookie = `klaviyo_code_verifier=${codeVerifier}; path=/; max-age=600; SameSite=Lax`
 
@@ -99,165 +133,211 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
     }
   }
 
+  const getStatusBadge = (connectionId: string) => {
+    const status = connectionStatuses[connectionId]
+    if (!status || status === 'unknown') return null
+
+    if (status === 'checking') {
+      return (
+        <Badge variant="secondary" className="gap-1">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Checking
+        </Badge>
+      )
+    }
+
+    if (status === 'active') {
+      return (
+        <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100">
+          <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1" />
+          Active
+        </Badge>
+      )
+    }
+
+    if (status === 'expired') {
+      return (
+        <Badge variant="destructive">
+          <span className="w-1.5 h-1.5 bg-red-300 rounded-full mr-1" />
+          Expired
+        </Badge>
+      )
+    }
+
+    return (
+      <Badge className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-yellow-100">
+        <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full mr-1" />
+        Error
+      </Badge>
+    )
+  }
+
   return (
     <div>
-      {/* Tabs */}
-      <div className="flex gap-4 border-b border-gray-200 dark:border-gray-800 mb-6">
-        <button
-          onClick={() => setActiveTab('klaviyo')}
-          className={`pb-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'klaviyo'
-              ? 'border-black dark:border-white text-black dark:text-white'
-              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-          }`}
-        >
-          Klaviyo ({klaviyoConnections.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('figma')}
-          className={`pb-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'figma'
-              ? 'border-black dark:border-white text-black dark:text-white'
-              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-          }`}
-        >
-          Figma ({figmaConnection ? 1 : 0})
-        </button>
+      {/* Page header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold">Connections</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Manage your Klaviyo and Figma integrations
+          </p>
+        </div>
+
+        {klaviyoConnections.length > 0 && (
+          <Button
+            variant="outline"
+            onClick={refreshConnectionStatuses}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Checking...' : 'Check status'}
+          </Button>
+        )}
       </div>
 
-      {/* Klaviyo tab content */}
-      {activeTab === 'klaviyo' && (
-        <div className="space-y-4">
+      <Tabs defaultValue="klaviyo" className="w-full">
+        <TabsList className="mb-6">
+          <TabsTrigger value="klaviyo">
+            Klaviyo ({klaviyoConnections.length})
+          </TabsTrigger>
+          <TabsTrigger value="figma">
+            Figma ({figmaConnection ? 1 : 0})
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Klaviyo tab content */}
+        <TabsContent value="klaviyo" className="space-y-4">
           {klaviyoConnections.length > 0 && (
-            <div className="border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800">
-              {klaviyoConnections.map((conn) => (
-                <div key={conn.id} className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Added {new Date(conn.created_at).toLocaleDateString('en-GB')}
-                      </p>
+            <Card>
+              <CardContent className="p-0 divide-y">
+                {klaviyoConnections.map((conn) => (
+                  <div key={conn.id} className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Added {new Date(conn.created_at).toLocaleDateString('en-GB')}
+                          </p>
+                        </div>
+                        {getStatusBadge(conn.id)}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => deleteConnection('klaviyo', conn.id)}
+                        disabled={deletingId === conn.id}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        {deletingId === conn.id ? 'Removing...' : 'Remove'}
+                      </Button>
                     </div>
-                    <button
-                      onClick={() => deleteConnection('klaviyo', conn.id)}
-                      disabled={deletingId === conn.id}
-                      className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50"
-                    >
-                      {deletingId === conn.id ? 'Removing...' : 'Remove'}
-                    </button>
-                  </div>
-                  {/* Footer status */}
-                  <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {conn.hasFooter ? (
-                        <>
-                          <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                          <span className="text-sm text-gray-600 dark:text-gray-400">Footer configured</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="w-2 h-2 bg-gray-300 dark:bg-gray-600 rounded-full"></span>
-                          <span className="text-sm text-gray-500 dark:text-gray-400">No footer set up</span>
-                        </>
-                      )}
+                    {/* Footer status */}
+                    <div className="mt-3 pt-3 border-t flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {conn.hasFooter ? (
+                          <>
+                            <span className="w-2 h-2 bg-green-500 rounded-full" />
+                            <span className="text-sm text-muted-foreground">Footer configured</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
+                            <span className="text-sm text-muted-foreground">No footer set up</span>
+                          </>
+                        )}
+                      </div>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        onClick={() => setFooterSetupConnection(conn)}
+                        className="h-auto p-0"
+                      >
+                        {conn.hasFooter ? 'Update footer' : 'Setup footer'}
+                      </Button>
                     </div>
-                    <button
-                      onClick={() => setFooterSetupConnection(conn)}
-                      className="text-sm text-black dark:text-white hover:underline"
-                    >
-                      {conn.hasFooter ? 'Update footer' : 'Setup footer'}
-                    </button>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </CardContent>
+            </Card>
           )}
 
           {showAddForm ? (
-            <div className="p-4 border border-gray-200 dark:border-gray-800 rounded-xl space-y-4">
-              <div>
-                <label htmlFor="account-name" className="block text-sm font-medium mb-1">
-                  Account name
-                </label>
-                <input
-                  id="account-name"
-                  type="text"
-                  value={accountName}
-                  onChange={(e) => setAccountName(e.target.value)}
-                  placeholder="e.g., Client A, My Store"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white text-sm"
-                />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  Give this connection a name so you can identify it later
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={startKlaviyoOAuth}
-                  disabled={!accountName.trim()}
-                  className="btn-primary"
-                >
-                  Connect to Klaviyo
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAddForm(false)
-                    setAccountName('')
-                  }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+            <Card>
+              <CardContent className="p-4 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="account-name">Account name</Label>
+                  <Input
+                    id="account-name"
+                    type="text"
+                    value={accountName}
+                    onChange={(e) => setAccountName(e.target.value)}
+                    placeholder="e.g., Client A, My Store"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Give this connection a name so you can identify it later
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <Button
+                    onClick={startKlaviyoOAuth}
+                    disabled={!accountName.trim()}
+                  >
+                    Connect to Klaviyo
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowAddForm(false)
+                      setAccountName('')
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ) : (
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="btn-primary"
-            >
+            <Button onClick={() => setShowAddForm(true)}>
               Add Klaviyo account
-            </button>
+            </Button>
           )}
-        </div>
-      )}
+        </TabsContent>
 
-      {/* Figma tab content */}
-      {activeTab === 'figma' && (
-        <div className="space-y-4">
+        {/* Figma tab content */}
+        <TabsContent value="figma" className="space-y-4">
           {figmaConnection ? (
-            <div className="border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
-              <div className="flex items-center justify-between p-4">
+            <Card>
+              <CardContent className="flex items-center justify-between p-4">
                 <div>
                   <p className="font-medium">{figmaConnection.figma_email || 'Figma account'}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-muted-foreground">
                     Added {new Date(figmaConnection.created_at).toLocaleDateString('en-GB')}
                   </p>
                 </div>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => deleteConnection('figma', figmaConnection.id)}
                   disabled={deletingId === figmaConnection.id}
-                  className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50"
+                  className="text-destructive hover:text-destructive"
                 >
                   {deletingId === figmaConnection.id ? 'Removing...' : 'Remove'}
-                </button>
-              </div>
-            </div>
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              <p className="text-sm text-muted-foreground mb-4">
                 Connect your Figma account to import designs.
               </p>
-              <button
-                onClick={startFigmaOAuth}
-                className="btn-primary"
-              >
+              <Button onClick={startFigmaOAuth}>
                 Connect Figma
-              </button>
+              </Button>
             </div>
           )}
-        </div>
-      )}
+        </TabsContent>
+      </Tabs>
 
       {/* Footer Setup Modal */}
       {footerSetupConnection && (

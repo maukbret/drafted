@@ -1,30 +1,47 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { UserSettingsModal } from './user-settings-modal'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import { Mail, Image, Link2, Settings, LogOut } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+interface UserProfile {
+  full_name: string
+  avatar_url: string | null
+}
 
 interface SidebarLayoutProps {
   children: React.ReactNode
   userEmail: string
+  profile: UserProfile | null
 }
 
-export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
+export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutProps) {
   const pathname = usePathname()
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  const displayName = profile?.full_name || userEmail
+  const avatarUrl = profile?.avatar_url || null
 
   const navItems = [
-    { href: '/campaigns', label: 'Campaigns', icon: CampaignIcon },
-    { href: '/images', label: 'Upload images', icon: ImageIcon },
-    { href: '/connections', label: 'Connections', icon: LinkIcon },
+    { href: '/campaigns', label: 'Campaigns', icon: Mail },
+    { href: '/images', label: 'Upload images', icon: Image },
+    { href: '/connections', label: 'Connections', icon: Link2 },
   ]
 
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside className="w-56 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 sticky top-0 h-screen">
+      <aside className="w-56 flex-shrink-0 border-r bg-muted/30 sticky top-0 h-screen">
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="p-4 border-b border-gray-200 dark:border-gray-800">
-            <img className="logo-img" src="https://i.postimg.cc/mk26ky4p/Frame-3.png" width="120px" alt="logo"></img>
+          <div className="p-4 border-b">
+            <img className="logo-img" src="https://i.postimg.cc/mk26ky4p/Frame-3.png" width="120px" alt="logo" />
           </div>
 
           {/* Navigation */}
@@ -35,13 +52,14 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                     isActive
-                      ? 'nav-item-active'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800'
-                  }`}
+                      ? 'bg-background text-foreground shadow-sm border'
+                      : 'text-muted-foreground hover:bg-background hover:text-foreground'
+                  )}
                 >
-                  <item.icon className="w-4 h-4" />
+                  <item.icon className="h-4 w-4" />
                   {item.label}
                 </Link>
               )
@@ -49,22 +67,35 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
           </nav>
 
           {/* User */}
-          <div className="p-3 border-t border-gray-200 dark:border-gray-800">
-            <div className="flex items-center gap-3 px-3 py-2">
-              <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-700 flex items-center justify-center text-xs font-medium">
-                {userEmail.charAt(0).toUpperCase()}
-              </div>
+          <div className="p-3 border-t">
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-background transition-colors text-left"
+            >
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={avatarUrl || undefined} />
+                <AvatarFallback className="text-xs">
+                  {displayName.charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{userEmail}</p>
+                <p className="text-sm font-medium truncate">{displayName}</p>
+                {profile?.full_name && (
+                  <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
+                )}
               </div>
-            </div>
+              <Settings className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            </button>
             <form action="/api/auth/signout" method="post">
-              <button
+              <Button
                 type="submit"
-                className="w-full mt-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-black dark:hover:text-white transition-colors text-left"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start mt-2 text-muted-foreground"
               >
+                <LogOut className="h-4 w-4 mr-2" />
                 Sign out
-              </button>
+              </Button>
             </form>
           </div>
         </div>
@@ -74,30 +105,15 @@ export function SidebarLayout({ children, userEmail }: SidebarLayoutProps) {
       <main className="flex-1 overflow-auto">
         {children}
       </main>
+
+      {/* Settings Modal */}
+      <UserSettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        currentName={profile?.full_name || ''}
+        currentAvatarUrl={avatarUrl}
+        userEmail={userEmail}
+      />
     </div>
-  )
-}
-
-function LinkIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-    </svg>
-  )
-}
-
-function CampaignIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-    </svg>
-  )
-}
-
-function ImageIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-    </svg>
   )
 }

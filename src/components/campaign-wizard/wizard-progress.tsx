@@ -1,5 +1,7 @@
 'use client'
 
+import { cn } from '@/lib/utils'
+
 interface WizardProgressProps {
   currentStep: number
   steps: { label: string; description?: string }[]
@@ -15,11 +17,10 @@ export function WizardProgress({ currentStep, steps }: WizardProgressProps) {
         return (
           <div
             key={index}
-            className="flex-1 rounded-full transition-colors"
-            style={{
-              backgroundColor: isActiveOrCompleted ? '#FF4702' : 'rgba(0, 0, 0, 0.1)',
-              height: 5,
-            }}
+            className={cn(
+              'flex-1 h-1.5 rounded-full transition-colors',
+              isActiveOrCompleted ? 'bg-[#FF4702]' : 'bg-muted'
+            )}
           />
         )
       })}

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getValidKlaviyoToken } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 import * as cheerio from 'cheerio'
 
@@ -33,10 +34,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get Klaviyo connection to use their API
+    // Verify user owns this connection
     const { data: connection } = await supabase
       .from('klaviyo_connections')
-      .select('access_token, refresh_token, expires_at')
+      .select('id')
       .eq('id', connectionId)
       .eq('user_id', user.id)
       .single()
@@ -45,40 +46,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Klaviyo connection not found' }, { status: 404 })
     }
 
-    // Check if token is expired and refresh if needed
-    let klaviyoToken = connection.access_token
-    const expiresAt = new Date(connection.expires_at)
-    const now = new Date()
+    // Get valid token (refreshes automatically if needed)
+    const klaviyoToken = await getValidKlaviyoToken(supabase, connectionId)
 
-    if (expiresAt <= now && connection.refresh_token) {
-      const refreshResponse = await fetch('https://a.klaviyo.com/oauth/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: connection.refresh_token,
-          client_id: process.env.KLAVIYO_CLIENT_ID!,
-          client_secret: process.env.KLAVIYO_CLIENT_SECRET!,
-        }),
-      })
-
-      if (refreshResponse.ok) {
-        const tokens = await refreshResponse.json()
-        klaviyoToken = tokens.access_token
-
-        await supabase
-          .from('klaviyo_connections')
-          .update({
-            access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token || connection.refresh_token,
-            expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-          })
-          .eq('id', connectionId)
-      } else {
-        return NextResponse.json({ error: 'Klaviyo token expired. Please reconnect.' }, { status: 401 })
-      }
+    if (!klaviyoToken) {
+      return NextResponse.json({ error: 'Klaviyo token expired. Please reconnect.' }, { status: 401 })
     }
 
     // Get campaign details to find the template/message

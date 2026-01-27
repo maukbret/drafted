@@ -14,8 +14,15 @@ export default async function AppLayout({
     redirect('/login')
   }
 
+  // Fetch user profile
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name, avatar_url')
+    .eq('id', user.id)
+    .single()
+
   return (
-    <SidebarLayout userEmail={user.email || ''}>
+    <SidebarLayout userEmail={user.email || ''} profile={profile}>
       {children}
     </SidebarLayout>
   )
