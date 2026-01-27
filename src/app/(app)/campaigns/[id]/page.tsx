@@ -55,8 +55,14 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     projects: project,
   }
 
-  // If campaign is already sent or scheduled, show a different view
+  // If campaign is already sent or scheduled, show a read-only view
   if (campaign.status === 'sent' || campaign.status === 'scheduled') {
+    // Get frames for email preview
+    const frames = project?.frames?.sort((a: any, b: any) => a.display_order - b.display_order) || []
+
+    // Get audience info
+    const includedAudiences = campaign.included_audiences || []
+
     return (
       <div className="p-8">
         <div className="mb-6">
@@ -69,51 +75,94 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
           </Link>
         </div>
 
-        <div className="max-w-2xl">
-          <h1 className="text-2xl font-bold mb-2">{campaign.name}</h1>
+        <div className="flex items-center gap-3 mb-6">
+          <h1 className="text-2xl font-bold">{campaign.name}</h1>
+          <Badge
+            variant="default"
+            className={
+              campaign.status === 'sent'
+                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100'
+                : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-yellow-100'
+            }
+          >
+            {campaign.status === 'sent' ? 'Sent' : 'Scheduled'}
+          </Badge>
+        </div>
 
-          <div className="flex items-center gap-3 mb-6">
-            <Badge
-              variant="default"
-              className={
-                campaign.status === 'sent'
-                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100'
-                  : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-yellow-100'
-              }
-            >
-              {campaign.status === 'sent' ? 'Sent' : 'Scheduled'}
-            </Badge>
-            {campaignWithRelations.klaviyo_connections?.account_name && (
-              <span className="text-sm text-muted-foreground">
-                {campaignWithRelations.klaviyo_connections.account_name}
-              </span>
-            )}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Left side: Campaign details */}
+          <div>
+            <Card>
+              <CardContent className="p-0 divide-y">
+                <div className="p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Subject line</p>
+                  <p className="font-medium">{campaign.subject_line}</p>
+                </div>
+                {campaign.preview_text && (
+                  <div className="p-4">
+                    <p className="text-sm text-muted-foreground mb-1">Preview text</p>
+                    <p>{campaign.preview_text}</p>
+                  </div>
+                )}
+                {includedAudiences.length > 0 && (
+                  <div className="p-4">
+                    <p className="text-sm text-muted-foreground mb-2">Sent to</p>
+                    <div className="flex flex-wrap gap-2">
+                      {includedAudiences.map((audience: any) => (
+                        <Badge key={audience.id} variant="secondary">
+                          {audience.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {campaign.scheduled_at && (
+                  <div className="p-4">
+                    <p className="text-sm text-muted-foreground mb-1">
+                      {campaign.status === 'sent' ? 'Sent at' : 'Scheduled for'}
+                    </p>
+                    <p>{new Date(campaign.scheduled_at).toLocaleString('en-GB')}</p>
+                  </div>
+                )}
+                {campaignWithRelations.klaviyo_connections?.account_name && (
+                  <div className="p-4">
+                    <p className="text-sm text-muted-foreground mb-1">Klaviyo account</p>
+                    <p>{campaignWithRelations.klaviyo_connections.account_name}</p>
+                  </div>
+                )}
+                <div className="p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Created</p>
+                  <p>{new Date(campaign.created_at).toLocaleString('en-GB')}</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
-          <Card>
-            <CardContent className="p-0 divide-y">
-              <div className="p-4">
-                <p className="text-sm text-muted-foreground mb-1">Subject line</p>
-                <p className="font-medium">{campaign.subject_line}</p>
-              </div>
-              {campaign.preview_text && (
-                <div className="p-4">
-                  <p className="text-sm text-muted-foreground mb-1">Preview text</p>
-                  <p>{campaign.preview_text}</p>
+          {/* Right side: Email preview */}
+          <div>
+            <Card className="overflow-hidden">
+              <CardContent className="p-0">
+                <div className="max-h-[600px] overflow-y-auto bg-gray-100">
+                  {frames.length > 0 ? (
+                    <div className="flex flex-col">
+                      {frames.map((frame: any) => (
+                        <img
+                          key={frame.id}
+                          src={frame.klaviyo_image_url || frame.image_url}
+                          alt={frame.name}
+                          className="w-full"
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-muted-foreground">
+                      No preview available
+                    </div>
+                  )}
                 </div>
-              )}
-              {campaign.scheduled_at && (
-                <div className="p-4">
-                  <p className="text-sm text-muted-foreground mb-1">Scheduled for</p>
-                  <p>{new Date(campaign.scheduled_at).toLocaleString('en-GB')}</p>
-                </div>
-              )}
-              <div className="p-4">
-                <p className="text-sm text-muted-foreground mb-1">Created</p>
-                <p>{new Date(campaign.created_at).toLocaleString('en-GB')}</p>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     )

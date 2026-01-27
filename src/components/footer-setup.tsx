@@ -163,7 +163,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
         </DialogHeader>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto py-4">
+        <div className="flex-1 overflow-y-visible py-4">
           {error && (
             <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
               {error}

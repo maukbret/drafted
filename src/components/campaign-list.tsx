@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreVertical, Pencil, Trash2, Mail, ExternalLink } from 'lucide-react'
+import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, Folder, Calendar } from 'lucide-react'
 
 interface CampaignWithConnection extends Campaign {
   klaviyo_connections?: {
@@ -128,7 +128,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                 className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-1">
+                  <div className="flex items-center gap-3 mb-2">
                     <Link
                       href={`/campaigns/${campaign.id}`}
                       className="font-medium hover:underline truncate"
@@ -139,14 +139,19 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                       {status.label}
                     </Badge>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-3.5 text-xs text-muted-foreground">
                     {campaign.klaviyo_connections?.account_name && (
-                      <span>{campaign.klaviyo_connections.account_name}</span>
+                      <div className="flex items-center gap-1.5">
+                         <Folder className="h-3 w-3 text-foreground"></Folder>
+                      <span className="font-normal">{campaign.klaviyo_connections.account_name}</span>
+                      </div>
                     )}
-                    {campaign.subject_line && (
-                      <span className="truncate max-w-[200px]">{campaign.subject_line}</span>
-                    )}
-                    <span>{new Date(campaign.created_at).toLocaleDateString('en-GB')}</span>
+                    <div className="div-tiny"></div>
+<div className="flex items-center gap-1.5">
+                         <Calendar className="h-3 w-3 text-foreground"></Calendar>
+                      <span className="font-normal">{new Date(campaign.created_at).toLocaleDateString('en-GB')}</span>
+                      </div>
+                    
                   </div>
                 </div>
 
@@ -155,6 +160,13 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                     <Button asChild>
                       <Link href={`/campaigns/${campaign.id}`}>
                         Continue
+                      </Link>
+                    </Button>
+                  )}
+                  {(campaign.status === 'sent' || campaign.status === 'scheduled') && (
+                    <Button variant="secondary" asChild>
+                      <Link href={`/campaigns/${campaign.id}`}>
+                        View
                       </Link>
                     </Button>
                   )}
@@ -178,12 +190,22 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link href={`/campaigns/${campaign.id}`}>
-                          <Pencil className="h-4 w-4 mr-1.5" />
-                          Edit
-                        </Link>
-                      </DropdownMenuItem>
+                      {campaign.status !== 'sent' && campaign.status !== 'scheduled' && (
+                        <DropdownMenuItem asChild>
+                          <Link href={`/campaigns/${campaign.id}`}>
+                            <Pencil className="h-4 w-4 mr-1.5" />
+                            Edit
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {(campaign.status === 'sent' || campaign.status === 'scheduled') && (
+                        <DropdownMenuItem asChild>
+                          <Link href={`/campaigns/${campaign.id}`}>
+                            <Mail className="h-4 w-4 mr-1.5" />
+                            View details
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         onClick={() => setDeleteModalCampaign(campaign)}
                         className="text-destructive focus:text-destructive"
