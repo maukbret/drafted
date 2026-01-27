@@ -24,7 +24,7 @@ export default async function CampaignsPage() {
     .select('id, account_name')
     .eq('user_id', user.id)
 
-  const hasConnections = klaviyoConnections && klaviyoConnections.length > 0
+  const hasConnections = !!(klaviyoConnections && klaviyoConnections.length > 0)
 
   return (
     <div className="p-8">
