@@ -225,7 +225,7 @@ function parseEmailSections(html: string): EmailSection[] {
     const preview = textContent.substring(0, 150).replace(/\s+/g, ' ').trim()
 
     sections.push({
-      id: `table-${index}`,
+      id: `section-${index}`,
       html: outerHtml,
       preview: preview || '(No text content - may contain images)',
       index,

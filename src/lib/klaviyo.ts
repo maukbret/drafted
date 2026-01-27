@@ -62,7 +62,7 @@ async function refreshTokenIfNeeded(
     .single()
 
   if (error || !connection) {
-    console.error('Failed to fetch Klaviyo connection:', error)
+    console.error('[Klaviyo] Failed to fetch connection:', error)
     return null
   }
 
@@ -70,14 +70,26 @@ async function refreshTokenIfNeeded(
   const now = new Date()
   const timeUntilExpiry = expiresAt.getTime() - now.getTime()
 
+  console.log('[Klaviyo] Token check:', {
+    connectionId,
+    expiresAt: expiresAt.toISOString(),
+    now: now.toISOString(),
+    timeUntilExpiryMs: timeUntilExpiry,
+    timeUntilExpiryMin: Math.round(timeUntilExpiry / 60000),
+    hasRefreshToken: !!connection.refresh_token,
+  })
+
   // If token is still valid and not expiring soon, return it
   if (timeUntilExpiry > REFRESH_BUFFER_MS) {
+    console.log('[Klaviyo] Token still valid, returning existing token')
     return connection.access_token
   }
 
   // Token is expired or expiring soon - refresh it
+  console.log('[Klaviyo] Token expired or expiring soon, attempting refresh...')
+
   if (!connection.refresh_token) {
-    console.error('Token expired and no refresh token available for connection:', connectionId)
+    console.error('[Klaviyo] No refresh token available for connection:', connectionId)
     return null
   }
 
@@ -85,52 +97,80 @@ async function refreshTokenIfNeeded(
     const newTokens = await refreshKlaviyoToken(connection.refresh_token)
 
     if (!newTokens) {
+      console.error('[Klaviyo] Refresh returned null')
       return null
     }
 
+    console.log('[Klaviyo] Token refreshed successfully, new expires_in:', newTokens.expires_in)
+
     // Update the database with new tokens
+    const newExpiresAt = new Date(Date.now() + newTokens.expires_in * 1000).toISOString()
     const { error: updateError } = await supabase
       .from('klaviyo_connections')
       .update({
         access_token: newTokens.access_token,
         refresh_token: newTokens.refresh_token || connection.refresh_token,
-        expires_at: new Date(Date.now() + newTokens.expires_in * 1000).toISOString(),
+        expires_at: newExpiresAt,
       })
       .eq('id', connectionId)
 
     if (updateError) {
-      console.error('Failed to update tokens in database:', updateError)
+      console.error('[Klaviyo] Failed to update tokens in database:', updateError)
       // Still return the new token since refresh succeeded
+    } else {
+      console.log('[Klaviyo] Database updated with new tokens, expires_at:', newExpiresAt)
     }
 
     return newTokens.access_token
   } catch (err) {
-    console.error('Failed to refresh Klaviyo token:', err)
+    console.error('[Klaviyo] Failed to refresh token:', err)
     return null
   }
 }
 
 async function refreshKlaviyoToken(refreshToken: string): Promise<TokenRefreshResult | null> {
+  // Fall back to NEXT_PUBLIC_ variant for client ID (they should be the same value)
+  const clientId = process.env.KLAVIYO_CLIENT_ID || process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID
+  const clientSecret = process.env.KLAVIYO_CLIENT_SECRET
+
+  console.log('[Klaviyo] Attempting token refresh...')
+  console.log('[Klaviyo] Client ID present:', !!clientId)
+  console.log('[Klaviyo] Client Secret present:', !!clientSecret)
+
+  if (!clientId || !clientSecret) {
+    console.error('[Klaviyo] Missing client credentials for token refresh')
+    return null
+  }
+
+  // Use Basic Auth header (same as initial token exchange)
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+
   const response = await fetch('https://a.klaviyo.com/oauth/token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${credentials}`,
     },
     body: new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
-      client_id: process.env.KLAVIYO_CLIENT_ID!,
-      client_secret: process.env.KLAVIYO_CLIENT_SECRET!,
     }),
   })
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error('Klaviyo token refresh failed:', response.status, errorText)
+    console.error('[Klaviyo] Token refresh failed:', response.status, errorText)
     return null
   }
 
-  return response.json()
+  const tokens = await response.json()
+  console.log('[Klaviyo] Refresh successful, got new access_token and refresh_token:', {
+    hasAccessToken: !!tokens.access_token,
+    hasRefreshToken: !!tokens.refresh_token,
+    expiresIn: tokens.expires_in,
+  })
+
+  return tokens
 }
 
 /**

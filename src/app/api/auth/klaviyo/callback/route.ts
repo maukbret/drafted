@@ -32,9 +32,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const credentials = Buffer.from(
-      `${process.env.KLAVIYO_CLIENT_ID}:${process.env.KLAVIYO_CLIENT_SECRET}`
-    ).toString('base64')
+    const clientId = process.env.KLAVIYO_CLIENT_ID || process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID
+    const clientSecret = process.env.KLAVIYO_CLIENT_SECRET
+
+    if (!clientId || !clientSecret) {
+      console.error('Missing Klaviyo client credentials')
+      return NextResponse.redirect(new URL('/connections?error=missing_credentials', request.url))
+    }
+
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
 
     const tokenResponse = await fetch('https://a.klaviyo.com/oauth/token', {
       method: 'POST',

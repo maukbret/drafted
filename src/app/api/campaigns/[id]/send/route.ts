@@ -184,9 +184,39 @@ export async function POST(
           return
         }
 
-        // Fetch stored footer HTML for this Klaviyo account
+        // Fetch Klaviyo account info for sender details
+        let senderEmail = ''
+        let senderName = ''
+        try {
+          const accountResponse = await fetch('https://a.klaviyo.com/api/accounts/', {
+            headers: {
+              'Authorization': `Bearer ${klaviyoToken}`,
+              'Accept': 'application/json',
+              'revision': '2024-10-15',
+            },
+          })
+          if (accountResponse.ok) {
+            const accountData = await accountResponse.json()
+            const account = accountData.data?.[0]?.attributes
+            senderEmail = account?.contact_information?.default_sender_email || ''
+            senderName = account?.contact_information?.default_sender_name || account?.public_api_name || ''
+            console.log('Klaviyo account sender:', senderName, senderEmail)
+          }
+        } catch (err) {
+          console.error('Failed to fetch Klaviyo account info:', err)
+        }
+
+        if (!senderEmail) {
+          send({ step: 'error', message: 'Could not get sender email from Klaviyo. Please configure your sender email in Klaviyo settings.' })
+          controller.close()
+          return
+        }
+
+        // Fetch stored footer HTML for this Klaviyo account (if useCustomFooter is enabled)
+        const useCustomFooter = settings?.useCustomFooter !== false // Default to true if not specified
         let footerHtml = ''
-        if (klaviyoConnection.klaviyo_account_id) {
+
+        if (useCustomFooter && klaviyoConnection.klaviyo_account_id) {
           const { data: footer } = await supabase
             .from('klaviyo_footers')
             .select('footer_html')
@@ -200,6 +230,18 @@ export async function POST(
           }
         }
 
+        if (!useCustomFooter) {
+          // Use simple unsubscribe tag instead of custom footer (wrapped in a table)
+          footerHtml = `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px;">
+            <tr>
+              <td align="center" valign="top" style="padding: 20px; font-family: Arial, sans-serif; font-size: 12px; color: #666666;">
+                {% unsubscribe %} {{ organization.name }} {% current_year %} {{ organization.full_address }}
+              </td>
+            </tr>
+          </table>`
+          console.log('Using simple unsubscribe tag instead of custom footer')
+        }
+
         // Step 2: Upload images to Klaviyo (skip if already uploaded)
         if (imagesNeedUpload) {
           send({ step: 'images', status: 'in_progress' })
@@ -211,7 +253,6 @@ export async function POST(
         const uploadedFrames = await Promise.all(
           frames.map(async (frame: any) => {
             if (!frame.image_url) return frame
-
             // Skip upload if image was already uploaded to Klaviyo
             if (frame.klaviyo_image_url) {
               console.log('Skipping image upload, already exists:', frame.name)
@@ -425,8 +466,8 @@ export async function POST(
                       content: {
                         subject: campaign.subject_line,
                         preview_text: campaign.preview_text || '',
-                        from_email: '{{ organization.email }}',
-                        from_label: '{{ organization.name }}',
+                        from_email: senderEmail,
+                        from_label: senderName,
                       },
                     },
                   },
@@ -465,8 +506,8 @@ export async function POST(
                     content: {
                       subject: campaign.subject_line,
                       preview_text: campaign.preview_text || '',
-                      from_email: '{{ organization.email }}',
-                      from_label: '{{ organization.name }}',
+                      from_email: senderEmail,
+                      from_label: senderName,
                     },
                     render_options: {
                       shorten_links: true,
@@ -649,6 +690,41 @@ export async function POST(
 // Half-width threshold: 50% of 600px email width
 const HALF_WIDTH_THRESHOLD = 300
 
+// Clean up common HTML issues in footer that can break email rendering
+// Klaviyo footers often use "Ghost Table" patterns with MSO conditionals that create
+// invalid HTML nesting (e.g., <div> directly inside <tr>)
+function cleanFooterHtml(html: string): string {
+  if (!html) return ''
+
+  let cleaned = html
+
+  // Fix double </table> tags in MSO conditionals (common copy-paste error)
+  cleaned = cleaned.replace(/<!--\[if mso\]><\/table><\/table><!\[endif\]-->/gi, '<!--[if mso]></table><![endif]-->')
+  cleaned = cleaned.replace(/(<!--\[if mso\]>)(<\/table>)\2+(<!\[endif\]-->)/gi, '$1$2$3')
+
+  // Remove Ghost Table MSO conditionals that create invalid nesting
+  // These patterns put <div> elements directly inside <tr>, which is invalid HTML
+  // Pattern: <!--[if mso]><table...><tr><![endif]--> followed by <div class="kl-row">
+  // We remove the ghost table entirely and let the responsive divs handle layout
+
+  // Remove opening ghost table patterns (table + tr openers before divs)
+  cleaned = cleaned.replace(/<!--\[if mso\]>\s*<table[^>]*>\s*<tr>\s*<!\[endif\]-->/gi, '')
+
+  // Remove ghost td openers that appear after kl-row divs
+  cleaned = cleaned.replace(/<!--\[if mso\]>\s*<td[^>]*>\s*<!\[endif\]-->/gi, '')
+
+  // Remove ghost td closers
+  cleaned = cleaned.replace(/<!--\[if mso\]>\s*<\/td>\s*<!\[endif\]-->/gi, '')
+
+  // Remove closing ghost table patterns (tr + table closers)
+  cleaned = cleaned.replace(/<!--\[if mso\]>\s*<\/tr>\s*<\/table>\s*<!\[endif\]-->/gi, '')
+
+  // Clean up any resulting double whitespace/newlines
+  cleaned = cleaned.replace(/\n\s*\n\s*\n/g, '\n\n')
+
+  return cleaned
+}
+
 function generateEmailHtml(frames: Array<{
   name: string
   width: number | null
@@ -712,9 +788,13 @@ function generateEmailHtml(frames: Array<{
 
   const frameRows = rows.join('\n')
 
-  const footerSection = footerHtml ? `
+  // Clean up footer HTML and use directly (footer is already a table from selection)
+  const cleanedFooter = cleanFooterHtml(footerHtml)
+
+  // Footer goes directly below content table (no extra wrapping needed)
+  const footerSection = cleanedFooter ? `
         <!-- Footer -->
-${footerHtml}` : ''
+${cleanedFooter}` : ''
 
   return `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
@@ -766,11 +846,11 @@ ${footerHtml}` : ''
         <tr>
         <td>
         <![endif]-->
-        <!-- Email content table -->
+        <!-- Email content table (images/sections from Figma) -->
         <table class="email-container" role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; background-color: #ffffff;">
 ${frameRows}
-${footerSection}
         </table>
+${footerSection}
         <!--[if mso]>
         </td>
         </tr>

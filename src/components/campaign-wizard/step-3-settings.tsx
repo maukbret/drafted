@@ -107,6 +107,7 @@ export function Step3Settings({
   const [timezone, setTimezone] = useState('Europe/Amsterdam')
   const [useRecipientTimezone, setUseRecipientTimezone] = useState(false)
   const [publishOption, setPublishOption] = useState<'draft' | 'schedule'>('draft')
+  const [useCustomFooter, setUseCustomFooter] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -171,6 +172,7 @@ export function Step3Settings({
             scheduledTime,
             timezone,
             useRecipientTimezone,
+            useCustomFooter,
           },
         }),
       })
@@ -412,6 +414,27 @@ export function Step3Settings({
             </div>
           </label>
         </div>
+      </div>
+
+      <div className="border-t pt-6">
+        <h3 className="font-medium mb-4">Footer options</h3>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={useCustomFooter}
+            onChange={(e) => setUseCustomFooter(e.target.checked)}
+            className="w-4 h-4 mt-1 rounded border-input"
+          />
+          <div>
+            <span className="text-sm font-medium leading-none">Use custom footer</span>
+            <p className="text-xs text-muted-foreground mt-1">
+              {useCustomFooter
+                ? 'Uses your saved footer from Klaviyo. Disable to use a simple unsubscribe link instead.'
+                : 'Uses a simple unsubscribe link. Enable to use your saved Klaviyo footer.'}
+            </p>
+          </div>
+        </label>
       </div>
 
       <div className="border-t pt-6">
