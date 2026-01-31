@@ -129,7 +129,7 @@ export function UserSettingsModal({
           <DialogTitle>Account settings</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="space-y-6 pt-4">
           {/* Avatar */}
           <div className="flex flex-col items-center gap-3">
             <button
