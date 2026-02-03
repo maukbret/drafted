@@ -9,7 +9,17 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { RefreshCw, Loader2 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { RefreshCw, Loader2, Trash2 } from 'lucide-react'
 
 interface KlaviyoConnection {
   id: string
@@ -17,6 +27,8 @@ interface KlaviyoConnection {
   klaviyo_account_id: string | null
   hasFooter: boolean
   created_at: string
+  isShared?: boolean
+  owner_name?: string
 }
 
 interface FigmaConnection {
@@ -27,15 +39,17 @@ interface FigmaConnection {
 
 interface ConnectionsTabsProps {
   klaviyoConnections: KlaviyoConnection[]
+  teamConnections?: KlaviyoConnection[]
   figmaConnection: FigmaConnection | null
 }
 
 type ConnectionStatus = 'active' | 'expired' | 'error' | 'checking' | 'unknown'
 
-export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: ConnectionsTabsProps) {
+export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figmaConnection }: ConnectionsTabsProps) {
   const [accountName, setAccountName] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'klaviyo' | 'figma'; id: string; name: string } | null>(null)
   const [footerSetupConnection, setFooterSetupConnection] = useState<KlaviyoConnection | null>(null)
   const [connectionStatuses, setConnectionStatuses] = useState<Record<string, ConnectionStatus>>({})
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -48,18 +62,34 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
     klaviyoConnections.forEach(conn => {
       checkingStatuses[conn.id] = 'checking'
     })
+    if (figmaConnection) {
+      checkingStatuses[figmaConnection.id] = 'checking'
+    }
     setConnectionStatuses(checkingStatuses)
 
     try {
-      const response = await fetch('/api/connections/klaviyo/status')
-      if (response.ok) {
-        const { statuses } = await response.json()
-        const newStatuses: Record<string, ConnectionStatus> = {}
+      const [klaviyoResponse, figmaResponse] = await Promise.all([
+        klaviyoConnections.length > 0 ? fetch('/api/connections/klaviyo/status') : Promise.resolve(null),
+        figmaConnection ? fetch('/api/connections/figma/status') : Promise.resolve(null),
+      ])
+
+      const newStatuses: Record<string, ConnectionStatus> = {}
+
+      if (klaviyoResponse?.ok) {
+        const { statuses } = await klaviyoResponse.json()
         statuses.forEach((s: { id: string; status: ConnectionStatus }) => {
           newStatuses[s.id] = s.status
         })
-        setConnectionStatuses(newStatuses)
       }
+
+      if (figmaResponse?.ok) {
+        const { status } = await figmaResponse.json()
+        if (status) {
+          newStatuses[status.id] = status.status
+        }
+      }
+
+      setConnectionStatuses(newStatuses)
     } catch (err) {
       console.error('Failed to refresh statuses:', err)
     } finally {
@@ -111,13 +141,17 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
     window.location.href = `https://www.figma.com/oauth?${params.toString()}`
   }
 
-  const deleteConnection = async (type: 'klaviyo' | 'figma', id: string) => {
-    if (!confirm('Are you sure you want to remove this connection?')) return
+  const confirmDelete = (type: 'klaviyo' | 'figma', id: string, name: string) => {
+    setDeleteConfirm({ type, id, name })
+  }
 
-    setDeletingId(id)
+  const deleteConnection = async () => {
+    if (!deleteConfirm) return
+
+    setDeletingId(deleteConfirm.id)
 
     try {
-      const response = await fetch(`/api/connections/${type}/${id}`, {
+      const response = await fetch(`/api/connections/${deleteConfirm.type}/${deleteConfirm.id}`, {
         method: 'DELETE',
       })
 
@@ -125,6 +159,7 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
         throw new Error('Failed to delete')
       }
 
+      setDeleteConfirm(null)
       router.refresh()
     } catch (err) {
       alert('Failed to remove connection')
@@ -183,13 +218,13 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
           </p>
         </div>
 
-        {klaviyoConnections.length > 0 && (
+        {(klaviyoConnections.length > 0 || figmaConnection) && (
           <Button
             variant="outline"
             onClick={refreshConnectionStatuses}
             disabled={isRefreshing}
           >
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 mr-1 ${isRefreshing ? 'animate-spin' : ''}`} />
             {isRefreshing ? 'Checking...' : 'Check status'}
           </Button>
         )}
@@ -198,7 +233,7 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
       <Tabs defaultValue="klaviyo" className="w-full">
         <TabsList className="mb-6">
           <TabsTrigger value="klaviyo">
-            Klaviyo ({klaviyoConnections.length})
+            Klaviyo ({klaviyoConnections.length + teamConnections.length})
           </TabsTrigger>
           <TabsTrigger value="figma">
             Figma ({figmaConnection ? 1 : 0})
@@ -207,11 +242,15 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
 
         {/* Klaviyo tab content */}
         <TabsContent value="klaviyo" className="space-y-4">
+          {/* User's own connections */}
           {klaviyoConnections.length > 0 && (
-            <Card>
-              <CardContent className="p-0 divide-y">
-                {klaviyoConnections.map((conn) => (
-                  <div key={conn.id} className="p-4">
+            <div className="space-y-4">
+              {teamConnections.length > 0 && (
+                <h3 className="text-sm font-medium text-muted-foreground">Your connections</h3>
+              )}
+              {klaviyoConnections.map((conn) => (
+                <Card key={conn.id}>
+                  <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div>
@@ -225,7 +264,7 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => deleteConnection('klaviyo', conn.id)}
+                        onClick={() => confirmDelete('klaviyo', conn.id, conn.account_name || 'Unnamed account')}
                         disabled={deletingId === conn.id}
                         className="text-destructive hover:text-destructive"
                       >
@@ -256,10 +295,52 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
                         {conn.hasFooter ? 'Update footer' : 'Setup footer'}
                       </Button>
                     </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Team shared connections (read-only) */}
+          {teamConnections.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-muted-foreground mt-6">Team connections</h3>
+              {teamConnections.map((conn) => (
+                <Card key={conn.id} className="border-dashed">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
+                            <Badge variant="secondary" className="text-xs">Shared</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Shared by {conn.owner_name || 'Team Admin'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Footer status (read-only) */}
+                    <div className="mt-3 pt-3 border-t">
+                      <div className="flex items-center gap-2">
+                        {conn.hasFooter ? (
+                          <>
+                            <span className="w-2 h-2 bg-green-500 rounded-full" />
+                            <span className="text-sm text-muted-foreground">Footer configured</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
+                            <span className="text-sm text-muted-foreground">No footer set up</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           )}
 
           {showAddForm ? (
@@ -309,16 +390,19 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
           {figmaConnection ? (
             <Card>
               <CardContent className="flex items-center justify-between p-4">
-                <div>
-                  <p className="font-medium">{figmaConnection.figma_email || 'Figma account'}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Added {new Date(figmaConnection.created_at).toLocaleDateString('en-GB')}
-                  </p>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="font-medium">{figmaConnection.figma_email || 'Figma account'}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Added {new Date(figmaConnection.created_at).toLocaleDateString('en-GB')}
+                    </p>
+                  </div>
+                  {getStatusBadge(figmaConnection.id)}
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => deleteConnection('figma', figmaConnection.id)}
+                  onClick={() => confirmDelete('figma', figmaConnection.id, figmaConnection.figma_email || 'Figma account')}
                   disabled={deletingId === figmaConnection.id}
                   className="text-destructive hover:text-destructive"
                 >
@@ -351,6 +435,40 @@ export function ConnectionsTabs({ klaviyoConnections, figmaConnection }: Connect
           onCancel={() => setFooterSetupConnection(null)}
         />
       )}
+
+      {/* Delete confirmation modal */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && !deletingId && setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="h-6 w-6 text-destructive" />
+              </div>
+              <div>
+                <AlertDialogTitle>Remove connection</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone
+                </AlertDialogDescription>
+              </div>
+            </div>
+          </AlertDialogHeader>
+
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to remove <span className="font-medium text-foreground">&quot;{deleteConfirm?.name}&quot;</span>? You will need to reconnect this account to use it again.
+          </p>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!deletingId}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={deleteConnection}
+              disabled={!!deletingId}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingId ? 'Removing...' : 'Remove'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

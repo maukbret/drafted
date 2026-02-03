@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { Check, ChevronLeft } from 'lucide-react'
 
@@ -206,54 +207,56 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
               <p className="text-sm text-muted-foreground">
                 Found {sections.length} section{sections.length !== 1 ? 's' : ''} in the email. Select all sections that make up your footer:
               </p>
-              <div className="space-y-3">
-                {sections.map((section) => {
-                  const isSelected = selectedSections.has(section.id)
-                  return (
-                    <button
-                      key={section.id}
-                      onClick={() => toggleSection(section)}
-                      className={cn(
-                        'w-full text-left p-4 border rounded-lg transition-colors',
-                        isSelected
-                          ? 'border-primary bg-muted'
-                          : 'border-border hover:border-muted-foreground'
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={cn(
-                          'flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center',
+              <ScrollArea className="max-h-[400px]">
+                <div className="space-y-3 pr-4">
+                  {sections.map((section) => {
+                    const isSelected = selectedSections.has(section.id)
+                    return (
+                      <button
+                        key={section.id}
+                        onClick={() => toggleSection(section)}
+                        className={cn(
+                          'w-full text-left p-4 border rounded-lg transition-colors',
                           isSelected
-                            ? 'bg-primary border-primary'
-                            : 'border-muted-foreground/30'
-                        )}>
-                          {isSelected && (
-                            <Check className="h-4 w-4 text-primary-foreground" />
-                          )}
-                        </div>
-                        <span className="flex-shrink-0 w-8 h-8 bg-muted rounded-full flex items-center justify-center text-sm font-medium">
-                          {section.index + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-muted-foreground line-clamp-2">
-                            {section.preview || '(No text content)'}
-                          </p>
-                          <div
-                            className="mt-2 border rounded overflow-hidden bg-white"
-                            style={{ maxHeight: '150px', overflow: 'hidden' }}
-                          >
+                            ? 'border-primary bg-muted'
+                            : 'border-border hover:border-muted-foreground'
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={cn(
+                            'flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center',
+                            isSelected
+                              ? 'bg-primary border-primary'
+                              : 'border-muted-foreground/30'
+                          )}>
+                            {isSelected && (
+                              <Check className="h-4 w-4 text-primary-foreground" />
+                            )}
+                          </div>
+                          <span className="flex-shrink-0 w-8 h-8 bg-muted rounded-full flex items-center justify-center text-sm font-medium">
+                            {section.index + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-muted-foreground line-clamp-2">
+                              {section.preview || '(No text content)'}
+                            </p>
                             <div
-                              className="transform scale-50 origin-top-left"
-                              style={{ width: '200%' }}
-                              dangerouslySetInnerHTML={{ __html: section.html }}
-                            />
+                              className="mt-2 border rounded overflow-hidden bg-white"
+                              style={{ maxHeight: '150px', overflow: 'hidden' }}
+                            >
+                              <div
+                                className="transform scale-50 origin-top-left"
+                                style={{ width: '200%' }}
+                                dangerouslySetInnerHTML={{ __html: section.html }}
+                              />
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </ScrollArea>
             </div>
           )}
 

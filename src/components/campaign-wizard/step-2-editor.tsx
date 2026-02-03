@@ -5,12 +5,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -153,14 +157,14 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
   }
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-20rem)]">
+    <div className="flex gap-6 h-full min-h-[400px]">
       {/* Left: Email preview */}
       <div className="flex-1 border rounded-xl overflow-hidden flex flex-col">
         <div className="bg-muted px-4 py-3 border-b flex-shrink-0">
           <h2 className="font-medium">Email preview</h2>
         </div>
         <div className="flex-1 overflow-y-auto p-4 bg-muted/50">
-          <div className="max-w-[600px] mx-auto bg-background shadow-sm">
+          <div className="max-w-[600px] mx-auto bg-background shadow-sm-sm">
             {groupedFrames.map((item, index) => {
               // Check if this is a pair of frames (side-by-side)
               if (Array.isArray(item)) {
@@ -248,59 +252,61 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
               Add links to make sections clickable
             </p>
           </div>
-          <div className="flex-1 overflow-y-auto divide-y">
-            {frames.map((frame, index) => (
-              <div
-                key={frame.id}
-                className={cn(
-                  'p-3 cursor-pointer transition-colors',
-                  activeFrameId === frame.id ? 'bg-muted' : 'hover:bg-muted/50'
-                )}
-                onClick={() => setActiveFrameId(frame.id)}
-              >
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
-                    {index + 1}
-                  </div>
-                  <div className="flex-shrink-0 w-12 h-8 bg-muted rounded overflow-hidden">
-                    {frame.image_url && (
-                      <img
-                        src={frame.image_url}
-                        alt={frame.name}
-                        className="w-full h-full object-cover"
-                      />
-                    )}
-                  </div>
-                  <p className="text-sm font-medium truncate flex-1">{frame.name}</p>
-                  {(frame.width ?? 600) <= HALF_WIDTH_THRESHOLD && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
-                      50%
-                    </Badge>
+          <ScrollArea className="flex-1">
+            <div className="divide-y">
+              {frames.map((frame, index) => (
+                <div
+                  key={frame.id}
+                  className={cn(
+                    'p-3 cursor-pointer transition-colors',
+                    activeFrameId === frame.id ? 'bg-muted' : 'hover:bg-muted/50'
                   )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setDeleteModalFrame(frame)
-                    }}
-                    className="flex-shrink-0 p-1 text-muted-foreground hover:text-destructive transition-colors"
-                    title="Delete section"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  onClick={() => setActiveFrameId(frame.id)}
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
+                      {index + 1}
+                    </div>
+                    <div className="flex-shrink-0 w-12 h-8 bg-muted rounded overflow-hidden">
+                      {frame.image_url && (
+                        <img
+                          src={frame.image_url}
+                          alt={frame.name}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                    <p className="text-sm font-medium truncate flex-1">{frame.name}</p>
+                    {(frame.width ?? 600) <= HALF_WIDTH_THRESHOLD && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
+                        50%
+                      </Badge>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeleteModalFrame(frame)
+                      }}
+                      className="flex-shrink-0 p-1 text-muted-foreground hover:text-destructive transition-colors"
+                      title="Delete section"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <Input
+                    type="text"
+                    value={frame.link_url || ''}
+                    onChange={(e) => updateFrameLink(frame.id, e.target.value)}
+                    onBlur={(e) => handleLinkBlur(frame.id, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="google.com or https://..."
+                    className="h-8"
+                  />
                 </div>
-                <Input
-                  type="text"
-                  value={frame.link_url || ''}
-                  onChange={(e) => updateFrameLink(frame.id, e.target.value)}
-                  onBlur={(e) => handleLinkBlur(frame.id, e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  placeholder="google.com or https://..."
-                  className="h-8"
-                />
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </ScrollArea>
         </div>
 
         {/* Actions */}
@@ -332,44 +338,38 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
       </div>
 
       {/* Delete confirmation modal */}
-      <Dialog open={!!deleteModalFrame} onOpenChange={(open) => !open && !isDeleting && setDeleteModalFrame(null)}>
-        <DialogContent>
-          <DialogHeader>
+      <AlertDialog open={!!deleteModalFrame} onOpenChange={(open) => !open && !isDeleting && setDeleteModalFrame(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
                 <Trash2 className="h-6 w-6 text-destructive" />
               </div>
               <div>
-                <DialogTitle>Delete section</DialogTitle>
-                <DialogDescription>
+                <AlertDialogTitle>Delete section</AlertDialogTitle>
+                <AlertDialogDescription>
                   This action cannot be undone
-                </DialogDescription>
+                </AlertDialogDescription>
               </div>
             </div>
-          </DialogHeader>
+          </AlertDialogHeader>
 
           <p className="text-sm text-muted-foreground">
             Are you sure you want to delete <span className="font-medium text-foreground">&quot;{deleteModalFrame?.name}&quot;</span>? This section will be removed from your email.
           </p>
 
-          <div className="flex gap-3 justify-end">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteModalFrame(null)}
-              disabled={isDeleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
               onClick={handleDeleteFrame}
               disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeleting ? 'Deleting...' : 'Delete'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

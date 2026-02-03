@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { SidebarLayout } from '@/components/sidebar-layout'
+import { TeamInvitationBanner } from '@/components/team-invitation-banner'
 
 export default async function AppLayout({
   children,
@@ -23,6 +24,7 @@ export default async function AppLayout({
 
   return (
     <SidebarLayout userEmail={user.email || ''} profile={profile}>
+      <TeamInvitationBanner />
       {children}
     </SidebarLayout>
   )

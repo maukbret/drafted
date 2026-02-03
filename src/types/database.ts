@@ -77,3 +77,42 @@ export interface KlaviyoAudience {
   name: string
   type: 'list' | 'segment'
 }
+
+export interface Team {
+  id: string
+  name: string
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TeamMember {
+  id: string
+  team_id: string
+  user_id: string
+  role: 'admin' | 'member'
+  joined_at: string
+}
+
+export interface TeamInvitation {
+  id: string
+  team_id: string
+  email: string | null
+  token: string
+  invited_by: string | null
+  status: 'pending' | 'accepted' | 'declined' | 'expired'
+  expires_at: string
+  created_at: string
+}
+
+export interface TeamMemberWithProfile extends TeamMember {
+  profiles?: {
+    full_name: string | null
+    avatar_url: string | null
+  } | null
+  email?: string
+}
+
+export interface TeamWithMembers extends Team {
+  team_members?: TeamMemberWithProfile[]
+}

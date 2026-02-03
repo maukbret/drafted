@@ -2,28 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-
-body {
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
-}
-
-h1, h2, h3, h4, h5, h6 {
-  letter-spacing: -0.04em;
-}
-
-.loginLogo {
-  width: 144px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.loginText {
-  text-wrap: balance;
-}
-
-
-
-
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -45,13 +23,14 @@ h1, h2, h3, h4, h5, h6 {
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
+    --radius: 0.5rem;
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
   }
+
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
@@ -80,33 +59,53 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
-
-
 @layer base {
   * {
     @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+  }
+  
+  /* Moved H1 styles here for better organization */
+  h1 {
+    letter-spacing: -0.04em;
   }
 }
 
-.shadow {
-  --tw-shadow: 0 2px 8px 0 #00000007 !important;
+/* --- Custom Utilities --- */
+/* I renamed these so they don't conflict with Tailwind defaults */
+
+/* Use "shadow-sm-custom" in your HTML instead of breaking the default "shadow-sm" */
+.shadow-sm-custom {
+  --tw-shadow-sm: 0 2px 8px 0 #00000007;
+  box-shadow-sm: var(--tw-ring-offset-shadow-sm, 0 0 #0000), var(--tw-ring-shadow-sm, 0 0 #0000), var(--tw-shadow-sm);
 }
 
-.gap-1 {
-  gap: 0.1rem !important;
+/* Use "gap-tiny" instead of breaking "gap-1" */
+.gap-tiny {
+  gap: 0.1rem;
 }
-
 
 .div-tiny {
   width: 0.5px;
   background-color: #00000030;
-  height: fill;
+  height: 100%; /* Changed 'fill' to '100%' as fill isn't valid height CSS */
 }
 
+/* Suggestion: Ideally, make this a button variant in components/ui/button.tsx */
 .btn-black {
   background: linear-gradient(#404040, #000000);
-  filter: drop-shadow(0px 2px 3px #00000025);
+  filter: drop-shadow-sm(0px 2px 3px #00000025);
+}
+
+.loginLogo {
+  width: 144px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.loginText {
+  text-wrap: balance;
 }

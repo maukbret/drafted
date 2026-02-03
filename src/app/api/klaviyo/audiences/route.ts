@@ -18,15 +18,50 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Verify user owns this connection
-    const { data: connection } = await supabase
+    // Verify user has access to this connection (own or team admin's)
+    let hasAccess = false
+
+    // Check if user owns this connection
+    const { data: ownConnection } = await supabase
       .from('klaviyo_connections')
       .select('id')
       .eq('id', connectionId)
       .eq('user_id', user.id)
       .single()
 
-    if (!connection) {
+    if (ownConnection) {
+      hasAccess = true
+    } else {
+      // Check if connection belongs to a team admin
+      const { data: teamMembership } = await supabase
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', user.id)
+        .single()
+
+      if (teamMembership) {
+        const { data: adminMembers } = await supabase
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', teamMembership.team_id)
+          .eq('role', 'admin')
+
+        if (adminMembers && adminMembers.length > 0) {
+          const { data: teamConnection } = await supabase
+            .from('klaviyo_connections')
+            .select('id')
+            .eq('id', connectionId)
+            .in('user_id', adminMembers.map(m => m.user_id))
+            .single()
+
+          if (teamConnection) {
+            hasAccess = true
+          }
+        }
+      }
+    }
+
+    if (!hasAccess) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 

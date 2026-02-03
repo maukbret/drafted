@@ -1,6 +1,6 @@
 'use client'
 
-import { cn } from '@/lib/utils'
+import { Progress } from '@/components/ui/progress'
 
 interface WizardProgressProps {
   currentStep: number
@@ -8,22 +8,13 @@ interface WizardProgressProps {
 }
 
 export function WizardProgress({ currentStep, steps }: WizardProgressProps) {
-  return (
-    <div className="flex gap-2 mb-8">
-      {steps.map((_, index) => {
-        const stepNumber = index + 1
-        const isActiveOrCompleted = stepNumber <= currentStep
+  const progressValue = ((currentStep - 1) / steps.length) * 100
 
-        return (
-          <div
-            key={index}
-            className={cn(
-              'flex-1 h-1.5 rounded-full transition-colors',
-              isActiveOrCompleted ? 'bg-[#FF4702]' : 'bg-muted'
-            )}
-          />
-        )
-      })}
-    </div>
+  return (
+    <Progress
+      value={progressValue}
+      className="h-1.5 bg-muted"
+      indicatorClassName="bg-[#FF4702]"
+    />
   )
 }

@@ -217,12 +217,41 @@ export async function POST(
         let footerHtml = ''
 
         if (useCustomFooter && klaviyoConnection.klaviyo_account_id) {
-          const { data: footer } = await supabase
+          // First try to get user's own footer
+          let { data: footer } = await supabase
             .from('klaviyo_footers')
             .select('footer_html')
             .eq('user_id', user.id)
             .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
             .single()
+
+          // If no own footer, check for team admin footer
+          if (!footer) {
+            const { data: teamMembership } = await supabase
+              .from('team_members')
+              .select('team_id')
+              .eq('user_id', user.id)
+              .single()
+
+            if (teamMembership) {
+              const { data: adminMembers } = await supabase
+                .from('team_members')
+                .select('user_id')
+                .eq('team_id', teamMembership.team_id)
+                .eq('role', 'admin')
+
+              if (adminMembers && adminMembers.length > 0) {
+                const { data: teamFooter } = await supabase
+                  .from('klaviyo_footers')
+                  .select('footer_html')
+                  .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
+                  .in('user_id', adminMembers.map(m => m.user_id))
+                  .single()
+
+                footer = teamFooter
+              }
+            }
+          }
 
           if (footer) {
             footerHtml = footer.footer_html

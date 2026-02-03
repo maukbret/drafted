@@ -1,43 +1,67 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import * as React from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import type { ColumnDef, SortingState, ColumnFiltersState } from '@tanstack/react-table'
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table'
+
 import { Campaign } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, Folder, Calendar } from 'lucide-react'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, ArrowUpDown } from 'lucide-react'
 
 interface CampaignWithConnection extends Campaign {
   klaviyo_connections?: {
     account_name: string | null
   } | null
+  profiles?: { full_name: string | null } | null
+  is_own?: boolean
+  creator_name?: string | null
 }
 
 interface CampaignListProps {
   campaigns: CampaignWithConnection[]
+  searchQuery?: string
+  currentUserId?: string
 }
 
-const STATUS_CONFIG: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string; label: string }> = {
-  in_progress: {
-    variant: 'secondary',
-    className: '',
-    label: 'In progress',
-  },
+type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline'
+
+const STATUS_CONFIG = {
+  in_progress: { variant: 'secondary', className: '', label: 'In progress' },
   klaviyo_draft: {
     variant: 'default',
     className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100',
@@ -53,30 +77,291 @@ const STATUS_CONFIG: Record<string, { variant: 'default' | 'secondary' | 'destru
     className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100',
     label: 'Sent',
   },
-  error: {
-    variant: 'destructive',
-    className: '',
-    label: 'Error',
-  },
+  error: { variant: 'destructive', className: '', label: 'Error' },
+
   // Legacy status aliases
-  draft: {
-    variant: 'secondary',
-    className: '',
-    label: 'In progress',
-  },
+  draft: { variant: 'secondary', className: '', label: 'In progress' },
   ready: {
     variant: 'default',
     className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100',
     label: 'Klaviyo draft',
   },
+} as const satisfies Record<string, { variant: BadgeVariant; className: string; label: string }>
+
+function formatDateSafe(value: unknown) {
+  const d = new Date(String(value ?? ''))
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB')
 }
 
-export function CampaignList({ campaigns }: CampaignListProps) {
-  const [deleteModalCampaign, setDeleteModalCampaign] = useState<CampaignWithConnection | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
+/**
+ * Make "Created" the only sortable column:
+ * - only Created header toggles sorting
+ * - other columns are not clickable and explicitly disable sorting
+ */
+function getColumns(opts: {
+  onRequestDelete: (campaign: CampaignWithConnection) => void
+  currentUserId?: string
+}): ColumnDef<CampaignWithConnection>[] {
+  return [
+    {
+      accessorKey: 'name',
+      enableSorting: false,
+      header: () => <span className="-mx-2 block px-4">Campaign</span>,
+      cell: ({ row }) => (
+        <Link
+          href={`/campaigns/${row.original.id}`}
+          className="-mx-2 block max-w-[520px] truncate px-4 font-medium hover:underline"
+        >
+          {row.original.name}
+        </Link>
+      ),
+    },
+    {
+      id: 'status',
+      accessorKey: 'status',
+      enableSorting: false,
+      header: () => <span>Status</span>,
+      cell: ({ row }) => {
+        const status = STATUS_CONFIG[row.original.status] || STATUS_CONFIG.in_progress
+        return (
+          <Badge variant={status.variant} className={status.className}>
+            {status.label}
+          </Badge>
+        )
+      },
+    },
+    {
+      id: 'account',
+      enableSorting: false,
+      header: () => <span>Account</span>,
+      accessorFn: (row) => row.klaviyo_connections?.account_name ?? '',
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.klaviyo_connections?.account_name || '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'created_by',
+      enableSorting: false,
+      header: () => <span>Created by</span>,
+      cell: ({ row }) => {
+        const campaign = row.original
+        const isOwn = campaign.is_own !== false && (!opts.currentUserId || campaign.user_id === opts.currentUserId)
+        const creatorName = campaign.creator_name || campaign.profiles?.full_name
+
+        if (isOwn) {
+          return <span className="text-xs text-muted-foreground">You</span>
+        }
+
+        return (
+          <span className="text-xs text-muted-foreground">
+            {creatorName || 'Team member'}
+          </span>
+        )
+      },
+    },
+    {
+      id: 'created_at',
+      enableSorting: true,
+      header: ({ column }) => (
+        <Button
+          variant="ghost"
+          className="-ml-4"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Created
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      ),
+      // Use numeric timestamp for correct sorting
+      accessorFn: (row) => {
+        const d = new Date(String(row.created_at ?? ''))
+        const t = d.getTime()
+        return Number.isNaN(t) ? 0 : t
+      },
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {formatDateSafe(row.original.created_at)}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      enableSorting: false,
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => {
+        const campaign = row.original
+
+        const isInProgress =
+          campaign.status === 'in_progress' || (campaign.status as string) === 'draft'
+
+        const isSentOrScheduled =
+          campaign.status === 'sent' || campaign.status === 'scheduled'
+
+        const isKlaviyoDraft =
+          (campaign.status === 'klaviyo_draft' || (campaign.status as string) === 'ready') &&
+          !!campaign.klaviyo_campaign_id
+
+        return (
+          <div className="flex items-center justify-end gap-2">
+            {isInProgress && (
+              <Button asChild>
+                <Link href={`/campaigns/${campaign.id}`}>Continue</Link>
+              </Button>
+            )}
+
+            {isSentOrScheduled && (
+              <Button variant="secondary" asChild>
+                <Link href={`/campaigns/${campaign.id}`}>View</Link>
+              </Button>
+            )}
+
+            {isKlaviyoDraft && (
+              <Button variant="secondary" asChild>
+                <a
+                  href={`https://www.klaviyo.com/campaign/${campaign.klaviyo_campaign_id}/scheduled`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="h-4 w-4 buttonIcon" />
+                  View in Klaviyo
+                </a>
+              </Button>
+            )}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label="Open campaign actions"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+
+              <DropdownMenuContent align="end">
+                {!isSentOrScheduled && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/campaigns/${campaign.id}`}>
+                      <Pencil className="h-4 w-4 mr-1.5" />
+                      Edit
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+
+                {isSentOrScheduled && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/campaigns/${campaign.id}`}>
+                      <Mail className="h-4 w-4 mr-1.5" />
+                      View details
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+
+                <DropdownMenuItem
+                  onClick={() => opts.onRequestDelete(campaign)}
+                  className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                >
+                  <Trash2 className="h-4 w-4 mr-1.5" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )
+      },
+    },
+  ]
+}
+
+function DataTable({
+  columns,
+  data,
+  searchQuery,
+}: {
+  columns: ColumnDef<CampaignWithConnection, any>[]
+  data: CampaignWithConnection[]
+  searchQuery: string
+}) {
+  const [sorting, setSorting] = React.useState<SortingState>([])
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
+
+  const table = useReactTable({
+    data,
+    columns,
+    state: { sorting, columnFilters },
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+  })
+
+  React.useEffect(() => {
+    table.getColumn('name')?.setFilterValue(searchQuery)
+  }, [searchQuery, table])
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <TableHead key={header.id}>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(header.column.columnDef.header, header.getContext())}
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
+          </TableHeader>
+
+          <TableBody>
+            {table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                  No results.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  )
+}
+
+export function CampaignList({ campaigns, searchQuery = '', currentUserId }: CampaignListProps) {
+  const [deleteModalCampaign, setDeleteModalCampaign] = React.useState<CampaignWithConnection | null>(null)
+  const [isDeleting, setIsDeleting] = React.useState(false)
   const router = useRouter()
 
-  const handleDelete = async () => {
+  const columns = React.useMemo(
+    () =>
+      getColumns({
+        onRequestDelete: (c) => setDeleteModalCampaign(c),
+        currentUserId,
+      }),
+    [currentUserId]
+  )
+
+  const handleDelete = React.useCallback(async () => {
     if (!deleteModalCampaign) return
 
     setIsDeleting(true)
@@ -86,18 +371,16 @@ export function CampaignList({ campaigns }: CampaignListProps) {
         method: 'DELETE',
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to delete')
-      }
+      if (!response.ok) throw new Error('Failed to delete')
 
       setDeleteModalCampaign(null)
       router.refresh()
-    } catch (err) {
+    } catch {
       alert('Failed to delete campaign')
     } finally {
       setIsDeleting(false)
     }
-  }
+  }, [deleteModalCampaign, router])
 
   if (campaigns.length === 0) {
     return (
@@ -107,9 +390,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
             <Mail className="h-8 w-8 text-muted-foreground" />
           </div>
           <h3 className="text-lg font-medium mb-2">No campaigns yet</h3>
-          <p className="text-muted-foreground mb-4">
-            Create your first campaign to get started
-          </p>
+          <p className="text-muted-foreground mb-4">Create your first campaign to get started</p>
         </CardContent>
       </Card>
     )
@@ -117,150 +398,45 @@ export function CampaignList({ campaigns }: CampaignListProps) {
 
   return (
     <>
-      <Card>
-        <CardContent className="p-0 divide-y">
-          {campaigns.map((campaign) => {
-            const status = STATUS_CONFIG[campaign.status] || STATUS_CONFIG.in_progress
+      <DataTable columns={columns} data={campaigns} searchQuery={searchQuery} />
 
-            return (
-              <div
-                key={campaign.id}
-                className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-2">
-                    <Link
-                      href={`/campaigns/${campaign.id}`}
-                      className="font-medium hover:underline truncate"
-                    >
-                      {campaign.name}
-                    </Link>
-                    <Badge variant={status.variant} className={status.className}>
-                      {status.label}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-3.5 text-xs text-muted-foreground">
-                    {campaign.klaviyo_connections?.account_name && (
-                      <div className="flex items-center gap-1.5">
-                         <Folder className="h-3 w-3 text-foreground"></Folder>
-                      <span className="font-normal">{campaign.klaviyo_connections.account_name}</span>
-                      </div>
-                    )}
-                    <div className="div-tiny"></div>
-<div className="flex items-center gap-1.5">
-                         <Calendar className="h-3 w-3 text-foreground"></Calendar>
-                      <span className="font-normal">{new Date(campaign.created_at).toLocaleDateString('en-GB')}</span>
-                      </div>
-                    
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 ml-4">
-                  {(campaign.status === 'in_progress' || (campaign.status as string) === 'draft') && (
-                    <Button asChild>
-                      <Link href={`/campaigns/${campaign.id}`}>
-                        Continue
-                      </Link>
-                    </Button>
-                  )}
-                  {(campaign.status === 'sent' || campaign.status === 'scheduled') && (
-                    <Button variant="secondary" asChild>
-                      <Link href={`/campaigns/${campaign.id}`}>
-                        View
-                      </Link>
-                    </Button>
-                  )}
-                  {(campaign.status === 'klaviyo_draft' || (campaign.status as string) === 'ready') && campaign.klaviyo_campaign_id && (
-                    <Button variant="secondary" asChild>
-                      <a
-                        href={`https://www.klaviyo.com/campaign/${campaign.klaviyo_campaign_id}/scheduled`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <ExternalLink className="h-4 w-4 mr-1.5" />
-                        View in Klaviyo
-                      </a>
-                    </Button>
-                  )}
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {campaign.status !== 'sent' && campaign.status !== 'scheduled' && (
-                        <DropdownMenuItem asChild>
-                          <Link href={`/campaigns/${campaign.id}`}>
-                            <Pencil className="h-4 w-4 mr-1.5" />
-                            Edit
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {(campaign.status === 'sent' || campaign.status === 'scheduled') && (
-                        <DropdownMenuItem asChild>
-                          <Link href={`/campaigns/${campaign.id}`}>
-                            <Mail className="h-4 w-4 mr-1.5" />
-                            View details
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem
-                        onClick={() => setDeleteModalCampaign(campaign)}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4 mr-1.5" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            )
-          })}
-        </CardContent>
-      </Card>
-
-      {/* Delete confirmation modal */}
-      <Dialog open={!!deleteModalCampaign} onOpenChange={(open) => !open && !isDeleting && setDeleteModalCampaign(null)}>
-        <DialogContent>
-          <DialogHeader>
+      <AlertDialog
+        open={!!deleteModalCampaign}
+        onOpenChange={(open) => !open && !isDeleting && setDeleteModalCampaign(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
                 <Trash2 className="h-6 w-6 text-destructive" />
               </div>
               <div>
-                <DialogTitle>Delete campaign</DialogTitle>
-                <DialogDescription>
-                  This action cannot be undone
-                </DialogDescription>
+                <AlertDialogTitle>Delete campaign</AlertDialogTitle>
+                <AlertDialogDescription>This action cannot be undone</AlertDialogDescription>
               </div>
             </div>
-          </DialogHeader>
+          </AlertDialogHeader>
 
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete <span className="font-medium text-foreground">&quot;{deleteModalCampaign?.name}&quot;</span>? This will permanently remove the campaign from your Drafted account.
+            Are you sure you want to delete{' '}
+            <span className="font-medium text-foreground">
+              &quot;{deleteModalCampaign?.name}&quot;
+            </span>
+            ? This will permanently remove the campaign from your Drafted account.
           </p>
 
-          <div className="flex gap-3 justify-end">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteModalCampaign(null)}
-              disabled={isDeleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
               onClick={handleDelete}
               disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeleting ? 'Deleting...' : 'Delete'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

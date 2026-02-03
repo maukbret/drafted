@@ -1,12 +1,35 @@
 'use client'
 
 import { useState } from 'react'
+import { Check, ChevronsUpDown, HelpCircle } from 'lucide-react'
 import { AudienceSelector } from '../audience-selector'
 import { ProgressToast, ProgressStep } from '../progress-toast'
 import { KlaviyoAudience } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 
 interface Step3SettingsProps {
@@ -105,6 +128,7 @@ export function Step3Settings({
     return 'other'
   })
   const [timezone, setTimezone] = useState('Europe/Amsterdam')
+  const [timezoneOpen, setTimezoneOpen] = useState(false)
   const [useRecipientTimezone, setUseRecipientTimezone] = useState(false)
   const [publishOption, setPublishOption] = useState<'draft' | 'schedule'>('draft')
   const [useCustomFooter, setUseCustomFooter] = useState(true)
@@ -291,9 +315,21 @@ export function Step3Settings({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="preview-text">
-          Preview text <span className="text-muted-foreground">(optional)</span>
-        </Label>
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor="preview-text">
+            Preview text <span className="text-muted-foreground">(optional)</span>
+          </Label>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="max-w-xs">The preview text appears after the subject line in most email clients. It gives recipients a glimpse of the email content.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
         <Input
           id="preview-text"
           type="text"
@@ -304,7 +340,7 @@ export function Step3Settings({
       </div>
 
       <div className="border-t pt-6">
-        <h3 className="font-medium mb-4">Audience</h3>
+        <h3 className="text-lg font-semibold mb-4">Audience</h3>
 
         <div className="space-y-4">
           <AudienceSelector
@@ -326,8 +362,7 @@ export function Step3Settings({
       </div>
 
       <div className="border-t pt-6">
-        <h3 className="font-medium mb-4">When to send</h3>
-        <p className="text-sm text-muted-foreground mb-3">Choose the date and time for this campaign</p>
+        <h3 className="text-lg font-semibold mb-4">When to send</h3>
 
         <div className="space-y-4">
           {/* Quick date selection */}
@@ -368,7 +403,7 @@ export function Step3Settings({
           </div>
 
           {/* Date picker (only shown when "Other" is selected) */}
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             {dateOption === 'other' && (
               <Input
                 type="date"
@@ -384,103 +419,140 @@ export function Step3Settings({
               onChange={(e) => setScheduledTime(e.target.value)}
               className="w-auto"
             />
+            <Popover open={timezoneOpen} onOpenChange={setTimezoneOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={timezoneOpen}
+                  disabled={useRecipientTimezone}
+                  className="w-[220px] justify-between font-normal"
+                >
+                  {TIMEZONES.find((tz) => tz.value === timezone)?.label ?? 'Select timezone...'}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[220px] p-0">
+                <Command>
+                  <CommandInput placeholder="Search timezone..." />
+                  <CommandList>
+                    <CommandEmpty>No timezone found.</CommandEmpty>
+                    <CommandGroup>
+                      {TIMEZONES.map((tz) => (
+                        <CommandItem
+                          key={tz.value}
+                          value={tz.label}
+                          onSelect={() => {
+                            setTimezone(tz.value)
+                            setTimezoneOpen(false)
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              timezone === tz.value ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          {tz.label}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
-          <select
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            disabled={useRecipientTimezone}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 pr-8 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {TIMEZONES.map((tz) => (
-              <option key={tz.value} value={tz.value}>
-                {tz.label}
-              </option>
-            ))}
-          </select>
-
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
+          <div className="flex items-start gap-3">
+            <Checkbox
+              id="recipient-timezone"
               checked={useRecipientTimezone}
-              onChange={(e) => setUseRecipientTimezone(e.target.checked)}
-              className="w-4 h-4 mt-1 rounded border-input"
+              onCheckedChange={(checked) => setUseRecipientTimezone(checked as boolean)}
+              className="mt-0.5"
             />
-            <div>
+            <label htmlFor="recipient-timezone" className="cursor-pointer">
               <span className="text-sm font-medium leading-none">Send in recipient&apos;s timezone</span>
               <p className="text-xs text-muted-foreground mt-1">
                 Each recipient receives the email at the selected time in their local timezone
               </p>
-            </div>
-          </label>
+            </label>
+          </div>
         </div>
       </div>
 
       <div className="border-t pt-6">
-        <h3 className="font-medium mb-4">Footer options</h3>
+        <div className="flex items-center gap-1.5 mb-4">
+          <h3 className="text-lg font-semibold">Footer options</h3>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="max-w-xs">The footer appears at the bottom of your email. It typically includes unsubscribe links and company info required by email regulations.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
 
-        <label className="flex items-start gap-3 cursor-pointer">
-          <input
-            type="checkbox"
+        <div className="flex items-start gap-3">
+          <Switch
+            id="custom-footer"
             checked={useCustomFooter}
-            onChange={(e) => setUseCustomFooter(e.target.checked)}
-            className="w-4 h-4 mt-1 rounded border-input"
+            onCheckedChange={setUseCustomFooter}
+            className="mt-0.5"
           />
-          <div>
+          <label htmlFor="custom-footer" className="cursor-pointer">
             <span className="text-sm font-medium leading-none">Use custom footer</span>
             <p className="text-xs text-muted-foreground mt-1">
               {useCustomFooter
                 ? 'Uses your saved footer from Klaviyo. Disable to use a simple unsubscribe link instead.'
                 : 'Uses a simple unsubscribe link. Enable to use your saved Klaviyo footer.'}
             </p>
-          </div>
-        </label>
+          </label>
+        </div>
       </div>
 
       <div className="border-t pt-6">
-        <h3 className="font-medium mb-4">How to publish</h3>
+        <h3 className="text-lg font-semibold mb-4">How to publish</h3>
 
-        <div className="space-y-3">
-          <label className={cn(
-            'flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors',
-            publishOption === 'draft'
-              ? 'border-primary bg-muted'
-              : 'border-border hover:bg-muted/50'
-          )}>
-            <input
-              type="radio"
-              name="publish-option"
-              value="draft"
-              checked={publishOption === 'draft'}
-              onChange={() => setPublishOption('draft')}
-              className="w-4 h-4 mt-0.5"
-            />
+        <RadioGroup
+          value={publishOption}
+          onValueChange={(value) => setPublishOption(value as 'draft' | 'schedule')}
+          className="space-y-3"
+        >
+          <label
+            htmlFor="publish-draft"
+            className={cn(
+              'flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors',
+              publishOption === 'draft'
+                ? 'border-primary bg-muted'
+                : 'border-border hover:bg-muted/50'
+            )}
+          >
+            <RadioGroupItem value="draft" id="publish-draft" className="mt-1" />
             <div>
-              <span className="font-medium">Save as draft</span>
+              <span className="text-sm font-medium">Save as draft</span>
               <p className="text-xs text-muted-foreground">Review and schedule manually in Klaviyo</p>
             </div>
           </label>
 
-          <label className={cn(
-            'flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors',
-            publishOption === 'schedule'
-              ? 'border-primary bg-muted'
-              : 'border-border hover:bg-muted/50'
-          )}>
-            <input
-              type="radio"
-              name="publish-option"
-              value="schedule"
-              checked={publishOption === 'schedule'}
-              onChange={() => setPublishOption('schedule')}
-              className="w-4 h-4 mt-0.5"
-            />
+          <label
+            htmlFor="publish-schedule"
+            className={cn(
+              'flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors',
+              publishOption === 'schedule'
+                ? 'border-primary bg-muted'
+                : 'border-border hover:bg-muted/50'
+            )}
+          >
+            <RadioGroupItem value="schedule" id="publish-schedule" className="mt-1" />
             <div>
-              <span className="font-medium">Schedule immediately</span>
+              <span className="text-sm font-medium">Schedule immediately</span>
               <p className="text-xs text-muted-foreground">Schedule the campaign for the selected date and time</p>
             </div>
           </label>
-        </div>
+        </RadioGroup>
       </div>
 
       {error && (

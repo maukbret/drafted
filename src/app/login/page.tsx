@@ -1,15 +1,17 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Plus } from 'lucide-react'
 
-export default function LoginPage() {
+function LoginForm() {
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get('redirect')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
@@ -97,7 +99,7 @@ export default function LoginPage() {
           password,
         })
         if (error) throw error
-        router.push('/campaigns')
+        router.push(redirectTo || '/campaigns')
         router.refresh()
       }
     } catch (err) {
@@ -221,5 +223,19 @@ export default function LoginPage() {
         </p>
       </div>
     </main>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <main className="flex min-h-screen flex-col items-center justify-center p-8">
+        <div className="max-w-sm w-full space-y-8 text-center">
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </main>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }

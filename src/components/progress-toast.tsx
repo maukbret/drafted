@@ -30,7 +30,7 @@ export function ProgressToast({
     : null
 
   return (
-    <Card className="fixed bottom-4 right-4 z-50 w-80 shadow-xl">
+    <Card className="fixed bottom-4 right-4 z-50 w-80 shadow-sm-xl">
       <CardHeader className="py-3 px-4 flex flex-row items-center justify-between space-y-0 border-b">
         <span className="font-medium text-sm">
           {error

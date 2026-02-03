@@ -4,15 +4,31 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Link as LinkIcon } from 'lucide-react'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { cn } from '@/lib/utils'
+import { Loader2, Link as LinkIcon, Check, ChevronsUpDown } from 'lucide-react'
 
 interface KlaviyoConnection {
   id: string
   account_name: string | null
+  owner_name?: string
 }
 
 interface Step1ImportProps {
   klaviyoConnections: KlaviyoConnection[]
+  teamConnections?: KlaviyoConnection[]
   hasFigmaConnection: boolean
   campaignId: string
   initialConnectionId?: string
@@ -22,13 +38,16 @@ interface Step1ImportProps {
 
 export function Step1Import({
   klaviyoConnections,
+  teamConnections = [],
   hasFigmaConnection,
   campaignId,
   initialConnectionId,
   initialFigmaUrl,
   onComplete,
 }: Step1ImportProps) {
-  const [connectionId, setConnectionId] = useState(initialConnectionId || klaviyoConnections[0]?.id || '')
+  const allConnections = [...klaviyoConnections, ...teamConnections]
+  const [connectionId, setConnectionId] = useState(initialConnectionId || klaviyoConnections[0]?.id || teamConnections[0]?.id || '')
+  const [connectionOpen, setConnectionOpen] = useState(false)
   const [figmaUrl, setFigmaUrl] = useState(initialFigmaUrl || '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -140,7 +159,7 @@ export function Step1Import({
     )
   }
 
-  if (klaviyoConnections.length === 0) {
+  if (allConnections.length === 0) {
     return (
       <div className="text-center py-8">
         <div className="w-16 h-16 mx-auto mb-4 bg-muted rounded-full flex items-center justify-center">
@@ -161,19 +180,83 @@ export function Step1Import({
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-2">
         <Label htmlFor="klaviyo-account">Klaviyo account</Label>
-        <select
-          id="klaviyo-account"
-          value={connectionId}
-          onChange={(e) => setConnectionId(e.target.value)}
-          disabled={loading}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 pr-8 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {klaviyoConnections.map((conn) => (
-            <option key={conn.id} value={conn.id}>
-              {conn.account_name || 'Unnamed account'}
-            </option>
-          ))}
-        </select>
+        <Popover open={connectionOpen} onOpenChange={setConnectionOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              id="klaviyo-account"
+              variant="outline"
+              role="combobox"
+              aria-expanded={connectionOpen}
+              disabled={loading}
+              className="w-full justify-between font-normal"
+            >
+              {connectionId
+                ? (() => {
+                    const conn = allConnections.find((c) => c.id === connectionId)
+                    if (!conn) return 'Select a Klaviyo account'
+                    const name = conn.account_name || 'Unnamed account'
+                    return conn.owner_name ? `${name} (${conn.owner_name})` : name
+                  })()
+                : 'Select a Klaviyo account'}
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+            <Command>
+              <CommandInput placeholder="Search accounts..." />
+              <CommandList>
+                <CommandEmpty>No account found.</CommandEmpty>
+                {klaviyoConnections.length > 0 && (
+                  <CommandGroup heading={teamConnections.length > 0 ? "Your accounts" : undefined}>
+                    {klaviyoConnections.map((conn) => (
+                      <CommandItem
+                        key={conn.id}
+                        value={conn.account_name || 'Unnamed account'}
+                        onSelect={() => {
+                          setConnectionId(conn.id)
+                          setConnectionOpen(false)
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            connectionId === conn.id ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        {conn.account_name || 'Unnamed account'}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+                {teamConnections.length > 0 && (
+                  <CommandGroup heading="Team accounts">
+                    {teamConnections.map((conn) => (
+                      <CommandItem
+                        key={conn.id}
+                        value={`${conn.account_name || 'Unnamed account'} ${conn.owner_name || ''}`}
+                        onSelect={() => {
+                          setConnectionId(conn.id)
+                          setConnectionOpen(false)
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            connectionId === conn.id ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        <span>{conn.account_name || 'Unnamed account'}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          ({conn.owner_name || 'Team'})
+                        </span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
         <p className="text-xs text-muted-foreground">
           Select which Klaviyo account to use for this campaign
         </p>

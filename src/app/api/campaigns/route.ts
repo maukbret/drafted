@@ -44,13 +44,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Verify the connection belongs to this user and get account ID
-    const { data: connection } = await supabase
+    // Verify the connection belongs to this user or is a team admin's connection
+    let connection = null
+
+    // First, check if it's the user's own connection
+    const { data: ownConnection } = await supabase
       .from('klaviyo_connections')
       .select('id, klaviyo_account_id')
       .eq('id', klaviyoConnectionId)
       .eq('user_id', user.id)
       .single()
+
+    if (ownConnection) {
+      connection = ownConnection
+    } else {
+      // Check if user is in a team and can use admin's connection
+      const { data: membership } = await supabase
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', user.id)
+        .single()
+
+      if (membership) {
+        // Get team admins
+        const { data: adminMembers } = await supabase
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', membership.team_id)
+          .eq('role', 'admin')
+
+        if (adminMembers && adminMembers.length > 0) {
+          const adminUserIds = adminMembers.map(m => m.user_id)
+
+          // Check if the connection belongs to a team admin
+          const { data: teamConnection } = await supabase
+            .from('klaviyo_connections')
+            .select('id, klaviyo_account_id')
+            .eq('id', klaviyoConnectionId)
+            .in('user_id', adminUserIds)
+            .single()
+
+          if (teamConnection) {
+            connection = teamConnection
+          }
+        }
+      }
+    }
 
     if (!connection) {
       return NextResponse.json({ error: 'Invalid Klaviyo connection' }, { status: 400 })

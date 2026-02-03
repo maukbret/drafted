@@ -20,18 +20,68 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     redirect('/login')
   }
 
-  // Fetch the campaign with related data
-  const { data: campaign, error } = await supabase
-    .from('campaigns')
-    .select('*')
-    .eq('id', id)
+  // Get user's team membership
+  const { data: teamMembership } = await supabase
+    .from('team_members')
+    .select('team_id')
     .eq('user_id', user.id)
     .single()
 
+  // Get team name for shared connection labeling
+  const { data: team } = teamMembership
+    ? await supabase
+        .from('teams')
+        .select('name')
+        .eq('id', teamMembership.team_id)
+        .single()
+    : { data: null }
+
+  // Get user's own Klaviyo connections
+  const { data: ownConnections } = await supabase
+    .from('klaviyo_connections')
+    .select('id')
+    .eq('user_id', user.id)
+
+  const ownConnectionIds = ownConnections?.map(c => c.id) || []
+
+  // Get team admin's connections if user is in a team
+  let teamConnectionIds: string[] = []
+  if (teamMembership) {
+    const { data: adminMembers } = await supabase
+      .from('team_members')
+      .select('user_id')
+      .eq('team_id', teamMembership.team_id)
+      .eq('role', 'admin')
+
+    if (adminMembers && adminMembers.length > 0) {
+      const { data: teamConnections } = await supabase
+        .from('klaviyo_connections')
+        .select('id')
+        .in('user_id', adminMembers.map(m => m.user_id))
+
+      teamConnectionIds = teamConnections?.map(c => c.id) || []
+    }
+  }
+
+  // All connection IDs the user has access to
+  const accessibleConnectionIds = [...new Set([...ownConnectionIds, ...teamConnectionIds])]
+
+  // Fetch the campaign - only allow viewing if user has access to its connection
+  const { data: campaign, error } = accessibleConnectionIds.length > 0
+    ? await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('id', id)
+        .in('klaviyo_connection_id', accessibleConnectionIds)
+        .single()
+    : { data: null, error: { message: 'No accessible connections' } }
+
   if (error || !campaign) {
-    console.error('Failed to fetch campaign:', { error, campaignId: id, userId: user.id })
     notFound()
   }
+
+  // Check if user can edit (only own campaigns)
+  const canEdit = campaign.user_id === user.id
 
   // Fetch related data separately to avoid join issues
   const { data: klaviyoConnection } = await supabase
@@ -174,6 +224,36 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     .select('id, account_name')
     .eq('user_id', user.id)
 
+  // Get team admin's connections (if user is in a team)
+  // Note: teamMembership is already fetched above
+  let teamConnections: { id: string; account_name: string | null; owner_name?: string }[] = []
+  if (teamMembership) {
+    // Get admin members
+    const { data: adminMembers } = await supabase
+      .from('team_members')
+      .select('user_id')
+      .eq('team_id', teamMembership.team_id)
+      .eq('role', 'admin')
+
+    if (adminMembers && adminMembers.length > 0) {
+      const adminUserIds = adminMembers.map(m => m.user_id).filter(id => id !== user.id)
+
+      if (adminUserIds.length > 0) {
+        const { data: adminConnections } = await supabase
+          .from('klaviyo_connections')
+          .select('id, account_name, user_id')
+          .in('user_id', adminUserIds)
+
+        const fallbackTeamName = team?.name || 'Team'
+        teamConnections = (adminConnections || []).map(conn => ({
+          id: conn.id,
+          account_name: conn.account_name,
+          owner_name: fallbackTeamName,
+        }))
+      }
+    }
+  }
+
   // Check if Figma is connected
   const { data: figmaConnection } = await supabase
     .from('figma_connections')
@@ -182,8 +262,8 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     .single()
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
+    <div className="p-8 min-h-[calc(100vh-var(--header-height,0px))] flex flex-col">
+      <div className="mb-6 flex-shrink-0">
         <Link
           href="/campaigns"
           className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
@@ -193,14 +273,12 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
         </Link>
       </div>
 
-      <h1 className="text-2xl font-bold mb-8">
-        {campaign.name === 'Untitled Campaign' ? 'New Campaign' : campaign.name}
-      </h1>
-
       <CampaignWizard
         campaign={campaignWithRelations}
         klaviyoConnections={klaviyoConnections || []}
+        teamConnections={teamConnections}
         hasFigmaConnection={!!figmaConnection}
+        campaignName={campaign.name === 'Untitled Campaign' ? 'New Campaign' : campaign.name}
       />
     </div>
   )

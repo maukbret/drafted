@@ -1,35 +1,84 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { CampaignList } from '@/components/campaign-list'
-import { CampaignsHeader } from '@/components/campaigns-header'
+import { CampaignsPageClient } from '@/components/campaigns-page-client'
 
 export default async function CampaignsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) {
-    redirect('/login')
+  if (!user) redirect('/login')
+
+  // Get user's team membership
+  const { data: teamMembership } = await supabase
+    .from('team_members')
+    .select('team_id, role')
+    .eq('user_id', user.id)
+    .single()
+
+  // Get user's own Klaviyo connections
+  const { data: ownConnections } = await supabase
+    .from('klaviyo_connections')
+    .select('id')
+    .eq('user_id', user.id)
+
+  const ownConnectionIds = ownConnections?.map(c => c.id) || []
+
+  // Get team admin's connections if user is in a team
+  let teamConnectionIds: string[] = []
+  if (teamMembership) {
+    const { data: adminMembers } = await supabase
+      .from('team_members')
+      .select('user_id')
+      .eq('team_id', teamMembership.team_id)
+      .eq('role', 'admin')
+
+    if (adminMembers && adminMembers.length > 0) {
+      const { data: teamConnections } = await supabase
+        .from('klaviyo_connections')
+        .select('id')
+        .in('user_id', adminMembers.map(m => m.user_id))
+
+      teamConnectionIds = teamConnections?.map(c => c.id) || []
+    }
   }
 
-  // Fetch campaigns
-  const { data: campaigns } = await supabase
-    .from('campaigns')
-    .select('*, klaviyo_connections(account_name)')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
+  // All connection IDs the user has access to
+  const accessibleConnectionIds = [...new Set([...ownConnectionIds, ...teamConnectionIds])]
+  const hasConnections = accessibleConnectionIds.length > 0
 
-  // Fetch Klaviyo connections for creating new campaigns
-  const { data: klaviyoConnections } = await supabase
-    .from('klaviyo_connections')
-    .select('id, account_name')
-    .eq('user_id', user.id)
+  // Fetch campaigns that use connections the user has access to
+  // This ensures ex-members can't see campaigns using team connections after leaving
+  const { data: campaigns } = accessibleConnectionIds.length > 0
+    ? await supabase
+        .from('campaigns')
+        .select('*, klaviyo_connections(account_name)')
+        .in('klaviyo_connection_id', accessibleConnectionIds)
+        .order('created_at', { ascending: false })
+    : { data: [] }
 
-  const hasConnections = !!(klaviyoConnections && klaviyoConnections.length > 0)
+  // Fetch profiles separately for campaign creators
+  const creatorIds = [...new Set(campaigns?.map(c => c.user_id) || [])]
+  const { data: profiles } = creatorIds.length > 0
+    ? await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', creatorIds)
+    : { data: [] }
+
+  // Add creator info and check if it's the current user's campaign
+  const campaignsWithCreator = (campaigns || []).map(campaign => ({
+    ...campaign,
+    is_own: campaign.user_id === user.id,
+    creator_name: profiles?.find(p => p.id === campaign.user_id)?.full_name || null
+  }))
 
   return (
     <div className="p-8">
-      <CampaignsHeader hasConnections={hasConnections} />
-      <CampaignList campaigns={campaigns || []} />
+      <CampaignsPageClient
+        hasConnections={hasConnections}
+        campaigns={campaignsWithCreator}
+        currentUserId={user.id}
+      />
     </div>
   )
 }

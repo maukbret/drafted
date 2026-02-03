@@ -13,9 +13,59 @@ export default async function ConnectionsPage() {
   // Get all Klaviyo connections with account IDs
   const { data: klaviyoConnections } = await supabase
     .from('klaviyo_connections')
-    .select('id, account_name, klaviyo_account_id, created_at')
+    .select('id, account_name, klaviyo_account_id, created_at, user_id')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
+
+  // Get user's team membership
+  const { data: teamMembership } = await supabase
+    .from('team_members')
+    .select('team_id, role')
+    .eq('user_id', user.id)
+    .single()
+
+  // Get team name (for shared connection labeling)
+  const { data: team } = teamMembership
+    ? await supabase
+        .from('teams')
+        .select('name')
+        .eq('id', teamMembership.team_id)
+        .single()
+    : { data: null }
+
+  // Get team admin's connections (if user is in a team and not an admin)
+  let teamConnections: typeof klaviyoConnections = []
+  if (teamMembership && teamMembership.role !== 'admin') {
+    // Get admin members (without profile join - no FK relationship exists)
+    const { data: adminMembers } = await supabase
+      .from('team_members')
+      .select('user_id')
+      .eq('team_id', teamMembership.team_id)
+      .eq('role', 'admin')
+
+    if (adminMembers && adminMembers.length > 0) {
+      const adminUserIds = adminMembers.map(m => m.user_id)
+
+      // Fetch connections and profiles separately
+      const [{ data: adminConnections }, { data: adminProfiles }] = await Promise.all([
+        supabase
+          .from('klaviyo_connections')
+          .select('id, account_name, klaviyo_account_id, created_at, user_id')
+          .in('user_id', adminUserIds)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', adminUserIds)
+      ])
+
+      const fallbackTeamName = team?.name || 'Team'
+      teamConnections = (adminConnections || []).map(conn => ({
+        ...conn,
+        owner_name: fallbackTeamName,
+      }))
+    }
+  }
 
   // Get all footers for this user
   const { data: footers } = await supabase
@@ -23,13 +73,43 @@ export default async function ConnectionsPage() {
     .select('klaviyo_account_id')
     .eq('user_id', user.id)
 
+  // Also get team admin's footers
+  let teamFooters: typeof footers = []
+  if (teamMembership && teamMembership.role !== 'admin') {
+    const { data: adminMembers } = await supabase
+      .from('team_members')
+      .select('user_id')
+      .eq('team_id', teamMembership.team_id)
+      .eq('role', 'admin')
+
+    if (adminMembers && adminMembers.length > 0) {
+      const { data: adminFooters } = await supabase
+        .from('klaviyo_footers')
+        .select('klaviyo_account_id')
+        .in('user_id', adminMembers.map(m => m.user_id))
+
+      teamFooters = adminFooters || []
+    }
+  }
+
   // Create a set of account IDs that have footers
-  const accountsWithFooters = new Set(footers?.map(f => f.klaviyo_account_id) || [])
+  const accountsWithFooters = new Set([
+    ...(footers?.map(f => f.klaviyo_account_id) || []),
+    ...(teamFooters?.map(f => f.klaviyo_account_id) || [])
+  ])
 
   // Add hasFooter flag to each connection
   const connectionsWithFooterStatus = (klaviyoConnections || []).map(conn => ({
     ...conn,
     hasFooter: conn.klaviyo_account_id ? accountsWithFooters.has(conn.klaviyo_account_id) : false,
+    isShared: false,
+  }))
+
+  // Add team connections with shared flag
+  const teamConnectionsWithStatus = (teamConnections || []).map(conn => ({
+    ...conn,
+    hasFooter: conn.klaviyo_account_id ? accountsWithFooters.has(conn.klaviyo_account_id) : false,
+    isShared: true,
   }))
 
   // Get Figma connection
@@ -43,6 +123,7 @@ export default async function ConnectionsPage() {
     <div className="p-8">
       <ConnectionsTabs
         klaviyoConnections={connectionsWithFooterStatus}
+        teamConnections={teamConnectionsWithStatus}
         figmaConnection={figmaConnection}
       />
     </div>

@@ -5,6 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Loader2, Check, Copy, Upload } from 'lucide-react'
 
 interface KlaviyoConnection {
@@ -167,19 +174,22 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="klaviyo-account">Klaviyo account</Label>
-              <select
-                id="klaviyo-account"
+              <Select
                 value={selectedKlaviyoId}
-                onChange={(e) => setSelectedKlaviyoId(e.target.value)}
+                onValueChange={setSelectedKlaviyoId}
                 disabled={loading}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 pr-8 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {klaviyoConnections.map((conn) => (
-                  <option key={conn.id} value={conn.id}>
-                    {conn.account_name || 'Unnamed account'}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="klaviyo-account">
+                  <SelectValue placeholder="Select a Klaviyo account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {klaviyoConnections.map((conn) => (
+                    <SelectItem key={conn.id} value={conn.id}>
+                      {conn.account_name || 'Unnamed account'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">

@@ -13,6 +13,7 @@ import { AlertTriangle } from 'lucide-react'
 interface KlaviyoConnection {
   id: string
   account_name: string | null
+  owner_name?: string
 }
 
 interface Frame {
@@ -33,7 +34,9 @@ interface CampaignWizardProps {
     } | null
   }
   klaviyoConnections: KlaviyoConnection[]
+  teamConnections?: KlaviyoConnection[]
   hasFigmaConnection: boolean
+  campaignName: string
 }
 
 const STEPS = [
@@ -45,7 +48,9 @@ const STEPS = [
 export function CampaignWizard({
   campaign: initialCampaign,
   klaviyoConnections,
+  teamConnections = [],
   hasFigmaConnection,
+  campaignName,
 }: CampaignWizardProps) {
   const router = useRouter()
   const [campaign, setCampaign] = useState(initialCampaign)
@@ -99,14 +104,42 @@ export function CampaignWizard({
     setStep(Math.max(1, step - 1))
   }
 
-  return (
-    <div>
-      <WizardProgress currentStep={step} steps={STEPS} />
+  // Get the selected Klaviyo account name (check both own and team connections)
+  const allConnections = [...klaviyoConnections, ...teamConnections]
+  const selectedAccount = allConnections.find(conn => conn.id === connectionId)
 
-      <div className="mt-8">
+  return (
+    <div
+      className={
+        step === 2
+          ? 'flex-1 flex flex-col min-h-0 max-h-[calc(100vh-var(--header-height,0px)-6.5rem)]'
+          : 'flex-1 flex flex-col min-h-0'
+      }
+    >
+      <div className="flex items-center justify-between mb-8 flex-shrink-0">
+        <h1 className="text-2xl font-bold">{campaignName}</h1>
+        {step >= 2 && selectedAccount && (
+          <span className="text-sm text-muted-foreground">
+            {selectedAccount.account_name || 'Unnamed account'}
+          </span>
+        )}
+      </div>
+
+      <div className="flex-shrink-0">
+        <WizardProgress currentStep={step} steps={STEPS} />
+      </div>
+
+      <div
+        className={
+          step === 2
+            ? 'mt-8 flex-1 flex flex-col min-h-0 overflow-y-auto'
+            : 'mt-8'
+        }
+      >
         {step === 1 && (
           <Step1Import
             klaviyoConnections={klaviyoConnections}
+            teamConnections={teamConnections}
             hasFigmaConnection={hasFigmaConnection}
             campaignId={campaign.id}
             initialConnectionId={connectionId}

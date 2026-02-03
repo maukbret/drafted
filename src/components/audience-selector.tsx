@@ -3,11 +3,24 @@
 import { useState, useEffect } from 'react'
 import { KlaviyoAudience } from '@/types/database'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { Check, ChevronDown, X, Loader2 } from 'lucide-react'
+import { Check, ChevronsUpDown, X } from 'lucide-react'
 
 interface AudienceSelectorProps {
   connectionId: string
@@ -27,8 +40,7 @@ export function AudienceSelector({
   const [audiences, setAudiences] = useState<KlaviyoAudience[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isOpen, setIsOpen] = useState(false)
-  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     const fetchAudiences = async () => {
@@ -55,10 +67,6 @@ export function AudienceSelector({
     }
   }, [connectionId])
 
-  const filteredAudiences = audiences.filter(
-    (a) => a.name.toLowerCase().includes(search.toLowerCase())
-  )
-
   const toggleAudience = (audience: KlaviyoAudience) => {
     const isSelected = selectedAudiences.some((a) => a.id === audience.id)
     if (isSelected) {
@@ -76,10 +84,7 @@ export function AudienceSelector({
     return (
       <div className="space-y-2">
         <Label>{label}</Label>
-        <div className="flex items-center gap-2 px-3 py-2 border rounded-md bg-muted text-muted-foreground text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading audiences...
-        </div>
+        <Skeleton className="h-9 w-full" />
       </div>
     )
   }
@@ -96,12 +101,12 @@ export function AudienceSelector({
   }
 
   return (
-    <div className="relative space-y-2">
+    <div className="space-y-2">
       <Label>{label}</Label>
 
       {/* Selected audiences */}
       {selectedAudiences.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-2">
+        <div className="flex flex-wrap gap-2">
           {selectedAudiences.map((audience) => (
             <Badge
               key={audience.id}
@@ -125,69 +130,53 @@ export function AudienceSelector({
         </div>
       )}
 
-      {/* Dropdown trigger */}
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full justify-between font-normal"
-      >
-        <span className="text-muted-foreground">{placeholder}</span>
-        <ChevronDown className={cn('h-4 w-4 transition-transform', isOpen && 'rotate-180')} />
-      </Button>
-
-      {/* Dropdown */}
-      {isOpen && (
-        <div className="absolute z-10 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-64 overflow-hidden">
-          <div className="p-2 border-b">
-            <Input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search audiences..."
-              className="h-8"
-            />
-          </div>
-          <div className="overflow-y-auto max-h-48">
-            {filteredAudiences.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-muted-foreground">No audiences found</div>
-            ) : (
-              filteredAudiences.map((audience) => {
-                const isSelected = selectedAudiences.some((a) => a.id === audience.id)
-                return (
-                  <button
-                    key={audience.id}
-                    type="button"
-                    onClick={() => toggleAudience(audience)}
-                    className={cn(
-                      'w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-muted',
-                      isSelected && 'bg-muted/50'
-                    )}
-                  >
-                    <span className={cn(
-                      'w-2 h-2 rounded-full',
-                      audience.type === 'list' ? 'bg-blue-500' : 'bg-purple-500'
-                    )} />
-                    <span className="flex-1">{audience.name}</span>
-                    <span className="text-xs text-muted-foreground">{audience.type}</span>
-                    {isSelected && (
-                      <Check className="h-4 w-4 text-green-500" />
-                    )}
-                  </button>
-                )
-              })
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Click outside to close */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-0"
-          onClick={() => setIsOpen(false)}
-        />
-      )}
+      {/* Popover with Command */}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between font-normal"
+          >
+            <span className="text-muted-foreground">{placeholder}</span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+          <Command>
+            <CommandInput placeholder="Search audiences..." />
+            <CommandList>
+              <CommandEmpty>No audiences found.</CommandEmpty>
+              <CommandGroup>
+                {audiences.map((audience) => {
+                  const isSelected = selectedAudiences.some((a) => a.id === audience.id)
+                  return (
+                    <CommandItem
+                      key={audience.id}
+                      value={audience.name}
+                      onSelect={() => toggleAudience(audience)}
+                    >
+                      <span className={cn(
+                        'w-2 h-2 rounded-full mr-2',
+                        audience.type === 'list' ? 'bg-blue-500' : 'bg-purple-500'
+                      )} />
+                      <span className="flex-1">{audience.name}</span>
+                      <span className="text-xs text-muted-foreground mr-2">{audience.type}</span>
+                      <Check
+                        className={cn(
+                          'h-4 w-4',
+                          isSelected ? 'opacity-100' : 'opacity-0'
+                        )}
+                      />
+                    </CommandItem>
+                  )
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
     </div>
   )
 }

@@ -7,7 +7,7 @@ import { UserSettingsModal } from './user-settings-modal'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Mail, Image, Link2, Settings, LogOut } from 'lucide-react'
+import { Mail, Image, Link2, Settings, LogOut, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface UserProfile {
@@ -32,6 +32,7 @@ export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutPro
     { href: '/campaigns', label: 'Campaigns', icon: Mail },
     { href: '/images', label: 'Upload images', icon: Image },
     { href: '/connections', label: 'Connections', icon: Link2 },
+    { href: '/team', label: 'Team', icon: Users },
   ]
 
   return (
@@ -55,7 +56,7 @@ export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutPro
                   className={cn(
                     'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                     isActive
-                      ? 'bg-background text-foreground shadow-sm border'
+                      ? 'bg-background text-foreground shadow-sm-sm border'
                       : 'text-muted-foreground hover:bg-background hover:text-foreground'
                   )}
                 >
