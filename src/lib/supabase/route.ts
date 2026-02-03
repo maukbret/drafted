@@ -14,7 +14,7 @@ export function createRouteHandlerClient(request: NextRequest) {
         getAll() {
           return request.cookies.getAll()
         },
-        setAll(cookies) {
+        setAll(cookies: CookieToSet[]) {
           cookiesToSet.push(...cookies)
         },
       },
