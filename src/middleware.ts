@@ -35,22 +35,68 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  // Define page types
+  const isAuthPage = request.nextUrl.pathname === '/login' ||
+                     request.nextUrl.pathname === '/signup'
+
+  const isPublicPage = request.nextUrl.pathname === '/' ||
+                       isAuthPage ||
+                       request.nextUrl.pathname.startsWith('/api/auth') ||
+                       request.nextUrl.pathname.startsWith('/invite')
+
+  const isOnboardingPage = request.nextUrl.pathname === '/onboarding'
+  const isApiRoute = request.nextUrl.pathname.startsWith('/api/')
+
   // Redirect unauthenticated users to login (except for public pages)
-  const isPublicPage = request.nextUrl.pathname === '/' || 
-                       request.nextUrl.pathname === '/login' ||
-                       request.nextUrl.pathname.startsWith('/api/auth')
-  
   if (!user && !isPublicPage) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Redirect authenticated users away from login
-  if (user && request.nextUrl.pathname === '/login') {
+  // For authenticated users, check onboarding status
+  if (user && !isOnboardingPage && !isApiRoute && !isPublicPage) {
+    // Check if user has completed onboarding
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('onboarding_completed')
+      .eq('id', user.id)
+      .single()
+
+    // Redirect to onboarding if not completed
+    if (!profile || !profile.onboarding_completed) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/onboarding'
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // Redirect authenticated users away from login/signup to campaigns (or onboarding if not completed)
+  if (user && isAuthPage) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('onboarding_completed')
+      .eq('id', user.id)
+      .single()
+
     const url = request.nextUrl.clone()
-    url.pathname = '/campaigns'
+    url.pathname = (!profile || !profile.onboarding_completed) ? '/onboarding' : '/campaigns'
     return NextResponse.redirect(url)
+  }
+
+  // If user is on onboarding page but already completed, redirect to campaigns
+  if (user && isOnboardingPage) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('onboarding_completed')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.onboarding_completed) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/campaigns'
+      return NextResponse.redirect(url)
+    }
   }
 
   return supabaseResponse

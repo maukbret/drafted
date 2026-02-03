@@ -11,7 +11,7 @@ import { Mail, Image, Link2, Settings, LogOut, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface UserProfile {
-  full_name: string
+  full_name: string | null
   avatar_url: string | null
 }
 

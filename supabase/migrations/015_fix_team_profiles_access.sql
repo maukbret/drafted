@@ -93,3 +93,39 @@ CREATE POLICY "Connection owners can view frames for their connection campaigns"
       )
     )
   );
+
+-- Allow connection owners to delete campaigns that use their connections
+CREATE POLICY "Connection owners can delete campaigns using their connections"
+  ON campaigns FOR DELETE
+  TO authenticated
+  USING (
+    klaviyo_connection_id IN (
+      SELECT id FROM klaviyo_connections WHERE user_id = auth.uid()
+    )
+  );
+
+-- Allow connection owners to delete projects for campaigns using their connections
+CREATE POLICY "Connection owners can delete projects for their connection campaigns"
+  ON projects FOR DELETE
+  TO authenticated
+  USING (
+    id IN (
+      SELECT project_id FROM campaigns
+      WHERE klaviyo_connection_id IN (
+        SELECT id FROM klaviyo_connections WHERE user_id = auth.uid()
+      )
+    )
+  );
+
+-- Allow connection owners to delete frames for campaigns using their connections
+CREATE POLICY "Connection owners can delete frames for their connection campaigns"
+  ON frames FOR DELETE
+  TO authenticated
+  USING (
+    project_id IN (
+      SELECT project_id FROM campaigns
+      WHERE klaviyo_connection_id IN (
+        SELECT id FROM klaviyo_connections WHERE user_id = auth.uid()
+      )
+    )
+  );

@@ -130,16 +130,30 @@ export async function DELETE(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Get campaign to find associated project
+  // Get user's own connection IDs
+  const { data: ownConnections } = await supabase
+    .from('klaviyo_connections')
+    .select('id')
+    .eq('user_id', user.id)
+
+  const ownConnectionIds = ownConnections?.map(c => c.id) || []
+
+  // Get campaign - allow if user owns it OR owns the connection it uses
   const { data: campaign } = await supabase
     .from('campaigns')
-    .select('project_id')
+    .select('project_id, user_id, klaviyo_connection_id')
     .eq('id', id)
-    .eq('user_id', user.id)
     .single()
 
   if (!campaign) {
     return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+  }
+
+  // Check if user can delete: owns the campaign OR owns the connection
+  const canDelete = campaign.user_id === user.id || ownConnectionIds.includes(campaign.klaviyo_connection_id)
+
+  if (!canDelete) {
+    return NextResponse.json({ error: 'Not authorized to delete this campaign' }, { status: 403 })
   }
 
   // Delete associated project's frames if there's a project
@@ -155,12 +169,11 @@ export async function DELETE(
       .eq('id', campaign.project_id)
   }
 
-  // Delete the campaign
+  // Delete the campaign (RLS will also verify access)
   const { error } = await supabase
     .from('campaigns')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id)
 
   if (error) {
     console.error('Delete campaign error:', error)
