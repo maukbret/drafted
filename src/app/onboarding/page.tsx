@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Camera, Loader2, User } from 'lucide-react'
+import { UserAvatar } from '@/components/user-avatar'
+import { Camera, Loader2 } from 'lucide-react'
 
 export default function OnboardingPage() {
   const [fullName, setFullName] = useState('')
@@ -161,15 +161,6 @@ export default function OnboardingPage() {
     }
   }
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2)
-  }
-
   if (checkingAuth) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-8">
@@ -197,12 +188,12 @@ export default function OnboardingPage() {
                   onClick={() => fileInputRef.current?.click()}
                   className="relative group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full"
                 >
-                  <Avatar className="h-24 w-24 border-2 border-muted">
-                    <AvatarImage src={avatarPreview || undefined} />
-                    <AvatarFallback className="bg-muted text-lg">
-                      {fullName ? getInitials(fullName) : <User className="h-8 w-8 text-muted-foreground" />}
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar
+                    name={fullName || 'User'}
+                    imageUrl={avatarPreview}
+                    className="h-24 w-24 border-2 border-muted"
+                    fallbackClassName="text-lg"
+                  />
                   <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Camera className="h-6 w-6 text-white" />
                   </div>

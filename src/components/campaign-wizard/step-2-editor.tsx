@@ -77,6 +77,7 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeFrameId, setActiveFrameId] = useState<string | null>(null)
+  const [editingAltFrameId, setEditingAltFrameId] = useState<string | null>(null)
   const [deleteModalFrame, setDeleteModalFrame] = useState<Frame | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -94,6 +95,18 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
     if (normalized !== linkUrl) {
       updateFrameLink(frameId, normalized)
     }
+  }
+
+  const updateFrameName = (frameId: string, name: string) => {
+    setFrames(prev => prev.map(f =>
+      f.id === frameId ? { ...f, name } : f
+    ))
+  }
+
+  const handleAltBlur = (frameId: string, name: string) => {
+    const normalized = name.trim() || 'Untitled section'
+    updateFrameName(frameId, normalized)
+    setEditingAltFrameId(null)
   }
 
   const handleDeleteFrame = async () => {
@@ -131,6 +144,7 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
 
     const normalizedFrames = frames.map(f => ({
       ...f,
+      name: f.name.trim() || 'Untitled section',
       link_url: normalizeUrl(f.link_url || '')
     }))
     setFrames(normalizedFrames)
@@ -140,7 +154,11 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          frames: normalizedFrames.map(f => ({ id: f.id, link_url: f.link_url || null }))
+          frames: normalizedFrames.map(f => ({
+            id: f.id,
+            name: f.name,
+            link_url: f.link_url || null,
+          }))
         }),
       })
 
@@ -159,7 +177,7 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
   return (
     <div className="flex gap-6 h-full min-h-[400px]">
       {/* Left: Email preview */}
-      <div className="flex-1 border rounded-xl overflow-hidden flex flex-col">
+      <div className="flex-1 min-w-0 border rounded-xl overflow-hidden flex flex-col">
         <div className="bg-muted px-4 py-3 border-b flex-shrink-0">
           <h2 className="font-medium">Email preview</h2>
         </div>
@@ -244,7 +262,7 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
       </div>
 
       {/* Right: Link editor */}
-      <div className="w-96 flex-shrink-0 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col">
         <div className="border rounded-xl overflow-hidden flex-1 flex flex-col">
           <div className="bg-muted px-4 py-3 border-b flex-shrink-0">
             <h2 className="font-medium">Section links</h2>
@@ -276,23 +294,64 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
                         />
                       )}
                     </div>
-                    <p className="text-sm font-medium truncate flex-1">{frame.name}</p>
-                    {(frame.width ?? 600) <= HALF_WIDTH_THRESHOLD && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
-                        50%
-                      </Badge>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setDeleteModalFrame(frame)
-                      }}
-                      className="flex-shrink-0 p-1 text-muted-foreground hover:text-destructive transition-colors"
-                      title="Delete section"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1 min-w-0">
+                        <span className="text-sm font-medium text-muted-foreground flex-shrink-0">Alt:</span>
+                        {editingAltFrameId === frame.id ? (
+                          <Input
+                            type="text"
+                            value={frame.name}
+                            onChange={(e) => updateFrameName(frame.id, e.target.value)}
+                            onBlur={(e) => handleAltBlur(frame.id, e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                handleAltBlur(frame.id, (e.target as HTMLInputElement).value)
+                              }
+                              if (e.key === 'Escape') {
+                                e.preventDefault()
+                                setEditingAltFrameId(null)
+                              }
+                            }}
+                            autoFocus
+                            className="h-7 min-w-0 flex-1 text-sm font-normal"
+                            aria-label="Edit alt text"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setEditingAltFrameId(frame.id)
+                              setActiveFrameId(frame.id)
+                            }}
+                            className="min-w-0 flex-1 truncate text-left text-sm font-normal hover:underline"
+                            title={frame.name}
+                          >
+                            {frame.name}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {(frame.width ?? 600) <= HALF_WIDTH_THRESHOLD && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
+                          50%
+                        </Badge>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeleteModalFrame(frame)
+                        }}
+                        className="flex-shrink-0 p-1 text-muted-foreground hover:text-destructive transition-colors"
+                        title="Delete section"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                   <Input
                     type="text"

@@ -16,11 +16,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Update each frame's link_url
+    // Update each frame's link_url and alt name
     for (const frame of frames) {
+      const normalizedName = typeof frame.name === 'string' && frame.name.trim().length > 0
+        ? frame.name.trim()
+        : 'Untitled section'
+
       const { error } = await supabase
         .from('frames')
-        .update({ link_url: frame.link_url || null })
+        .update({
+          link_url: frame.link_url || null,
+          name: normalizedName,
+        })
         .eq('id', frame.id)
         // RLS will ensure user can only update their own frames
 

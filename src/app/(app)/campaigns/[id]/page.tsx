@@ -105,8 +105,8 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     projects: project,
   }
 
-  // If campaign is already sent or scheduled, show a read-only view
-  if (campaign.status === 'sent' || campaign.status === 'scheduled') {
+  // If campaign is already sent, scheduled, or cancelled, show a read-only view
+  if (campaign.status === 'sent' || campaign.status === 'scheduled' || campaign.status === 'cancelled') {
     // Get frames for email preview
     const frames = project?.frames?.sort((a: any, b: any) => a.display_order - b.display_order) || []
 
@@ -132,10 +132,12 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
             className={
               campaign.status === 'sent'
                 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100'
-                : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-yellow-100'
+                : campaign.status === 'scheduled'
+                  ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-yellow-100'
+                  : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 hover:bg-orange-100'
             }
           >
-            {campaign.status === 'sent' ? 'Sent' : 'Scheduled'}
+            {campaign.status === 'sent' ? 'Sent' : campaign.status === 'scheduled' ? 'Scheduled' : 'Cancelled'}
           </Badge>
         </div>
 
@@ -169,7 +171,11 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
                 {campaign.scheduled_at && (
                   <div className="p-4">
                     <p className="text-sm text-muted-foreground mb-1">
-                      {campaign.status === 'sent' ? 'Sent at' : 'Scheduled for'}
+                      {campaign.status === 'sent'
+                        ? 'Sent at'
+                        : campaign.status === 'scheduled'
+                          ? 'Scheduled for'
+                          : 'Was scheduled for'}
                     </p>
                     <p>{new Date(campaign.scheduled_at).toLocaleString('en-GB')}</p>
                   </div>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { UserAvatar } from '@/components/user-avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -66,15 +66,6 @@ export function MemberList({ members, teamId, isAdmin, currentUserId }: MemberLi
     return 'Team Member'
   }
 
-  const getMemberInitials = (member: TeamMemberWithProfile) => {
-    const name = getMemberDisplayName(member)
-    const parts = name.split(' ')
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-    }
-    return name.slice(0, 2).toUpperCase()
-  }
-
   return (
     <div className="divide-y">
       {members.map((member) => (
@@ -83,12 +74,12 @@ export function MemberList({ members, teamId, isAdmin, currentUserId }: MemberLi
           className="flex items-center justify-between py-4 first:pt-0 last:pb-0"
         >
           <div className="flex items-center gap-3">
-            <Avatar className="h-9 w-9">
-              <AvatarImage src={member.profiles?.avatar_url || undefined} />
-              <AvatarFallback className="text-xs">
-                {getMemberInitials(member)}
-              </AvatarFallback>
-            </Avatar>
+            <UserAvatar
+              name={getMemberDisplayName(member)}
+              imageUrl={member.profiles?.avatar_url}
+              className="h-9 w-9"
+              fallbackClassName="text-xs"
+            />
             <div className="space-y-0.5">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium leading-none">

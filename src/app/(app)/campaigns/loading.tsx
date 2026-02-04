@@ -29,7 +29,7 @@ export default function CampaignsLoading() {
           <div className="divide-y">
             {Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className="grid grid-cols-5 gap-4 px-4 py-4 items-center">
-                <Skeleton className="h-4 w-64" />
+                <Skeleton className="h-4 w-20" />
                 <Skeleton className="h-5 w-20" />
                 <Skeleton className="h-3 w-24" />
                 <Skeleton className="h-3 w-20" />

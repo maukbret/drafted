@@ -17,6 +17,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { UserAvatar } from '@/components/user-avatar'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,7 +48,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, ArrowUpDown } from 'lucide-react'
+import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, ArrowUpDown, Eye } from 'lucide-react'
 
 interface CampaignWithConnection extends Campaign {
   klaviyo_connections?: {
@@ -50,6 +57,7 @@ interface CampaignWithConnection extends Campaign {
   profiles?: { full_name: string | null } | null
   is_own?: boolean
   creator_name?: string | null
+  creator_avatar_url?: string | null
 }
 
 interface CampaignListProps {
@@ -61,36 +69,69 @@ interface CampaignListProps {
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline'
 
 const STATUS_CONFIG = {
-  in_progress: { variant: 'secondary', className: '', label: 'In progress' },
+  in_progress: {
+    variant: 'secondary',
+    className: '',
+    dotClassName: 'bg-zinc-500 dark:bg-zinc-400',
+    label: 'In progress',
+  },
   klaviyo_draft: {
     variant: 'default',
     className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100',
+    dotClassName: 'bg-blue-700 dark:bg-blue-300',
     label: 'Klaviyo draft',
   },
   scheduled: {
     variant: 'default',
     className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-yellow-100',
+    dotClassName: 'bg-yellow-700 dark:bg-yellow-300',
     label: 'Scheduled',
+  },
+  cancelled: {
+    variant: 'default',
+    className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-100',
+    dotClassName: 'bg-red-700 dark:bg-red-300',
+    label: 'Cancelled',
   },
   sent: {
     variant: 'default',
     className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100',
+    dotClassName: 'bg-green-700 dark:bg-green-300',
     label: 'Sent',
   },
-  error: { variant: 'destructive', className: '', label: 'Error' },
+  error: {
+    variant: 'destructive',
+    className: '',
+    dotClassName: 'bg-red-900 dark:bg-red-300',
+    label: 'Error',
+  },
 
   // Legacy status aliases
-  draft: { variant: 'secondary', className: '', label: 'In progress' },
+  draft: {
+    variant: 'secondary',
+    className: '',
+    dotClassName: 'bg-zinc-500 dark:bg-zinc-400',
+    label: 'In progress',
+  },
   ready: {
     variant: 'default',
     className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100',
+    dotClassName: 'bg-blue-700 dark:bg-blue-300',
     label: 'Klaviyo draft',
   },
-} as const satisfies Record<string, { variant: BadgeVariant; className: string; label: string }>
+} as const satisfies Record<
+  string,
+  { variant: BadgeVariant; className: string; dotClassName: string; label: string }
+>
 
 function formatDateSafe(value: unknown) {
   const d = new Date(String(value ?? ''))
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB')
+}
+
+function getCreatorDisplayName(campaign: CampaignWithConnection, currentUserId?: string) {
+  const isOwn = campaign.is_own !== false && (!currentUserId || campaign.user_id === currentUserId)
+  return isOwn ? 'You' : (campaign.creator_name || campaign.profiles?.full_name || 'Team member')
 }
 
 /**
@@ -124,7 +165,8 @@ function getColumns(opts: {
       cell: ({ row }) => {
         const status = STATUS_CONFIG[row.original.status] || STATUS_CONFIG.in_progress
         return (
-          <Badge variant={status.variant} className={status.className}>
+          <Badge variant={status.variant} className={`gap-1.5 ${status.className}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${status.dotClassName}`} aria-hidden="true" />
             {status.label}
           </Badge>
         )
@@ -147,17 +189,24 @@ function getColumns(opts: {
       header: () => <span>Created by</span>,
       cell: ({ row }) => {
         const campaign = row.original
-        const isOwn = campaign.is_own !== false && (!opts.currentUserId || campaign.user_id === opts.currentUserId)
-        const creatorName = campaign.creator_name || campaign.profiles?.full_name
-
-        if (isOwn) {
-          return <span className="text-xs text-muted-foreground">You</span>
-        }
+        const displayName = getCreatorDisplayName(campaign, opts.currentUserId)
+        const tooltipLabel = displayName === 'You' ? 'You' : displayName
+        const avatarName = campaign.creator_name || campaign.profiles?.full_name || displayName
 
         return (
-          <span className="text-xs text-muted-foreground">
-            {creatorName || 'Team member'}
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="cursor-default">
+                <UserAvatar
+                  name={avatarName}
+                  imageUrl={campaign.creator_avatar_url}
+                  className="h-7 w-7"
+                  fallbackClassName="text-xs"
+                />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>{tooltipLabel}</TooltipContent>
+          </Tooltip>
         )
       },
     },
@@ -196,8 +245,8 @@ function getColumns(opts: {
         const isInProgress =
           campaign.status === 'in_progress' || (campaign.status as string) === 'draft'
 
-        const isSentOrScheduled =
-          campaign.status === 'sent' || campaign.status === 'scheduled'
+        const isReadOnlyPreviewStatus =
+          campaign.status === 'sent' || campaign.status === 'scheduled' || campaign.status === 'cancelled'
 
         const isKlaviyoDraft =
           (campaign.status === 'klaviyo_draft' || (campaign.status as string) === 'ready') &&
@@ -206,15 +255,22 @@ function getColumns(opts: {
         return (
           <div className="flex items-center justify-end gap-2">
             {isInProgress && (
-              <Button asChild>
+              <Button variant="secondary" asChild>
                 <Link href={`/campaigns/${campaign.id}`}>Continue</Link>
               </Button>
             )}
 
-            {isSentOrScheduled && (
-              <Button variant="secondary" asChild>
-                <Link href={`/campaigns/${campaign.id}`}>View</Link>
-              </Button>
+            {isReadOnlyPreviewStatus && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                    <Link href={`/campaigns/${campaign.id}`} aria-label="View campaign preview">
+                      <Eye className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>View preview</TooltipContent>
+              </Tooltip>
             )}
 
             {isKlaviyoDraft && (
@@ -243,7 +299,7 @@ function getColumns(opts: {
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end">
-                {!isSentOrScheduled && (
+                {!isReadOnlyPreviewStatus && (
                   <DropdownMenuItem asChild>
                     <Link href={`/campaigns/${campaign.id}`}>
                       <Pencil className="h-4 w-4 mr-1.5" />
@@ -252,7 +308,7 @@ function getColumns(opts: {
                   </DropdownMenuItem>
                 )}
 
-                {isSentOrScheduled && (
+                {isReadOnlyPreviewStatus && (
                   <DropdownMenuItem asChild>
                     <Link href={`/campaigns/${campaign.id}`}>
                       <Mail className="h-4 w-4 mr-1.5" />
@@ -305,45 +361,47 @@ function DataTable({
   }, [searchQuery, table])
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+    <TooltipProvider>
+      <div className="space-y-3">
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
-                  No results.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              ))}
+            </TableHeader>
+
+            <TableBody>
+              {table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id} className="h-[52px]">
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                    No results.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }
 

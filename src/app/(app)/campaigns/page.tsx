@@ -61,16 +61,20 @@ export default async function CampaignsPage() {
   const { data: profiles } = creatorIds.length > 0
     ? await supabase
         .from('profiles')
-        .select('id, full_name')
+        .select('id, full_name, avatar_url')
         .in('id', creatorIds)
     : { data: [] }
 
   // Add creator info and check if it's the current user's campaign
-  const campaignsWithCreator = (campaigns || []).map(campaign => ({
-    ...campaign,
-    is_own: campaign.user_id === user.id,
-    creator_name: profiles?.find(p => p.id === campaign.user_id)?.full_name || null
-  }))
+  const campaignsWithCreator = (campaigns || []).map(campaign => {
+    const creatorProfile = profiles?.find(p => p.id === campaign.user_id)
+    return {
+      ...campaign,
+      is_own: campaign.user_id === user.id,
+      creator_name: creatorProfile?.full_name || null,
+      creator_avatar_url: creatorProfile?.avatar_url || null,
+    }
+  })
 
   return (
     <div className="p-8">

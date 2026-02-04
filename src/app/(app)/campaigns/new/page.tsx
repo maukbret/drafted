@@ -9,6 +9,18 @@ export default async function NewCampaignPage() {
     redirect('/login')
   }
 
+  // Require a Figma connection before creating any campaign row.
+  // This prevents orphan "in_progress" campaigns for users who can't proceed.
+  const { data: figmaConnection } = await supabase
+    .from('figma_connections')
+    .select('id')
+    .eq('user_id', user.id)
+    .limit(1)
+
+  if (!figmaConnection || figmaConnection.length === 0) {
+    redirect('/connections')
+  }
+
   // Get the user's own Klaviyo connections
   const { data: ownConnections } = await supabase
     .from('klaviyo_connections')

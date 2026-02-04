@@ -10,6 +10,7 @@ interface CampaignWithConnection extends Campaign {
   profiles?: { full_name: string | null } | null
   is_own?: boolean
   creator_name?: string | null
+  creator_avatar_url?: string | null
 }
 
 export function CampaignsPageClient({

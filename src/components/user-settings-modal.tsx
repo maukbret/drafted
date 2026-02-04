@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { UserAvatar } from '@/components/user-avatar'
 
 interface UserSettingsModalProps {
   isOpen: boolean
@@ -137,12 +137,12 @@ export function UserSettingsModal({
               onClick={() => fileInputRef.current?.click()}
               className="relative group"
             >
-              <Avatar className="h-24 w-24">
-                <AvatarImage src={displayAvatar || undefined} />
-                <AvatarFallback className="text-xl">
-                  {(fullName || userEmail).charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
+              <UserAvatar
+                name={fullName || userEmail}
+                imageUrl={displayAvatar}
+                className="h-24 w-24"
+                fallbackClassName="text-xl"
+              />
               <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <span className="text-white text-xs font-medium">Change</span>
               </div>
