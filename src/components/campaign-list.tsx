@@ -196,7 +196,7 @@ function getColumns(opts: {
         return (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="cursor-default">
+              <div className="inline-flex w-fit cursor-default">
                 <UserAvatar
                   name={avatarName}
                   imageUrl={campaign.creator_avatar_url}
