@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import DOMPurify from 'dompurify'
 import {
   Dialog,
   DialogContent,
@@ -104,6 +105,14 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
     return getSelectedSectionsOrdered()
       .map(s => s.html)
       .join('\n')
+  }
+
+  // Sanitize HTML to prevent XSS attacks
+  const sanitizeHtml = (html: string) => {
+    return DOMPurify.sanitize(html, {
+      ADD_TAGS: ['style'],
+      ADD_ATTR: ['target', 'rel'],
+    })
   }
 
   const saveFooter = async () => {
@@ -247,7 +256,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
                               <div
                                 className="transform scale-50 origin-top-left"
                                 style={{ width: '200%' }}
-                                dangerouslySetInnerHTML={{ __html: section.html }}
+                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(section.html) }}
                               />
                             </div>
                           </div>
@@ -271,7 +280,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
                 </CardHeader>
                 <CardContent className="bg-white rounded-b-lg">
                   <div
-                    dangerouslySetInnerHTML={{ __html: getCombinedHtml() }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(getCombinedHtml()) }}
                   />
                 </CardContent>
               </Card>
