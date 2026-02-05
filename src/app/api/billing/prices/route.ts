@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { stripe, SubscriptionTier } from '@/lib/stripe'
+import type Stripe from 'stripe'
 
 const VALID_TIERS: SubscriptionTier[] = ['starter', 'advanced', 'pro']
 
@@ -12,6 +13,11 @@ export async function GET() {
     })
 
     const tiers: Record<SubscriptionTier, { priceId: string; unitAmount: number; currency: string }> = {} as any
+    const tierCandidates: Record<SubscriptionTier, Stripe.Price[]> = {
+      starter: [],
+      advanced: [],
+      pro: [],
+    }
 
     for (const price of prices.data) {
       if (!price.recurring || price.type !== 'recurring') continue
@@ -20,14 +26,24 @@ export async function GET() {
       const tier = price.metadata.tier as SubscriptionTier
       if (!VALID_TIERS.includes(tier)) continue
       if (price.unit_amount == null) continue
+      tierCandidates[tier].push(price)
+    }
 
-      const isMonthly = price.recurring?.interval === 'month'
-      if (!tiers[tier] || isMonthly) {
-        tiers[tier] = {
-          priceId: price.id,
-          unitAmount: price.unit_amount / 100,
-          currency: price.currency.toUpperCase(),
-        }
+    for (const tier of VALID_TIERS) {
+      const candidates = tierCandidates[tier]
+      if (!candidates.length) continue
+
+      const monthly = candidates.filter(p => p.recurring?.interval === 'month')
+      const pool = monthly.length ? monthly : candidates
+
+      const preferred =
+        pool.find(p => (p.metadata?.current || '').toString().toLowerCase() === 'true') ||
+        pool.sort((a, b) => b.created - a.created)[0]
+
+      tiers[tier] = {
+        priceId: preferred.id,
+        unitAmount: (preferred.unit_amount || 0) / 100,
+        currency: preferred.currency.toUpperCase(),
       }
     }
 
