@@ -3,6 +3,45 @@ export interface Profile {
   full_name: string | null
   avatar_url: string | null
   onboarding_completed: boolean
+  subscription_selected: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type SubscriptionStatus =
+  | 'trialing'
+  | 'active'
+  | 'canceled'
+  | 'incomplete'
+  | 'incomplete_expired'
+  | 'past_due'
+  | 'unpaid'
+  | 'paused'
+
+export type SubscriptionTier = 'starter' | 'advanced' | 'pro'
+
+export interface Subscription {
+  id: string
+  user_id: string
+  stripe_subscription_id: string
+  stripe_customer_id: string
+  status: SubscriptionStatus
+  price_id: string | null
+  price_tier: SubscriptionTier | null
+  current_period_start: string | null
+  current_period_end: string | null
+  cancel_at_period_end: boolean
+  canceled_at: string | null
+  trial_start: string | null
+  trial_end: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface StripeCustomer {
+  id: string
+  user_id: string
+  stripe_customer_id: string
   created_at: string
   updated_at: string
 }

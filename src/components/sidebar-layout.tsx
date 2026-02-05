@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { UserSettingsModal } from './user-settings-modal'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/user-avatar'
-import { Mail, Image, Link2, Settings, LogOut, Users } from 'lucide-react'
+import { Mail, Image, Link2, Settings, LogOut, Users, CreditCard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface UserProfile {
@@ -32,6 +32,7 @@ export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutPro
     { href: '/images', label: 'Upload images', icon: Image },
     { href: '/connections', label: 'Connections', icon: Link2 },
     { href: '/team', label: 'Team', icon: Users },
+    { href: '/billing', label: 'Billing', icon: CreditCard },
   ]
 
   return (

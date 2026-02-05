@@ -14,7 +14,6 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll()
         },
-        // 👇 The fix is here: we explicitly typed 'cookiesToSet'
         setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
@@ -45,7 +44,14 @@ export async function middleware(request: NextRequest) {
                        request.nextUrl.pathname.startsWith('/invite')
 
   const isOnboardingPage = request.nextUrl.pathname === '/onboarding'
+  const isBillingPage = request.nextUrl.pathname === '/billing'
   const isApiRoute = request.nextUrl.pathname.startsWith('/api/')
+  const isWebhookRoute = request.nextUrl.pathname.startsWith('/api/webhooks/')
+
+  // Allow webhook routes without auth check
+  if (isWebhookRoute) {
+    return supabaseResponse
+  }
 
   // Redirect unauthenticated users to login (except for public pages)
   if (!user && !isPublicPage) {
@@ -54,47 +60,91 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // For authenticated users, check onboarding status
-  if (user && !isOnboardingPage && !isApiRoute && !isPublicPage) {
-    // Check if user has completed onboarding
+  // For authenticated users, check onboarding and subscription status
+  if (user && !isOnboardingPage && !isBillingPage && !isApiRoute && !isPublicPage) {
+    // Check user profile status
     const { data: profile } = await supabase
       .from('profiles')
-      .select('onboarding_completed')
+      .select('onboarding_completed, subscription_selected')
       .eq('id', user.id)
       .single()
 
-    // Redirect to onboarding if not completed
+    // Redirect to onboarding if profile not completed
     if (!profile || !profile.onboarding_completed) {
       const url = request.nextUrl.clone()
       url.pathname = '/onboarding'
       return NextResponse.redirect(url)
     }
+
+    // If profile completed but subscription not selected, go to plan selection
+    if (!profile.subscription_selected) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/onboarding'
+      url.searchParams.set('step', 'plan')
+      return NextResponse.redirect(url)
+    }
+
+    // Check for active subscription
+    const { data: subscription } = await supabase
+      .from('subscriptions')
+      .select('status')
+      .eq('user_id', user.id)
+      .single()
+
+    const hasActiveSubscription = subscription?.status === 'trialing' ||
+                                   subscription?.status === 'active'
+
+    // If no active subscription, redirect to billing page
+    if (!hasActiveSubscription) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/billing'
+      return NextResponse.redirect(url)
+    }
   }
 
-  // Redirect authenticated users away from login/signup to campaigns (or onboarding if not completed)
+  // Redirect authenticated users away from login/signup
   if (user && isAuthPage) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('onboarding_completed')
+      .select('onboarding_completed, subscription_selected')
       .eq('id', user.id)
       .single()
 
     const url = request.nextUrl.clone()
-    url.pathname = (!profile || !profile.onboarding_completed) ? '/onboarding' : '/campaigns'
+
+    if (!profile || !profile.onboarding_completed) {
+      url.pathname = '/onboarding'
+    } else if (!profile.subscription_selected) {
+      url.pathname = '/onboarding'
+      url.searchParams.set('step', 'plan')
+    } else {
+      url.pathname = '/campaigns'
+    }
+
     return NextResponse.redirect(url)
   }
 
-  // If user is on onboarding page but already completed, redirect to campaigns
+  // If user is on onboarding page but already completed everything, redirect to campaigns
   if (user && isOnboardingPage) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('onboarding_completed')
+      .select('onboarding_completed, subscription_selected')
       .eq('id', user.id)
       .single()
 
-    if (profile?.onboarding_completed) {
+    if (profile?.onboarding_completed && profile?.subscription_selected) {
+      // Check if they have active subscription
+      const { data: subscription } = await supabase
+        .from('subscriptions')
+        .select('status')
+        .eq('user_id', user.id)
+        .single()
+
+      const hasActiveSubscription = subscription?.status === 'trialing' ||
+                                     subscription?.status === 'active'
+
       const url = request.nextUrl.clone()
-      url.pathname = '/campaigns'
+      url.pathname = hasActiveSubscription ? '/campaigns' : '/billing'
       return NextResponse.redirect(url)
     }
   }

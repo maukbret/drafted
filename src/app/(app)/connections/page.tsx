@@ -10,6 +10,25 @@ export default async function ConnectionsPage() {
     redirect('/login')
   }
 
+  // Get subscription to determine connection limit
+  const { data: subscription } = await supabase
+    .from('subscriptions')
+    .select('price_tier')
+    .eq('user_id', user.id)
+    .in('status', ['active', 'trialing'])
+    .single()
+
+  // Connection limits by tier
+  const tierLimits: Record<string, number> = {
+    starter: 1,
+    advanced: 5,
+    pro: 20,
+  }
+  const connectionLimit = subscription?.price_tier
+    ? tierLimits[subscription.price_tier] || 0
+    : 0
+  const currentTier = subscription?.price_tier || null
+
   // Get all Klaviyo connections with account IDs
   const { data: klaviyoConnections } = await supabase
     .from('klaviyo_connections')
@@ -125,6 +144,8 @@ export default async function ConnectionsPage() {
         klaviyoConnections={connectionsWithFooterStatus}
         teamConnections={teamConnectionsWithStatus}
         figmaConnection={figmaConnection}
+        connectionLimit={connectionLimit}
+        currentTier={currentTier}
       />
     </div>
   )

@@ -92,6 +92,38 @@ export async function GET(request: NextRequest) {
     // Get account name from cookie (set by client before redirect)
     const accountName = cookieStore.get('klaviyo_account_name')?.value || 'Klaviyo Account'
 
+    // Check subscription tier and connection limits
+    const { data: subscription } = await supabase
+      .from('subscriptions')
+      .select('price_tier')
+      .eq('user_id', user.id)
+      .in('status', ['active', 'trialing'])
+      .single()
+
+    // Get connection limit based on tier
+    const tierLimits: Record<string, number> = {
+      starter: 1,
+      advanced: 5,
+      pro: 20,
+    }
+    const connectionLimit = subscription?.price_tier
+      ? tierLimits[subscription.price_tier] || 0
+      : 0
+
+    // Count existing connections
+    const { count: existingConnections } = await supabase
+      .from('klaviyo_connections')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+
+    const currentCount = existingConnections || 0
+
+    // Check if at limit
+    if (currentCount >= connectionLimit) {
+      console.log(`User ${user.id} at connection limit: ${currentCount}/${connectionLimit}`)
+      return NextResponse.redirect(new URL('/connections?error=limit_reached', request.url))
+    }
+
     // Insert new connection (not upsert - we allow multiple)
     const { data: newConnection, error: dbError } = await supabase
       .from('klaviyo_connections')

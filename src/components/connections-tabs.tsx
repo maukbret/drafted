@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { FooterSetup } from './footer-setup'
+import { UpgradePrompt } from './upgrade-prompt'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,7 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { RefreshCw, Loader2, Trash2 } from 'lucide-react'
+import { RefreshCw, Loader2, Trash2, AlertCircle } from 'lucide-react'
 
 interface KlaviyoConnection {
   id: string
@@ -37,15 +38,19 @@ interface FigmaConnection {
   created_at: string
 }
 
+type SubscriptionTier = 'starter' | 'advanced' | 'pro'
+
 interface ConnectionsTabsProps {
   klaviyoConnections: KlaviyoConnection[]
   teamConnections?: KlaviyoConnection[]
   figmaConnection: FigmaConnection | null
+  connectionLimit: number
+  currentTier: string | null
 }
 
 type ConnectionStatus = 'active' | 'expired' | 'error' | 'checking' | 'unknown'
 
-export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figmaConnection }: ConnectionsTabsProps) {
+export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figmaConnection, connectionLimit, currentTier }: ConnectionsTabsProps) {
   const [accountName, setAccountName] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -53,7 +58,25 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
   const [footerSetupConnection, setFooterSetupConnection] = useState<KlaviyoConnection | null>(null)
   const [connectionStatuses, setConnectionStatuses] = useState<Record<string, ConnectionStatus>>({})
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
+  const [showLimitError, setShowLimitError] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Check for limit_reached error from OAuth callback
+  useEffect(() => {
+    if (searchParams.get('error') === 'limit_reached') {
+      setShowLimitError(true)
+      // Clean up URL
+      const url = new URL(window.location.href)
+      url.searchParams.delete('error')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [searchParams])
+
+  const connectionCount = klaviyoConnections.length
+  const isAtLimit = connectionCount >= connectionLimit
+  const canAddConnection = connectionLimit > 0 && !isAtLimit
 
   const refreshConnectionStatuses = async () => {
     setIsRefreshing(true)
@@ -242,6 +265,60 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
 
         {/* Klaviyo tab content */}
         <TabsContent value="klaviyo" className="space-y-4">
+          {/* Connection limit indicator */}
+          {connectionLimit > 0 && (
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  Klaviyo accounts: <span className="font-medium text-foreground">{connectionCount} / {connectionLimit}</span>
+                </span>
+                {isAtLimit && currentTier !== 'pro' && (
+                  <Badge variant="outline" className="text-amber-600 border-amber-600">
+                    At limit
+                  </Badge>
+                )}
+              </div>
+              {isAtLimit && currentTier !== 'pro' && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0"
+                  onClick={() => setShowUpgradePrompt(true)}
+                >
+                  Upgrade for more
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Limit reached error alert */}
+          {showLimitError && (
+            <div className="flex items-start gap-3 p-4 border border-amber-500 rounded-lg bg-amber-50 dark:bg-amber-950/20">
+              <AlertCircle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-amber-800 dark:text-amber-200">Connection limit reached</p>
+                <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                  You&apos;ve reached your limit of {connectionLimit} Klaviyo account{connectionLimit !== 1 ? 's' : ''}.
+                  {currentTier !== 'pro' && ' Upgrade your plan to connect more accounts.'}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {currentTier !== 'pro' && (
+                  <Button size="sm" onClick={() => setShowUpgradePrompt(true)}>
+                    Upgrade
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowLimitError(false)}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* User's own connections */}
           {klaviyoConnections.length > 0 && (
             <div className="space-y-4">
@@ -378,9 +455,17 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
                 </div>
               </CardContent>
             </Card>
-          ) : (
+          ) : canAddConnection ? (
             <Button onClick={() => setShowAddForm(true)}>
               Add Klaviyo account
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={() => setShowUpgradePrompt(true)}
+              disabled={currentTier === 'pro'}
+            >
+              {currentTier === 'pro' ? 'Maximum accounts reached' : 'Upgrade to add more accounts'}
             </Button>
           )}
         </TabsContent>
@@ -469,6 +554,15 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Upgrade prompt modal */}
+      <UpgradePrompt
+        open={showUpgradePrompt}
+        onOpenChange={setShowUpgradePrompt}
+        currentTier={currentTier as SubscriptionTier | null}
+        currentLimit={connectionLimit}
+        currentCount={connectionCount}
+      />
     </div>
   )
 }
