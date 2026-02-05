@@ -146,18 +146,18 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
           <div>
             <Card>
               <CardContent className="p-0 divide-y">
-                <div className="p-4">
+                <div className="p-6">
                   <p className="text-sm text-muted-foreground mb-1">Subject line</p>
                   <p className="font-medium">{campaign.subject_line}</p>
                 </div>
                 {campaign.preview_text && (
-                  <div className="p-4">
+                  <div className="p-6">
                     <p className="text-sm text-muted-foreground mb-1">Preview text</p>
                     <p>{campaign.preview_text}</p>
                   </div>
                 )}
                 {includedAudiences.length > 0 && (
-                  <div className="p-4">
+                  <div className="p-6">
                     <p className="text-sm text-muted-foreground mb-2">Sent to</p>
                     <div className="flex flex-wrap gap-2">
                       {includedAudiences.map((audience: any) => (
@@ -169,7 +169,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
                   </div>
                 )}
                 {campaign.scheduled_at && (
-                  <div className="p-4">
+                  <div className="p-6">
                     <p className="text-sm text-muted-foreground mb-1">
                       {campaign.status === 'sent'
                         ? 'Sent at'
@@ -181,12 +181,12 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
                   </div>
                 )}
                 {campaignWithRelations.klaviyo_connections?.account_name && (
-                  <div className="p-4">
+                  <div className="p-6">
                     <p className="text-sm text-muted-foreground mb-1">Klaviyo account</p>
                     <p>{campaignWithRelations.klaviyo_connections.account_name}</p>
                   </div>
                 )}
-                <div className="p-4">
+                <div className="p-6">
                   <p className="text-sm text-muted-foreground mb-1">Created</p>
                   <p>{new Date(campaign.created_at).toLocaleString('en-GB')}</p>
                 </div>
@@ -198,7 +198,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
           <div>
             <Card className="overflow-hidden">
               <CardContent className="p-0">
-                <div className="max-h-[600px] overflow-y-auto bg-gray-100">
+                <div className="max-h-[calc(100vh-200px)] overflow-y-auto bg-gray-100 pb-8">
                   {frames.length > 0 ? (
                     <div className="flex flex-col">
                       {frames.map((frame: any) => (

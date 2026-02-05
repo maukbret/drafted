@@ -67,12 +67,12 @@ export function TeamPageClient({ team, role, currentUserId }: TeamPageClientProp
   if (team && role) {
     return (
       <div className="p-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold tracking-tight">Team</h1>
-          <p className="text-muted-foreground">
-            Manage your team and invite members
-          </p>
-        </div>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold tracking-tight">Team</h1>
+        <p className="text-muted-foreground text-sm">
+          Manage your team and invite members
+        </p>
+      </div>
 
         <div className="max-w-2xl">
           <TeamSettings team={team} role={role} currentUserId={currentUserId} />
@@ -86,7 +86,7 @@ export function TeamPageClient({ team, role, currentUserId }: TeamPageClientProp
     <div className="p-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight">Team</h1>
-        <p className="text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           Create or join a team to collaborate with others
         </p>
       </div>
@@ -103,7 +103,7 @@ export function TeamPageClient({ team, role, currentUserId }: TeamPageClientProp
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleCreateTeam} className="space-y-4">
+            <form onSubmit={handleCreateTeam} className="space-y-6">
               <div className="grid gap-2">
                 <Label htmlFor="team-name">Team name</Label>
                 <Input

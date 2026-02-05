@@ -182,7 +182,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
 
           {/* Step 1: Input URL */}
           {step === 'input' && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="preview-url">Campaign URL</Label>
                 <Input
@@ -198,7 +198,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
               </div>
 
               <Card>
-                <CardContent className="p-4">
+                <CardContent className="p-6">
                   <h3 className="text-sm font-medium mb-2">How to get the campaign URL:</h3>
                   <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
                     <li>Go to Klaviyo Campaigns</li>
@@ -212,7 +212,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
 
           {/* Step 2: Select Section */}
           {step === 'select' && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <p className="text-sm text-muted-foreground">
                 Found {sections.length} section{sections.length !== 1 ? 's' : ''} in the email. Select all sections that make up your footer:
               </p>
@@ -225,7 +225,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
                         key={section.id}
                         onClick={() => toggleSection(section)}
                         className={cn(
-                          'w-full text-left p-4 border rounded-lg transition-colors',
+                          'w-full text-left p-6 border rounded-lg transition-colors',
                           isSelected
                             ? 'border-primary bg-muted'
                             : 'border-border hover:border-muted-foreground'
@@ -246,7 +246,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
                             {section.index + 1}
                           </span>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm text-muted-foreground line-clamp-2">
+                            <p className="text-xs text-muted-foreground line-clamp-2">
                               {section.preview || '(No text content)'}
                             </p>
                             <div
@@ -271,7 +271,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
 
           {/* Step 3: Confirm */}
           {step === 'confirm' && selectedSections.size > 0 && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <Card>
                 <CardHeader className="pb-2">
                   <p className="text-sm font-medium">

@@ -341,7 +341,7 @@ export function Step3Settings({
       <div className="border-t pt-6">
         <h3 className="text-lg font-semibold mb-4">Audience</h3>
 
-        <div className="space-y-4">
+        <div className="space-y-6">
           <AudienceSelector
             connectionId={connectionId}
             selectedAudiences={includedAudiences}
@@ -364,7 +364,7 @@ export function Step3Settings({
         <h3 className="text-lg font-semibold mb-4">When to send</h3>
 
         <div className="space-y-6">
-          <div className="space-y-4">
+          <div className="space-y-6">
             <Tabs
               value={dateOption}
               onValueChange={(value) => {

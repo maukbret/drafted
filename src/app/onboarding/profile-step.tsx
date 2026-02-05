@@ -182,7 +182,7 @@ export function ProfileStep({ onComplete }: ProfileStepProps) {
               onChange={handleAvatarChange}
               className="hidden"
             />
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Click to add a profile photo
             </p>
           </div>

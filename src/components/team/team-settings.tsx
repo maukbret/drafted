@@ -221,9 +221,9 @@ export function TeamSettings({ team, role, currentUserId }: TeamSettingsProps) {
             Irreversible actions for your team
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
           {!isAdmin && (
-            <div className="flex items-center justify-between rounded-lg border border-destructive/20 p-4">
+            <div className="flex items-center justify-between rounded-lg border border-destructive/20 p-6">
               <div className="space-y-0.5">
                 <p className="text-sm font-medium">Leave team</p>
                 <p className="text-sm text-muted-foreground">
@@ -242,7 +242,7 @@ export function TeamSettings({ team, role, currentUserId }: TeamSettingsProps) {
           )}
 
           {isAdmin && (
-            <div className="flex items-center justify-between rounded-lg border border-destructive/20 p-4">
+            <div className="flex items-center justify-between rounded-lg border border-destructive/20 p-6">
               <div className="space-y-0.5">
                 <p className="text-sm font-medium">Delete team</p>
                 <p className="text-sm text-muted-foreground">

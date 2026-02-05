@@ -171,7 +171,7 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
       {/* Upload form */}
       <Card>
         <CardContent className="p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="klaviyo-account">Klaviyo account</Label>
               <Select

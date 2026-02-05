@@ -167,7 +167,7 @@ function getColumns(opts: {
         return (
           <Badge
             variant={status.variant}
-            className={`font-sans text-[12px] py-0.25 px-2 shadow-none ${status.className}`}
+            className={`font-sans text-[12px] py-0 px-[7px] shadow-none ${status.className}`}
           >
             {status.label}
           </Badge>

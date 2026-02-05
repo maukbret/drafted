@@ -152,9 +152,9 @@ export function UpgradePrompt({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-6 py-4">
           {/* Current usage */}
-          <div className="p-3 bg-muted/50 rounded-lg">
+          <div className="p-6 bg-muted/50 rounded-lg">
             <p className="text-sm text-muted-foreground">Current usage</p>
             <p className="text-lg font-semibold">
               {currentCount} / {currentLimit} Klaviyo accounts
@@ -163,11 +163,11 @@ export function UpgradePrompt({
 
           {/* Upgrade options */}
           {availableUpgrades.length > 0 ? (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {availableUpgrades.map((option) => (
                 <div
                   key={option.tier}
-                  className="flex items-center justify-between p-4 border rounded-lg"
+                  className="flex items-center justify-between p-6 border rounded-lg"
                 >
                   <div>
                     <p className="font-medium">{tierPrices[option.tier]?.name || option.name}</p>
@@ -201,7 +201,7 @@ export function UpgradePrompt({
               ))}
             </div>
           ) : (
-            <div className="p-4 border rounded-lg text-center">
+            <div className="p-6 border rounded-lg text-center">
               <Check className="h-8 w-8 text-green-500 mx-auto mb-2" />
               <p className="font-medium">You&apos;re on the highest plan</p>
               <p className="text-sm text-muted-foreground mt-1">

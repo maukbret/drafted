@@ -95,7 +95,7 @@ export function TeamInvitationBanner() {
     <div className="space-y-3 mb-6">
       {visibleInvitations.map((invitation) => (
         <Card key={invitation.id} className="border-primary/20 bg-primary/5">
-          <CardContent className="p-4">
+          <CardContent className="p-6">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">

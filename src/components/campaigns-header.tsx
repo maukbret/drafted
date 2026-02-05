@@ -75,7 +75,7 @@ export function CampaignsHeader({
   }, [onSearchQueryChange])
 
   return (
-    <div className="flex items-center justify-between mb-6">
+    <div className="flex items-center justify-between mb-8">
       <div>
         <h1 className="text-2xl font-bold">Campaigns</h1>
         <p className="text-muted-foreground text-sm mt-1">

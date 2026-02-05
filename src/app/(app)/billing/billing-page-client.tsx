@@ -203,7 +203,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
     <div className="p-8">
       <header className="mb-8">
         <h1 className="text-2xl font-bold">Billing</h1>
-        <p className="text-muted-foreground">Manage your subscription and billing</p>
+        <p className="text-muted-foreground text-sm">Manage your subscription and billing</p>
       </header>
 
       <div className="space-y-6">
@@ -268,14 +268,14 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
                 )}
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               {isCanceling && periodEndDate && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                   Your subscription will remain active until {periodEndDate}. After that, access will end.
                 </div>
               )}
 
-              <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-4">
+              <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-6">
                 <div>
                   <p className="text-sm font-medium">Klaviyo accounts</p>
                   <p className="text-2xl font-bold">
@@ -323,12 +323,12 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
       )}
 
       {/* All plans */}
-      <div className="space-y-4 max-w-4xl">
+      <div className="space-y-6 max-w-4xl">
         <h2 className="text-lg font-semibold">
           {hasActiveSubscription ? 'Available Plans' : 'Choose a Plan'}
         </h2>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-3">
           {TIER_ORDER.map((tierKey, index) => {
             const tier = TIER_CONFIGS[tierKey]
             const isCurrentTier = tierKey === currentTier

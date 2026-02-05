@@ -264,7 +264,7 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
         </TabsList>
 
         {/* Klaviyo tab content */}
-        <TabsContent value="klaviyo" className="space-y-4">
+        <TabsContent value="klaviyo" className="space-y-6">
           {/* Connection limit indicator */}
           {connectionLimit > 0 && (
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
@@ -293,7 +293,7 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
 
           {/* Limit reached error alert */}
           {showLimitError && (
-            <div className="flex items-start gap-3 p-4 border border-amber-500 rounded-lg bg-amber-50 dark:bg-amber-950/20">
+            <div className="flex items-start gap-3 p-6 border border-amber-500 rounded-lg bg-amber-50 dark:bg-amber-950/20">
               <AlertCircle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
                 <p className="font-medium text-amber-800 dark:text-amber-200">Connection limit reached</p>
@@ -321,13 +321,13 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
 
           {/* User's own connections */}
           {klaviyoConnections.length > 0 && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {teamConnections.length > 0 && (
                 <h3 className="text-sm font-medium text-muted-foreground">Your connections</h3>
               )}
               {klaviyoConnections.map((conn) => (
                 <Card key={conn.id}>
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div>
@@ -380,11 +380,11 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
 
           {/* Team shared connections (read-only) */}
           {teamConnections.length > 0 && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <h3 className="text-sm font-medium text-muted-foreground mt-6">Team connections</h3>
               {teamConnections.map((conn) => (
                 <Card key={conn.id} className="border-dashed">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div>
@@ -422,7 +422,7 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
 
           {showAddForm ? (
             <Card>
-              <CardContent className="p-4 space-y-4">
+              <CardContent className="p-6 space-y-6">
                 <div className="space-y-2">
                   <Label htmlFor="account-name">Account name</Label>
                   <Input
@@ -471,10 +471,10 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
         </TabsContent>
 
         {/* Figma tab content */}
-        <TabsContent value="figma" className="space-y-4">
+        <TabsContent value="figma" className="space-y-6">
           {figmaConnection ? (
             <Card>
-              <CardContent className="flex items-center justify-between p-4">
+              <CardContent className="flex items-center justify-between p-6">
                 <div className="flex items-center gap-3">
                   <div>
                     <p className="font-medium">{figmaConnection.figma_email || 'Figma account'}</p>

@@ -18,7 +18,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { Check, ChevronsUpDown, X } from 'lucide-react'
 
@@ -84,7 +83,9 @@ export function AudienceSelector({
     return (
       <div className="space-y-2">
         <Label>{label}</Label>
-        <Skeleton className="h-9 w-full" />
+        <div className="h-9 w-full rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          Loading audiences...
+        </div>
       </div>
     )
   }

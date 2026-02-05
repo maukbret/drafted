@@ -102,15 +102,15 @@ export function PlanSelectionStep() {
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Tier cards */}
-        <div className="grid gap-4 md:grid-cols-3">
-          {TIERS.map((tier) => (
-            <div
-              key={tier.tier}
-              className={cn(
-                'border rounded-lg p-5 space-y-4 relative',
-                tier.popular && 'border-primary ring-1 ring-primary'
-              )}
-            >
+      <div className="grid gap-6 md:grid-cols-3">
+        {TIERS.map((tier) => (
+          <div
+            key={tier.tier}
+            className={cn(
+              'border rounded-lg p-6 space-y-6 relative',
+              tier.popular && 'border-primary ring-1 ring-primary'
+            )}
+          >
               {tier.popular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                   <span className="bg-primary text-primary-foreground text-xs font-medium px-3 py-1 rounded-full">
@@ -127,7 +127,7 @@ export function PlanSelectionStep() {
                 </div>
               </div>
 
-              <ul className="space-y-2">
+              <ul className="space-y-3">
                 {tier.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-2">
                     <Check className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
