@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@/lib/supabase/route'
 import { stripe, TIER_CONFIGS, SubscriptionTier } from '@/lib/stripe'
+import type Stripe from 'stripe'
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,9 +15,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get tier from request body
+    // Get tier/price from request body
     const body = await request.json().catch(() => ({}))
-    const tier = (body.tier as SubscriptionTier) || 'starter'
+    const requestedTier = body.tier as SubscriptionTier | undefined
+    const requestedPriceId = typeof body.priceId === 'string' ? body.priceId : null
+
+    let tier: SubscriptionTier | null = requestedTier || null
+    let priceIdToUse: string | null = null
+
+    if (requestedPriceId) {
+      let price: Stripe.Price | null = null
+      try {
+        price = await stripe.prices.retrieve(requestedPriceId)
+      } catch (err) {
+        console.error('Invalid Stripe price:', err)
+        return NextResponse.json({ error: 'Invalid price' }, { status: 400 })
+      }
+
+      if (!price.active || price.type !== 'recurring') {
+        return NextResponse.json({ error: 'Invalid price' }, { status: 400 })
+      }
+
+      const tierFromPrice = (price.metadata?.tier || null) as SubscriptionTier | null
+      if (tierFromPrice) {
+        if (requestedTier && tierFromPrice !== requestedTier) {
+          return NextResponse.json({ error: 'Tier mismatch' }, { status: 400 })
+        }
+        tier = tierFromPrice
+      }
+
+      priceIdToUse = requestedPriceId
+    }
+
+    if (!tier) {
+      tier = 'starter'
+    }
 
     // Validate tier
     if (!TIER_CONFIGS[tier]) {
@@ -24,6 +57,9 @@ export async function POST(request: NextRequest) {
     }
 
     const tierConfig = TIER_CONFIGS[tier]
+    if (!priceIdToUse) {
+      priceIdToUse = tierConfig.priceId
+    }
 
     // Get or create Stripe customer
     let stripeCustomerId: string
@@ -69,7 +105,7 @@ export async function POST(request: NextRequest) {
       payment_method_collection: 'always',
       line_items: [
         {
-          price: tierConfig.priceId,
+          price: priceIdToUse,
           quantity: 1,
         },
       ],

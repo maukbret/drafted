@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -76,9 +76,39 @@ const TIER_CONFIGS: Record<SubscriptionTier, TierConfig> = {
 
 const TIER_ORDER: SubscriptionTier[] = ['starter', 'advanced', 'pro']
 
+type StripeTierPrice = {
+  priceId: string
+  unitAmount: number
+  currency: string
+}
+
 export function BillingPageClient({ subscription, klaviyoConnectionCount }: BillingPageClientProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tierPrices, setTierPrices] = useState<Partial<Record<SubscriptionTier, StripeTierPrice>>>({})
+
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchPrices = async () => {
+      try {
+        const response = await fetch('/api/billing/prices')
+        if (!response.ok) return
+        const data = await response.json()
+        if (isMounted && data?.tiers) {
+          setTierPrices(data.tiers)
+        }
+      } catch (err) {
+        console.error('Failed to load Stripe prices:', err)
+      }
+    }
+
+    fetchPrices()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   const openPortal = async () => {
     setLoading(true)
@@ -105,7 +135,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
     }
   }
 
-  const startSubscription = async (tier: SubscriptionTier = 'starter') => {
+  const startSubscription = async (tier: SubscriptionTier = 'starter', priceId?: string) => {
     setLoading(true)
     setError(null)
 
@@ -115,7 +145,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ tier }),
+        body: JSON.stringify({ tier, priceId }),
       })
 
       const data = await response.json()
@@ -154,6 +184,18 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
   const trialEndDate = subscription?.trial_end ? formatDate(subscription.trial_end) : null
   const periodEndDate = subscription?.current_period_end ? formatDate(subscription.current_period_end) : null
   const isCanceling = Boolean(subscription?.cancel_at_period_end && periodEndDate)
+
+  const formatPrice = (amount: number, currency: string) => {
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency,
+        maximumFractionDigits: 0,
+      }).format(amount)
+    } catch {
+      return `${currency} ${amount}`
+    }
+  }
 
   return (
     <div className="p-8">
@@ -288,6 +330,8 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
           {TIER_ORDER.map((tierKey, index) => {
             const tier = TIER_CONFIGS[tierKey]
             const isCurrentTier = tierKey === currentTier
+            const tierPrice = tierPrices[tierKey]
+            const displayPrice = tierPrice ? formatPrice(tierPrice.unitAmount, tierPrice.currency) : `€${tier.price}`
 
             return (
               <Card
@@ -306,7 +350,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg">{tier.name}</CardTitle>
                   <div>
-                    <span className="text-3xl font-bold">€{tier.price}</span>
+                    <span className="text-3xl font-bold">{displayPrice}</span>
                     <span className="text-muted-foreground">/month</span>
                   </div>
                 </CardHeader>
@@ -330,7 +374,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
                   <div className="mt-2">
                     {!hasActiveSubscription && (
                       <Button
-                        onClick={() => startSubscription(tierKey)}
+                        onClick={() => startSubscription(tierKey, tierPrice?.priceId)}
                         disabled={loading}
                         className="w-full"
                         variant={tierKey === 'advanced' ? 'default' : 'outline'}
