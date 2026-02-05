@@ -27,8 +27,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 
@@ -364,119 +363,124 @@ export function Step3Settings({
       <div className="border-t pt-6">
         <h3 className="text-lg font-semibold mb-4">When to send</h3>
 
-        <div className="space-y-4">
-          {/* Quick date selection */}
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant={dateOption === 'today' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                const today = new Date()
-                setScheduledDate(today.toISOString().split('T')[0])
-                setDateOption('today')
+        <div className="space-y-6">
+          <div className="space-y-4">
+            <Tabs
+              value={dateOption}
+              onValueChange={(value) => {
+                if (value === 'today') {
+                  const today = new Date()
+                  setScheduledDate(today.toISOString().split('T')[0])
+                }
+                if (value === 'tomorrow') {
+                  const tomorrow = new Date()
+                  tomorrow.setDate(tomorrow.getDate() + 1)
+                  setScheduledDate(tomorrow.toISOString().split('T')[0])
+                }
+                setDateOption(value as 'today' | 'tomorrow' | 'other')
               }}
             >
-              Today
-            </Button>
-            <Button
-              type="button"
-              variant={dateOption === 'tomorrow' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                const tomorrow = new Date()
-                tomorrow.setDate(tomorrow.getDate() + 1)
-                setScheduledDate(tomorrow.toISOString().split('T')[0])
-                setDateOption('tomorrow')
-              }}
+              <TabsList className="grid grid-cols-3 w-full">
+                <TabsTrigger value="today">Today</TabsTrigger>
+                <TabsTrigger value="tomorrow">Tomorrow</TabsTrigger>
+                <TabsTrigger value="other">Other</TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            <div
+              className={cn(
+                "grid grid-cols-1 gap-3",
+                dateOption === 'other'
+                  ? "md:grid-cols-[160px_140px_1fr]"
+                  : "md:grid-cols-[140px_1fr]"
+              )}
             >
-              Tomorrow
-            </Button>
-            <Button
-              type="button"
-              variant={dateOption === 'other' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setDateOption('other')}
-            >
-              Other
-            </Button>
+              {dateOption === 'other' && (
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Date</Label>
+                  <Input
+                    type="date"
+                    value={scheduledDate}
+                    onChange={(e) => setScheduledDate(e.target.value)}
+                    min={minDate}
+                  />
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Time</Label>
+                <Input
+                  type="time"
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Timezone</Label>
+                <Popover open={timezoneOpen} onOpenChange={setTimezoneOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={timezoneOpen}
+                      disabled={useRecipientTimezone}
+                      className="w-full justify-between font-normal"
+                    >
+                      {TIMEZONES.find((tz) => tz.value === timezone)?.label ?? 'Select timezone...'}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[260px] p-0">
+                    <Command>
+                      <CommandInput placeholder="Search timezone..." />
+                      <CommandList>
+                        <CommandEmpty>No timezone found.</CommandEmpty>
+                        <CommandGroup>
+                          {TIMEZONES.map((tz) => (
+                            <CommandItem
+                              key={tz.value}
+                              value={tz.label}
+                              onSelect={() => {
+                                setTimezone(tz.value)
+                                setTimezoneOpen(false)
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  timezone === tz.value ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              {tz.label}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
           </div>
 
-          {/* Date picker (only shown when "Other" is selected) */}
-          <div className="flex gap-3 flex-wrap">
-            {dateOption === 'other' && (
-              <Input
-                type="date"
-                value={scheduledDate}
-                onChange={(e) => setScheduledDate(e.target.value)}
-                min={minDate}
-                className="w-auto"
-              />
-            )}
-            <Input
-              type="time"
-              value={scheduledTime}
-              onChange={(e) => setScheduledTime(e.target.value)}
-              className="w-auto"
-            />
-            <Popover open={timezoneOpen} onOpenChange={setTimezoneOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={timezoneOpen}
-                  disabled={useRecipientTimezone}
-                  className="w-[220px] justify-between font-normal"
-                >
-                  {TIMEZONES.find((tz) => tz.value === timezone)?.label ?? 'Select timezone...'}
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[220px] p-0">
-                <Command>
-                  <CommandInput placeholder="Search timezone..." />
-                  <CommandList>
-                    <CommandEmpty>No timezone found.</CommandEmpty>
-                    <CommandGroup>
-                      {TIMEZONES.map((tz) => (
-                        <CommandItem
-                          key={tz.value}
-                          value={tz.label}
-                          onSelect={() => {
-                            setTimezone(tz.value)
-                            setTimezoneOpen(false)
-                          }}
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              timezone === tz.value ? "opacity-100" : "opacity-0"
-                            )}
-                          />
-                          {tz.label}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <Checkbox
-              id="recipient-timezone"
-              checked={useRecipientTimezone}
-              onCheckedChange={(checked) => setUseRecipientTimezone(checked as boolean)}
-              className="mt-0.5"
-            />
-            <label htmlFor="recipient-timezone" className="cursor-pointer">
-              <span className="text-sm font-medium leading-none">Send in recipient&apos;s timezone</span>
-              <p className="text-xs text-muted-foreground mt-1">
-                Each recipient receives the email at the selected time in their local timezone
-              </p>
+        <div className="flex items-start space-x-3">
+          <Checkbox
+            id="recipient-timezone"
+            checked={useRecipientTimezone}
+            onCheckedChange={(checked) => setUseRecipientTimezone(checked as boolean)}
+            className="mt-0"
+          />
+          <div className="space-y-1 leading-none">
+            <label
+              htmlFor="recipient-timezone"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              Send in recipient&apos;s timezone
             </label>
+            <p className="text-sm text-muted-foreground">
+              Each recipient receives the email at the selected time in their local timezone
+            </p>
           </div>
+        </div>
         </div>
       </div>
 
@@ -495,64 +499,50 @@ export function Step3Settings({
           </TooltipProvider>
         </div>
 
-        <div className="flex items-start gap-3">
-          <Switch
+        <div className="flex items-start space-x-3">
+          <Checkbox
             id="custom-footer"
             checked={useCustomFooter}
-            onCheckedChange={setUseCustomFooter}
-            className="mt-0.5"
+            onCheckedChange={(checked) => setUseCustomFooter(checked as boolean)}
+            className="mt-0"
           />
-          <label htmlFor="custom-footer" className="cursor-pointer">
-            <span className="text-sm font-medium leading-none">Use custom footer</span>
-            <p className="text-xs text-muted-foreground mt-1">
+          <div className="space-y-1 leading-none">
+            <label
+              htmlFor="custom-footer"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              Use custom footer
+            </label>
+            <p className="text-sm text-muted-foreground">
               {useCustomFooter
                 ? 'Uses your saved footer from Klaviyo. Disable to use a simple unsubscribe link instead.'
                 : 'Uses a simple unsubscribe link. Enable to use your saved Klaviyo footer.'}
             </p>
-          </label>
+          </div>
         </div>
       </div>
 
       <div className="border-t pt-6">
         <h3 className="text-lg font-semibold mb-4">How to publish</h3>
 
-        <RadioGroup
+        <Tabs
           value={publishOption}
           onValueChange={(value) => setPublishOption(value as 'draft' | 'schedule')}
           className="space-y-3"
         >
-          <label
-            htmlFor="publish-draft"
-            className={cn(
-              'flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors',
-              publishOption === 'draft'
-                ? 'border-primary bg-muted'
-                : 'border-border hover:bg-muted/50'
-            )}
-          >
-            <RadioGroupItem value="draft" id="publish-draft" className="mt-1" />
-            <div>
-              <span className="text-sm font-medium">Save as draft</span>
-              <p className="text-xs text-muted-foreground">Review and schedule manually in Klaviyo</p>
-            </div>
-          </label>
-
-          <label
-            htmlFor="publish-schedule"
-            className={cn(
-              'flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors',
-              publishOption === 'schedule'
-                ? 'border-primary bg-muted'
-                : 'border-border hover:bg-muted/50'
-            )}
-          >
-            <RadioGroupItem value="schedule" id="publish-schedule" className="mt-1" />
-            <div>
-              <span className="text-sm font-medium">Schedule immediately</span>
-              <p className="text-xs text-muted-foreground">Schedule the campaign for the selected date and time</p>
-            </div>
-          </label>
-        </RadioGroup>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="draft">Save as draft</TabsTrigger>
+            <TabsTrigger value="schedule">Schedule now</TabsTrigger>
+          </TabsList>
+          <TabsContent value="draft" className="rounded-lg border bg-muted/30 p-3">
+            <p className="text-sm font-medium">Save as draft</p>
+            <p className="text-xs text-muted-foreground">Review and schedule manually in Klaviyo</p>
+          </TabsContent>
+          <TabsContent value="schedule" className="rounded-lg border bg-muted/30 p-3">
+            <p className="text-sm font-medium">Schedule immediately</p>
+            <p className="text-xs text-muted-foreground">Schedule the campaign for the selected date and time</p>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {error && (

@@ -81,6 +81,12 @@ export async function GET() {
       })
     }
 
+    // Some Figma tokens are scoped to file access only and cannot call /v1/me.
+    // If we get a 403, treat the connection as active to avoid false errors.
+    if (userResponse.status === 403) {
+      return NextResponse.json({ status: { id: connection.id, status: 'active' as const } })
+    }
+
     return NextResponse.json({
       status: { id: connection.id, status: 'error' as const, error: `API error: ${userResponse.status}` },
     })

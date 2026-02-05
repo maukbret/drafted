@@ -216,7 +216,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
               <p className="text-sm text-muted-foreground">
                 Found {sections.length} section{sections.length !== 1 ? 's' : ''} in the email. Select all sections that make up your footer:
               </p>
-              <ScrollArea className="max-h-[400px]">
+              <ScrollArea className="h-[400px] w-full">
                 <div className="space-y-3 pr-4">
                   {sections.map((section) => {
                     const isSelected = selectedSections.has(section.id)

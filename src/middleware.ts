@@ -78,10 +78,18 @@ export async function middleware(request: NextRequest) {
 
     // If profile completed but subscription not selected, go to plan selection
     if (!profile.subscription_selected) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/onboarding'
-      url.searchParams.set('step', 'plan')
-      return NextResponse.redirect(url)
+      const { data: teamMembership } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (!teamMembership) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/onboarding'
+        url.searchParams.set('step', 'plan')
+        return NextResponse.redirect(url)
+      }
     }
 
     // Check for active subscription
@@ -96,9 +104,17 @@ export async function middleware(request: NextRequest) {
 
     // If no active subscription, redirect to billing page
     if (!hasActiveSubscription) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/billing'
-      return NextResponse.redirect(url)
+      const { data: teamMembership } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (!teamMembership) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/billing'
+        return NextResponse.redirect(url)
+      }
     }
   }
 
@@ -115,8 +131,18 @@ export async function middleware(request: NextRequest) {
     if (!profile || !profile.onboarding_completed) {
       url.pathname = '/onboarding'
     } else if (!profile.subscription_selected) {
-      url.pathname = '/onboarding'
-      url.searchParams.set('step', 'plan')
+      const { data: teamMembership } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (teamMembership) {
+        url.pathname = '/campaigns'
+      } else {
+        url.pathname = '/onboarding'
+        url.searchParams.set('step', 'plan')
+      }
     } else {
       url.pathname = '/campaigns'
     }
@@ -144,7 +170,17 @@ export async function middleware(request: NextRequest) {
                                      subscription?.status === 'active'
 
       const url = request.nextUrl.clone()
-      url.pathname = hasActiveSubscription ? '/campaigns' : '/billing'
+      if (hasActiveSubscription) {
+        url.pathname = '/campaigns'
+      } else {
+        const { data: teamMembership } = await supabase
+          .from('team_members')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        url.pathname = teamMembership ? '/campaigns' : '/billing'
+      }
       return NextResponse.redirect(url)
     }
   }

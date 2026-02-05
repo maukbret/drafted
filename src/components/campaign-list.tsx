@@ -48,7 +48,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, ArrowUpDown, Eye } from 'lucide-react'
+import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, ArrowUpDown } from 'lucide-react'
 
 interface CampaignWithConnection extends Campaign {
   klaviyo_connections?: {
@@ -73,13 +73,13 @@ const STATUS_CONFIG = {
     variant: 'secondary',
     className: '',
     dotClassName: 'bg-zinc-500 dark:bg-zinc-400',
-    label: 'In progress',
+    label: 'Concept',
   },
   klaviyo_draft: {
     variant: 'default',
     className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100',
     dotClassName: 'bg-blue-700 dark:bg-blue-300',
-    label: 'Klaviyo draft',
+    label: 'Saved to Klaviyo',
   },
   scheduled: {
     variant: 'default',
@@ -111,13 +111,13 @@ const STATUS_CONFIG = {
     variant: 'secondary',
     className: '',
     dotClassName: 'bg-zinc-500 dark:bg-zinc-400',
-    label: 'In progress',
+    label: 'Concept',
   },
   ready: {
     variant: 'default',
     className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100',
     dotClassName: 'bg-blue-700 dark:bg-blue-300',
-    label: 'Klaviyo draft',
+    label: 'Saved to Klaviyo',
   },
 } as const satisfies Record<
   string,
@@ -165,8 +165,10 @@ function getColumns(opts: {
       cell: ({ row }) => {
         const status = STATUS_CONFIG[row.original.status] || STATUS_CONFIG.in_progress
         return (
-          <Badge variant={status.variant} className={`gap-1.5 ${status.className}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${status.dotClassName}`} aria-hidden="true" />
+          <Badge
+            variant={status.variant}
+            className={`font-sans text-[12px] py-0.25 px-2 shadow-none ${status.className}`}
+          >
             {status.label}
           </Badge>
         )
@@ -256,33 +258,7 @@ function getColumns(opts: {
           <div className="flex items-center justify-end gap-2">
             {isInProgress && (
               <Button variant="secondary" asChild>
-                <Link href={`/campaigns/${campaign.id}`}>Continue</Link>
-              </Button>
-            )}
-
-            {isReadOnlyPreviewStatus && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                    <Link href={`/campaigns/${campaign.id}`} aria-label="View campaign preview">
-                      <Eye className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>View preview</TooltipContent>
-              </Tooltip>
-            )}
-
-            {isKlaviyoDraft && (
-              <Button variant="secondary" asChild>
-                <a
-                  href={`https://www.klaviyo.com/campaign/${campaign.klaviyo_campaign_id}/scheduled`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="h-4 w-4 buttonIcon" />
-                  View in Klaviyo
-                </a>
+                <Link href={`/campaigns/${campaign.id}`}>Continue editing</Link>
               </Button>
             )}
 
@@ -299,7 +275,7 @@ function getColumns(opts: {
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end">
-                {!isReadOnlyPreviewStatus && (
+                {!isReadOnlyPreviewStatus && !isInProgress && (
                   <DropdownMenuItem asChild>
                     <Link href={`/campaigns/${campaign.id}`}>
                       <Pencil className="h-4 w-4 mr-1.5" />
@@ -314,6 +290,19 @@ function getColumns(opts: {
                       <Mail className="h-4 w-4 mr-1.5" />
                       View details
                     </Link>
+                  </DropdownMenuItem>
+                )}
+
+                {isKlaviyoDraft && (
+                  <DropdownMenuItem asChild>
+                    <a
+                      href={`https://www.klaviyo.com/campaign/${campaign.klaviyo_campaign_id}/scheduled`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="h-4 w-4 mr-1.5" />
+                      View in Klaviyo
+                    </a>
                   </DropdownMenuItem>
                 )}
 
@@ -363,13 +352,16 @@ function DataTable({
   return (
     <TooltipProvider>
       <div className="space-y-3">
-        <div className="rounded-lg border">
+        <div>
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id}>
+                    <TableHead
+                      key={header.id}
+                      className="bg-muted/40 border-y border-border/60 first:border-l first:rounded-tl-lg last:border-r last:rounded-tr-lg"
+                    >
                       {header.isPlaceholder
                         ? null
                         : flexRender(header.column.columnDef.header, header.getContext())}
