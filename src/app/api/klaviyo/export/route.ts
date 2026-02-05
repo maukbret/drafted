@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 2: Generate HTML email with footer
-    const html = generateEmailHtml(uploadedFrames, footerHtml)
+    const html = generateEmailHtml(uploadedFrames, footerHtml, '')
 
     // Step 3: Create template in Klaviyo
     const templateName = project.name || `Figma Import - ${new Date().toLocaleDateString('en-GB')}`
@@ -193,7 +193,7 @@ function generateEmailHtml(frames: Array<{
   width: number | null
   klaviyo_image_url: string | null
   link_url: string | null
-}>, footerHtml: string = ''): string {
+}>, footerHtml: string = '', previewText: string = ''): string {
   // Group frames for side-by-side layout
   const rows: string[] = []
   let i = 0
@@ -255,6 +255,12 @@ function generateEmailHtml(frames: Array<{
         <!-- Footer -->
 ${footerHtml}` : ''
 
+  const safePreviewText = escapeHtml(previewText.trim())
+  const previewBlock = safePreviewText ? `
+  <div style="display:none; font-size:1px; line-height:1px; max-height:0px; max-width:0px; opacity:0; overflow:hidden;">
+    ${safePreviewText}
+  </div>` : ''
+
   return `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
@@ -296,6 +302,7 @@ ${footerHtml}` : ''
   </style>
 </head>
 <body id="body" style="margin: 0 !important; padding: 0 !important; background-color: #f4f4f4;">
+${previewBlock}
   <!-- Wrapper table for centering -->
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f4f4f4;">
     <tr>
@@ -320,4 +327,13 @@ ${footerSection}
   </table>
 </body>
 </html>`
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
