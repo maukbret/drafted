@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import {
@@ -45,6 +45,13 @@ interface UpgradePromptProps {
   currentCount: number
 }
 
+type StripeTierPrice = {
+  priceId: string
+  unitAmount: number
+  currency: string
+  name: string
+}
+
 export function UpgradePrompt({
   open,
   onOpenChange,
@@ -54,6 +61,7 @@ export function UpgradePrompt({
 }: UpgradePromptProps) {
   const [loading, setLoading] = useState<SubscriptionTier | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [tierPrices, setTierPrices] = useState<Partial<Record<SubscriptionTier, StripeTierPrice>>>({})
   const router = useRouter()
 
   // Filter to only show tiers higher than current
@@ -62,6 +70,42 @@ export function UpgradePrompt({
   const availableUpgrades = UPGRADE_OPTIONS.filter(
     (option) => tierOrder.indexOf(option.tier) > currentTierIndex
   )
+
+  useEffect(() => {
+    if (!open) return
+    let isMounted = true
+
+    const fetchPrices = async () => {
+      try {
+        const response = await fetch('/api/billing/prices')
+        if (!response.ok) return
+        const data = await response.json()
+        if (isMounted && data?.tiers) {
+          setTierPrices(data.tiers)
+        }
+      } catch (err) {
+        console.error('Failed to load Stripe prices:', err)
+      }
+    }
+
+    fetchPrices()
+
+    return () => {
+      isMounted = false
+    }
+  }, [open])
+
+  const formatPrice = (amount: number, currency: string) => {
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency,
+        maximumFractionDigits: 0,
+      }).format(amount)
+    } catch {
+      return `${currency} ${amount}`
+    }
+  }
 
   const handleUpgrade = async (tier: SubscriptionTier) => {
     setLoading(tier)
@@ -126,12 +170,14 @@ export function UpgradePrompt({
                   className="flex items-center justify-between p-4 border rounded-lg"
                 >
                   <div>
-                    <p className="font-medium">{option.name}</p>
+                    <p className="font-medium">{tierPrices[option.tier]?.name || option.name}</p>
                     <p className="text-sm text-muted-foreground">
                       Up to {option.klaviyoAccountLimit} Klaviyo accounts
                     </p>
                     <p className="text-sm font-medium mt-1">
-                      €{option.price}/month
+                      {tierPrices[option.tier]
+                        ? `${formatPrice(tierPrices[option.tier]!.unitAmount, tierPrices[option.tier]!.currency)}/month`
+                        : `€${option.price}/month`}
                     </p>
                   </div>
                   <Button

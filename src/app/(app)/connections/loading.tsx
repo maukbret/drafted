@@ -17,6 +17,11 @@ export default function ConnectionsLoading() {
         <Skeleton className="h-9 w-24" />
       </div>
 
+      <div className="mb-4 flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+        <Skeleton className="h-4 w-48" />
+        <Skeleton className="h-4 w-24" />
+      </div>
+
       <div className="space-y-4">
         {Array.from({ length: 3 }).map((_, index) => (
           <Card key={index}>
@@ -41,6 +46,10 @@ export default function ConnectionsLoading() {
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      <div className="mt-4">
+        <Skeleton className="h-9 w-48" />
       </div>
     </div>
   )

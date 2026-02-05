@@ -10,7 +10,6 @@ export default function CampaignsLoading() {
           <Skeleton className="h-4 w-72 mt-2" />
         </div>
         <div className="flex items-center gap-2">
-          <Skeleton className="h-9 w-56" />
           <Skeleton className="h-9 w-9" />
           <Skeleton className="h-9 w-9" />
           <Skeleton className="h-9 w-36" />
@@ -28,12 +27,15 @@ export default function CampaignsLoading() {
           </div>
           <div className="divide-y">
             {Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="grid grid-cols-5 gap-4 px-4 py-4 items-center">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-5 w-20" />
+              <div key={index} className="grid grid-cols-5 gap-4 px-4 h-[52px] items-center">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-5 w-24" />
                 <Skeleton className="h-3 w-24" />
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-7 w-7 rounded-full" />
+                <div className="flex items-center justify-end gap-2">
+                  <Skeleton className="h-8 w-8" />
+                  <Skeleton className="h-8 w-8" />
+                </div>
               </div>
             ))}
           </div>

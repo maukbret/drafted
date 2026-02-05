@@ -36,12 +36,24 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid price' }, { status: 400 })
       }
 
-      const tierFromPrice = (price.metadata?.tier || null) as SubscriptionTier | null
-      if (tierFromPrice) {
-        if (requestedTier && tierFromPrice !== requestedTier) {
+      let tierFromStripe: SubscriptionTier | null =
+        (price.metadata?.tier || null) as SubscriptionTier | null
+
+      if (!tierFromStripe && price.product) {
+        try {
+          const productId = typeof price.product === 'string' ? price.product : price.product.id
+          const product = await stripe.products.retrieve(productId)
+          tierFromStripe = (product.metadata?.tier || null) as SubscriptionTier | null
+        } catch (err) {
+          console.error('Failed to retrieve Stripe product:', err)
+        }
+      }
+
+      if (tierFromStripe) {
+        if (requestedTier && tierFromStripe !== requestedTier) {
           return NextResponse.json({ error: 'Tier mismatch' }, { status: 400 })
         }
-        tier = tierFromPrice
+        tier = tierFromStripe
       }
 
       priceIdToUse = requestedPriceId

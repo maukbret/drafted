@@ -80,6 +80,8 @@ type StripeTierPrice = {
   priceId: string
   unitAmount: number
   currency: string
+  productId: string
+  name: string
 }
 
 export function BillingPageClient({ subscription, klaviyoConnectionCount }: BillingPageClientProps) {
@@ -332,6 +334,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
             const isCurrentTier = tierKey === currentTier
             const tierPrice = tierPrices[tierKey]
             const displayPrice = tierPrice ? formatPrice(tierPrice.unitAmount, tierPrice.currency) : `€${tier.price}`
+            const displayName = tierPrice?.name || tier.name
 
             return (
               <Card
@@ -348,7 +351,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
                 )}
 
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">{tier.name}</CardTitle>
+                  <CardTitle className="text-lg">{displayName}</CardTitle>
                   <div>
                     <span className="text-3xl font-bold">{displayPrice}</span>
                     <span className="text-muted-foreground">/month</span>
