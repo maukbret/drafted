@@ -72,45 +72,50 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Klaviyo token expired. Please reconnect Klaviyo.' }, { status: 401 })
     }
 
-    // Fetch lists and segments in parallel
-    const [listsResponse, segmentsResponse] = await Promise.all([
-      fetch('https://a.klaviyo.com/api/lists', {
-        headers: {
-          'Authorization': `Bearer ${klaviyoToken}`,
-          'Accept': 'application/json',
-          'revision': '2024-10-15',
-        },
-      }),
-      fetch('https://a.klaviyo.com/api/segments', {
-        headers: {
-          'Authorization': `Bearer ${klaviyoToken}`,
-          'Accept': 'application/json',
-          'revision': '2024-10-15',
-        },
-      }),
-    ])
-
-    if (!listsResponse.ok || !segmentsResponse.ok) {
-      console.error('Klaviyo API error:', {
-        lists: listsResponse.status,
-        segments: segmentsResponse.status,
-      })
-      return NextResponse.json({ error: 'Failed to fetch audiences from Klaviyo' }, { status: 500 })
+    const headers = {
+      'Authorization': `Bearer ${klaviyoToken}`,
+      'Accept': 'application/json',
+      'revision': '2024-10-15',
     }
 
+    const fetchAllPages = async (baseUrl: string) => {
+      const items: any[] = []
+      let nextUrl: string | null = baseUrl
+      let pageCount = 0
+      const maxPages = 200
+
+      while (nextUrl && pageCount < maxPages) {
+        const response = await fetch(nextUrl, { headers })
+        if (!response.ok) {
+          throw new Error(`Klaviyo API error ${response.status} for ${baseUrl}`)
+        }
+        const data = await response.json()
+        items.push(...(data.data || []))
+        nextUrl = data.links?.next || null
+        pageCount += 1
+      }
+
+      if (pageCount >= maxPages) {
+        console.error('Klaviyo pagination exceeded max pages for', baseUrl)
+      }
+
+      return items
+    }
+
+    // Fetch all lists and segments in parallel (pagination-aware)
     const [listsData, segmentsData] = await Promise.all([
-      listsResponse.json(),
-      segmentsResponse.json(),
+      fetchAllPages('https://a.klaviyo.com/api/lists'),
+      fetchAllPages('https://a.klaviyo.com/api/segments'),
     ])
 
     // Transform to common format
-    const lists = (listsData.data || []).map((list: any) => ({
+    const lists = (listsData || []).map((list: any) => ({
       id: list.id,
       name: list.attributes?.name || 'Unnamed List',
       type: 'list' as const,
     }))
 
-    const segments = (segmentsData.data || []).map((segment: any) => ({
+    const segments = (segmentsData || []).map((segment: any) => ({
       id: segment.id,
       name: segment.attributes?.name || 'Unnamed Segment',
       type: 'segment' as const,
