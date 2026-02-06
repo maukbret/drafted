@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { InviteAcceptClient } from './invite-accept-client'
 
@@ -9,10 +10,14 @@ interface InvitePageProps {
 export default async function InvitePage({ params }: InvitePageProps) {
   const { token } = await params
   const supabase = await createClient()
+  const supabaseAdmin = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
   const { data: { user } } = await supabase.auth.getUser()
 
   // Get invitation details
-  const { data: invitation } = await supabase
+  const { data: invitation } = await supabaseAdmin
     .from('team_invitations')
     .select('*, teams(id, name)')
     .eq('token', token)
@@ -114,7 +119,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
   // Get inviter's name
   let inviterName = 'Someone'
   if (invitation.invited_by) {
-    const { data: inviterProfile } = await supabase
+    const { data: inviterProfile } = await supabaseAdmin
       .from('profiles')
       .select('full_name')
       .eq('id', invitation.invited_by)

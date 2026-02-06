@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import DOMPurify from 'dompurify'
 import { FooterSetup } from './footer-setup'
 import { UpgradePrompt } from './upgrade-prompt'
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   AlertDialog,
@@ -20,7 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { RefreshCw, Loader2, Trash2, AlertCircle } from 'lucide-react'
+import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil } from 'lucide-react'
 
 interface KlaviyoConnection {
   id: string
@@ -56,6 +58,11 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'klaviyo' | 'figma'; id: string; name: string } | null>(null)
   const [footerSetupConnection, setFooterSetupConnection] = useState<KlaviyoConnection | null>(null)
+  const [footerPreviewConnection, setFooterPreviewConnection] = useState<KlaviyoConnection | null>(null)
+  const [footerPreviewHtml, setFooterPreviewHtml] = useState<string | null>(null)
+  const [footerPreviewSourceUrl, setFooterPreviewSourceUrl] = useState<string | null>(null)
+  const [footerPreviewLoading, setFooterPreviewLoading] = useState(false)
+  const [footerPreviewError, setFooterPreviewError] = useState<string | null>(null)
   const [connectionStatuses, setConnectionStatuses] = useState<Record<string, ConnectionStatus>>({})
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
@@ -73,6 +80,42 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
       window.history.replaceState({}, '', url.toString())
     }
   }, [searchParams])
+
+  useEffect(() => {
+    if (!footerPreviewConnection) return
+    let isActive = true
+    const fetchFooter = async () => {
+      setFooterPreviewLoading(true)
+      setFooterPreviewError(null)
+      setFooterPreviewHtml(null)
+      setFooterPreviewSourceUrl(null)
+
+      try {
+        const response = await fetch(`/api/klaviyo/footer?connectionId=${footerPreviewConnection.id}`)
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to fetch footer')
+        }
+
+        if (!isActive) return
+        const footerHtml = data.footer?.footer_html || null
+        const sourceUrl = data.footer?.source_url || null
+        setFooterPreviewHtml(footerHtml)
+        setFooterPreviewSourceUrl(sourceUrl)
+      } catch (err) {
+        if (!isActive) return
+        setFooterPreviewError(err instanceof Error ? err.message : 'Failed to fetch footer')
+      } finally {
+        if (!isActive) return
+        setFooterPreviewLoading(false)
+      }
+    }
+
+    fetchFooter()
+    return () => {
+      isActive = false
+    }
+  }, [footerPreviewConnection])
 
   const connectionCount = klaviyoConnections.length
   const isAtLimit = connectionCount >= connectionLimit
@@ -230,6 +273,13 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
     )
   }
 
+  const sanitizeHtml = (html: string) => {
+    return DOMPurify.sanitize(html, {
+      ADD_TAGS: ['style'],
+      ADD_ATTR: ['target', 'rel'],
+    })
+  }
+
   return (
     <div>
       {/* Page header */}
@@ -363,14 +413,27 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
                           </>
                         )}
                       </div>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        onClick={() => setFooterSetupConnection(conn)}
-                        className="h-auto p-0"
-                      >
-                        {conn.hasFooter ? 'Update footer' : 'Setup footer'}
-                      </Button>
+                      <div className="flex items-center gap-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setFooterPreviewConnection(conn)}
+                          disabled={!conn.hasFooter}
+                          className="h-auto px-2"
+                        >
+                          <Eye className="h-4 w-4" />
+                          View footer
+                        </Button>
+                        <Button
+                          variant="link"
+                          size="sm"
+                          onClick={() => setFooterSetupConnection(conn)}
+                          className="h-auto p-0"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          {conn.hasFooter ? 'Update footer' : 'Setup footer'}
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -399,7 +462,7 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
                       </div>
                     </div>
                     {/* Footer status (read-only) */}
-                    <div className="mt-3 pt-3 border-t">
+                    <div className="mt-3 pt-3 border-t flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         {conn.hasFooter ? (
                           <>
@@ -413,6 +476,16 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
                           </>
                         )}
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setFooterPreviewConnection(conn)}
+                        disabled={!conn.hasFooter}
+                        className="h-auto px-2"
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        View footer
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -520,6 +593,55 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
           onCancel={() => setFooterSetupConnection(null)}
         />
       )}
+
+      {/* Footer Preview Modal */}
+      <Dialog
+        open={!!footerPreviewConnection}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFooterPreviewConnection(null)
+            setFooterPreviewHtml(null)
+            setFooterPreviewSourceUrl(null)
+            setFooterPreviewError(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Footer Preview</DialogTitle>
+            <DialogDescription>
+              {footerPreviewConnection?.account_name || 'Klaviyo account'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto py-4">
+            {footerPreviewLoading && (
+              <div className="text-sm text-muted-foreground">Loading footer...</div>
+            )}
+            {footerPreviewError && (
+              <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
+                {footerPreviewError}
+              </div>
+            )}
+            {!footerPreviewLoading && !footerPreviewError && !footerPreviewHtml && (
+              <div className="text-sm text-muted-foreground">No footer is installed for this account.</div>
+            )}
+            {footerPreviewHtml && (
+              <Card>
+                <CardContent className="bg-white rounded-lg p-6">
+                  <div
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(footerPreviewHtml) }}
+                  />
+                </CardContent>
+              </Card>
+            )}
+            {footerPreviewSourceUrl && (
+              <p className="text-xs text-muted-foreground mt-3">
+                Source: <span className="font-mono">{footerPreviewSourceUrl}</span>
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation modal */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && !deletingId && setDeleteConfirm(null)}>

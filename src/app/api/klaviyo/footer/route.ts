@@ -18,16 +18,41 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get the connection to find the Klaviyo account ID
+    // Get the connection to find the Klaviyo account ID and owner
     const { data: connection } = await supabase
       .from('klaviyo_connections')
-      .select('klaviyo_account_id')
+      .select('klaviyo_account_id, user_id')
       .eq('id', connectionId)
-      .eq('user_id', user.id)
       .single()
 
     if (!connection) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
+    }
+
+    // Allow if user owns the connection or shares a team with the owner (admin only)
+    let footerOwnerId = connection.user_id
+    if (connection.user_id !== user.id) {
+      const { data: memberships } = await supabase
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', user.id)
+
+      const teamIds = (memberships || []).map(m => m.team_id)
+      if (teamIds.length === 0) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+
+      const { data: adminMembership } = await supabase
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', connection.user_id)
+        .eq('role', 'admin')
+        .in('team_id', teamIds)
+        .maybeSingle()
+
+      if (!adminMembership) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
     }
 
     if (!connection.klaviyo_account_id) {
@@ -38,7 +63,7 @@ export async function GET(request: NextRequest) {
     const { data: footer } = await supabase
       .from('klaviyo_footers')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', footerOwnerId)
       .eq('klaviyo_account_id', connection.klaviyo_account_id)
       .single()
 

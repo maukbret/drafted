@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 // POST - Decline an invitation
@@ -9,6 +10,10 @@ export async function POST(
   try {
     const { token } = await params
     const supabase = await createClient()
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
@@ -16,7 +21,7 @@ export async function POST(
     }
 
     // Get the invitation
-    const { data: invitation, error: fetchError } = await supabase
+    const { data: invitation, error: fetchError } = await supabaseAdmin
       .from('team_invitations')
       .select('id, email, status')
       .eq('token', token)
@@ -36,7 +41,7 @@ export async function POST(
     }
 
     // Update invitation status
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from('team_invitations')
       .update({ status: 'declined' })
       .eq('id', invitation.id)

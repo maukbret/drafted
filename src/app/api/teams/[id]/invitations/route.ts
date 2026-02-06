@@ -101,7 +101,12 @@ export async function POST(
     }
 
     // Generate invite URL
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const originHeader = request.headers.get('origin')
+    const host = request.headers.get('host')
+    const proto = request.headers.get('x-forwarded-proto') || 'http'
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ||
+      originHeader ||
+      (host ? `${proto}://${host}` : 'http://localhost:3000')
     const inviteUrl = `${baseUrl}/invite/${token}`
 
     return NextResponse.json({
