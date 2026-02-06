@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +23,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, ChevronDown } from 'lucide-react'
 
 interface KlaviyoConnection {
   id: string
@@ -67,6 +69,8 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
   const [showLimitError, setShowLimitError] = useState(false)
+  const [ownConnectionsOpen, setOwnConnectionsOpen] = useState(() => klaviyoConnections.length > 0)
+  const [teamConnectionsOpen, setTeamConnectionsOpen] = useState(() => teamConnections.length > 0)
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -371,49 +375,146 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
 
           {/* User's own connections */}
           {klaviyoConnections.length > 0 && (
-            <div className="space-y-6">
-              {teamConnections.length > 0 && (
-                <h3 className="text-sm font-medium text-muted-foreground">Your connections</h3>
-              )}
-              {klaviyoConnections.map((conn) => (
-                <Card key={conn.id}>
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div>
-                          <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
-                          <p className="text-xs text-muted-foreground">
-                            Added {new Date(conn.created_at).toLocaleDateString('en-GB')}
-                          </p>
+            <Collapsible
+              open={ownConnectionsOpen}
+              onOpenChange={setOwnConnectionsOpen}
+              className="space-y-4"
+            >
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" className="w-full justify-between px-2">
+                  <div className="flex items-center gap-2">
+                    <ChevronDown
+                      className={cn(
+                        'h-4 w-4 transition-transform',
+                        ownConnectionsOpen ? 'rotate-0' : '-rotate-90'
+                      )}
+                    />
+                    <span className="text-sm font-medium text-muted-foreground">Your connections</span>
+                  </div>
+                  <Badge variant="secondary">{klaviyoConnections.length}</Badge>
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-6 pt-2">
+                {klaviyoConnections.map((conn) => (
+                  <Card key={conn.id}>
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div>
+                            <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Added {new Date(conn.created_at).toLocaleDateString('en-GB')}
+                            </p>
+                          </div>
+                          {getStatusBadge(conn.id)}
                         </div>
-                        {getStatusBadge(conn.id)}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => confirmDelete('klaviyo', conn.id, conn.account_name || 'Unnamed account')}
+                          disabled={deletingId === conn.id}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          {deletingId === conn.id ? 'Removing...' : 'Remove'}
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => confirmDelete('klaviyo', conn.id, conn.account_name || 'Unnamed account')}
-                        disabled={deletingId === conn.id}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        {deletingId === conn.id ? 'Removing...' : 'Remove'}
-                      </Button>
-                    </div>
-                    {/* Footer status */}
-                    <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {conn.hasFooter ? (
-                          <>
-                            <span className="w-2 h-2 bg-green-500 rounded-full" />
-                            <span className="text-sm text-muted-foreground">Footer configured</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
-                            <span className="text-sm text-muted-foreground">No footer set up</span>
-                          </>
-                        )}
+                      {/* Footer status */}
+                      <div className="mt-3 pt-3 border-t flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {conn.hasFooter ? (
+                            <>
+                              <span className="w-2 h-2 bg-green-500 rounded-full" />
+                              <span className="text-sm text-muted-foreground">Footer configured</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
+                              <span className="text-sm text-muted-foreground">No footer set up</span>
+                            </>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setFooterPreviewConnection(conn)}
+                            disabled={!conn.hasFooter}
+                            className="h-auto px-2"
+                          >
+                            <Eye className="h-4 w-4" />
+                            View footer
+                          </Button>
+                          <Button
+                            variant="link"
+                            size="sm"
+                            onClick={() => setFooterSetupConnection(conn)}
+                            className="h-auto p-0"
+                          >
+                            <Pencil className="h-4 w-4" />
+                            {conn.hasFooter ? 'Update footer' : 'Setup footer'}
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
+                    </CardContent>
+                  </Card>
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+
+          {/* Team shared connections (read-only) */}
+          {teamConnections.length > 0 && (
+            <Collapsible
+              open={teamConnectionsOpen}
+              onOpenChange={setTeamConnectionsOpen}
+              className="space-y-4"
+            >
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" className="w-full justify-between px-2">
+                  <div className="flex items-center gap-2">
+                    <ChevronDown
+                      className={cn(
+                        'h-4 w-4 transition-transform',
+                        teamConnectionsOpen ? 'rotate-0' : '-rotate-90'
+                      )}
+                    />
+                    <span className="text-sm font-medium text-muted-foreground">Team connections</span>
+                  </div>
+                  <Badge variant="secondary">{teamConnections.length}</Badge>
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-6 pt-2">
+                {teamConnections.map((conn) => (
+                  <Card key={conn.id} className="border-dashed">
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
+                              <Badge variant="secondary" className="text-xs">Shared</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Shared by {conn.owner_name || 'Team Admin'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Footer status (read-only) */}
+                      <div className="mt-3 pt-3 border-t flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {conn.hasFooter ? (
+                            <>
+                              <span className="w-2 h-2 bg-green-500 rounded-full" />
+                              <span className="text-sm text-muted-foreground">Footer configured</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
+                              <span className="text-sm text-muted-foreground">No footer set up</span>
+                            </>
+                          )}
+                        </div>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -421,76 +522,15 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
                           disabled={!conn.hasFooter}
                           className="h-auto px-2"
                         >
-                          <Eye className="h-4 w-4" />
+                          <Eye className="h-4 w-4 mr-1" />
                           View footer
                         </Button>
-                        <Button
-                          variant="link"
-                          size="sm"
-                          onClick={() => setFooterSetupConnection(conn)}
-                          className="h-auto p-0"
-                        >
-                          <Pencil className="h-4 w-4" />
-                          {conn.hasFooter ? 'Update footer' : 'Setup footer'}
-                        </Button>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-
-          {/* Team shared connections (read-only) */}
-          {teamConnections.length > 0 && (
-            <div className="space-y-6">
-              <h3 className="text-sm font-medium text-muted-foreground mt-6">Team connections</h3>
-              {teamConnections.map((conn) => (
-                <Card key={conn.id} className="border-dashed">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
-                            <Badge variant="secondary" className="text-xs">Shared</Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Shared by {conn.owner_name || 'Team Admin'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    {/* Footer status (read-only) */}
-                    <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {conn.hasFooter ? (
-                          <>
-                            <span className="w-2 h-2 bg-green-500 rounded-full" />
-                            <span className="text-sm text-muted-foreground">Footer configured</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
-                            <span className="text-sm text-muted-foreground">No footer set up</span>
-                          </>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setFooterPreviewConnection(conn)}
-                        disabled={!conn.hasFooter}
-                        className="h-auto px-2"
-                      >
-                        <Eye className="h-4 w-4 mr-1" />
-                        View footer
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
           )}
 
           {showAddForm ? (

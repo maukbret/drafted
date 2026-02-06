@@ -80,9 +80,19 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
   const [editingAltFrameId, setEditingAltFrameId] = useState<string | null>(null)
   const [deleteModalFrame, setDeleteModalFrame] = useState<Frame | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [showValidation, setShowValidation] = useState(false)
 
   // Memoize grouped frames to avoid recalculating on every render
   const groupedFrames = useMemo(() => groupFramesForLayout(frames), [frames])
+  const missingLinkFrames = useMemo(
+    () => frames.filter(frame => !frame.link_url || frame.link_url.trim() === ''),
+    [frames]
+  )
+  const missingLinkFrameIds = useMemo(
+    () => new Set(missingLinkFrames.map(frame => frame.id)),
+    [missingLinkFrames]
+  )
+  const hasMissingLinks = missingLinkFrames.length > 0
 
   const updateFrameLink = (frameId: string, linkUrl: string) => {
     setFrames(prev => prev.map(f =>
@@ -139,6 +149,15 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
   }
 
   const handleContinue = async () => {
+    if (hasMissingLinks) {
+      setShowValidation(true)
+      setError(null)
+      if (missingLinkFrames[0]) {
+        setActiveFrameId(missingLinkFrames[0].id)
+      }
+      return
+    }
+
     setSaving(true)
     setError(null)
 
@@ -267,7 +286,7 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
           <div className="bg-muted px-4 py-3 border-b flex-shrink-0">
             <h2 className="font-medium">Section links</h2>
             <p className="text-xs text-muted-foreground mt-1">
-              Add links to make sections clickable
+              Add links to make sections clickable. Each section requires a URL.
             </p>
           </div>
           <ScrollArea className="flex-1">
@@ -360,8 +379,21 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
                     onBlur={(e) => handleLinkBlur(frame.id, e.target.value)}
                     onClick={(e) => e.stopPropagation()}
                     placeholder="google.com or https://..."
-                    className="h-8"
+                    className={cn(
+                      'h-8',
+                      showValidation && missingLinkFrameIds.has(frame.id) && 'border-destructive focus-visible:ring-destructive'
+                    )}
+                    aria-invalid={showValidation && missingLinkFrameIds.has(frame.id)}
+                    aria-describedby={showValidation && missingLinkFrameIds.has(frame.id) ? `frame-link-${frame.id}-error` : undefined}
                   />
+                  {showValidation && missingLinkFrameIds.has(frame.id) && (
+                    <p
+                      id={`frame-link-${frame.id}-error`}
+                      className="mt-1 text-xs text-destructive"
+                    >
+                      Required. Add a URL for this section.
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -370,6 +402,11 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
 
         {/* Actions */}
         <div className="mt-4 space-y-3">
+          {showValidation && hasMissingLinks && (
+            <p className="text-sm text-destructive">
+              {missingLinkFrames.length} section{missingLinkFrames.length === 1 ? '' : 's'} missing a URL.
+            </p>
+          )}
           {error && (
             <p className="text-sm text-destructive">{error}</p>
           )}

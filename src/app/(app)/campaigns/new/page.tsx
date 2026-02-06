@@ -21,44 +21,17 @@ export default async function NewCampaignPage() {
     redirect('/connections')
   }
 
-  // Get the user's own Klaviyo connections
-  const { data: ownConnections } = await supabase
+  // Get any Klaviyo connection available to this user (own or shared via team)
+  // RLS policies determine which rows are visible.
+  const { data: availableConnections } = await supabase
     .from('klaviyo_connections')
-    .select('id')
-    .eq('user_id', user.id)
+    .select('id, klaviyo_account_id')
+    .order('created_at', { ascending: false })
     .limit(1)
 
-  let connectionId: string | null = ownConnections?.[0]?.id || null
+  const connection = availableConnections?.[0] || null
 
-  // If no own connections, check for team admin connections
-  if (!connectionId) {
-    const { data: teamMembership } = await supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (teamMembership) {
-      // Get admin members
-      const { data: adminMembers } = await supabase
-        .from('team_members')
-        .select('user_id')
-        .eq('team_id', teamMembership.team_id)
-        .eq('role', 'admin')
-
-      if (adminMembers && adminMembers.length > 0) {
-        const { data: teamConnections } = await supabase
-          .from('klaviyo_connections')
-          .select('id')
-          .in('user_id', adminMembers.map(m => m.user_id))
-          .limit(1)
-
-        connectionId = teamConnections?.[0]?.id || null
-      }
-    }
-  }
-
-  if (!connectionId) {
+  if (!connection?.id) {
     redirect('/connections')
   }
 
@@ -67,7 +40,8 @@ export default async function NewCampaignPage() {
     .from('campaigns')
     .insert({
       user_id: user.id,
-      klaviyo_connection_id: connectionId,
+      klaviyo_connection_id: connection.id,
+      klaviyo_account_id: connection.klaviyo_account_id || null,
       name: 'Untitled Campaign',
       subject_line: '',
       status: 'in_progress',

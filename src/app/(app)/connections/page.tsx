@@ -52,9 +52,9 @@ export default async function ConnectionsPage() {
         .single()
     : { data: null }
 
-  // Get team admin's connections (if user is in a team and not an admin)
+  // Get team admin's connections (if user is in a team)
   let teamConnections: typeof klaviyoConnections = []
-  if (teamMembership && teamMembership.role !== 'admin') {
+  if (teamMembership) {
     // Get admin members (without profile join - no FK relationship exists)
     const { data: adminMembers } = await supabase
       .from('team_members')
@@ -63,7 +63,7 @@ export default async function ConnectionsPage() {
       .eq('role', 'admin')
 
     if (adminMembers && adminMembers.length > 0) {
-      const adminUserIds = adminMembers.map(m => m.user_id)
+      const adminUserIds = adminMembers.map(m => m.user_id).filter(id => id !== user.id)
 
       // Fetch connections and profiles separately
       const [{ data: adminConnections }, { data: adminProfiles }] = await Promise.all([
