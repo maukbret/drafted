@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
       const maxPages = 200
 
       while (nextUrl && pageCount < maxPages) {
-        const response = await fetch(nextUrl, { headers })
+        const response: Response = await fetch(nextUrl, { headers })
         if (!response.ok) {
           throw new Error(`Klaviyo API error ${response.status} for ${baseUrl}`)
         }
