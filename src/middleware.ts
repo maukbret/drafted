@@ -84,7 +84,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    // If profile completed but subscription not selected, go to plan selection
+    // If no plan selected yet, allow team members; otherwise keep on billing
     if (!profile.subscription_selected) {
       const { data: teamMembership } = await supabase
         .from('team_members')
@@ -94,13 +94,13 @@ export async function middleware(request: NextRequest) {
 
       if (!teamMembership) {
         const url = request.nextUrl.clone()
-        url.pathname = '/onboarding'
-        url.searchParams.set('step', 'plan')
+        url.pathname = '/billing'
         return NextResponse.redirect(url)
       }
+      return supabaseResponse
     }
 
-    // Check for active subscription
+    // Check for active subscription only if a plan was selected
     const { data: subscription } = await supabase
       .from('subscriptions')
       .select('status')
@@ -145,12 +145,7 @@ export async function middleware(request: NextRequest) {
         .eq('user_id', user.id)
         .maybeSingle()
 
-      if (teamMembership) {
-        url.pathname = '/campaigns'
-      } else {
-        url.pathname = '/onboarding'
-        url.searchParams.set('step', 'plan')
-      }
+      url.pathname = teamMembership ? '/campaigns' : '/billing'
     } else {
       url.pathname = '/campaigns'
     }
@@ -165,6 +160,18 @@ export async function middleware(request: NextRequest) {
       .select('onboarding_completed, subscription_selected')
       .eq('id', user.id)
       .single()
+
+    if (profile?.onboarding_completed && !profile?.subscription_selected) {
+      const { data: teamMembership } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      const url = request.nextUrl.clone()
+      url.pathname = teamMembership ? '/campaigns' : '/billing'
+      return NextResponse.redirect(url)
+    }
 
     if (profile?.onboarding_completed && profile?.subscription_selected) {
       // Check if they have active subscription

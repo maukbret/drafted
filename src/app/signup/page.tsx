@@ -24,14 +24,19 @@ export default function SignupPage() {
     setError(null)
 
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
+      const normalizedEmail = email.trim().toLowerCase()
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: normalizedEmail,
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/api/auth/callback`,
         },
       })
       if (signUpError) throw signUpError
+      if (data?.user && data.user.identities && data.user.identities.length === 0) {
+        setError('An account with this email already exists')
+        return
+      }
 
       // Show confirmation screen
       setSignupComplete(true)

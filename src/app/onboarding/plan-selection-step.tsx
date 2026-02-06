@@ -120,7 +120,7 @@ export function PlanSelectionStep() {
         throw new Error(`Failed to complete onboarding: ${profileError.message}`)
       }
 
-      router.push('/campaigns')
+      router.push('/billing')
     } catch (err) {
       console.error('Skip subscription error:', err)
       setError(err instanceof Error ? err.message : 'Failed to continue without subscription')
