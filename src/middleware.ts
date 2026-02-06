@@ -47,9 +47,17 @@ export async function middleware(request: NextRequest) {
   const isBillingPage = request.nextUrl.pathname === '/billing'
   const isApiRoute = request.nextUrl.pathname.startsWith('/api/')
   const isWebhookRoute = request.nextUrl.pathname.startsWith('/api/webhooks/')
+  const isLocalhost = request.nextUrl.hostname === 'localhost' || request.nextUrl.hostname === '127.0.0.1'
+  const allowOnboardingForce = isOnboardingPage && isLocalhost && process.env.NODE_ENV === 'development' &&
+    request.nextUrl.searchParams.has('force')
 
   // Allow webhook routes without auth check
   if (isWebhookRoute) {
+    return supabaseResponse
+  }
+
+  // Allow dev-only forced onboarding step on localhost
+  if (allowOnboardingForce) {
     return supabaseResponse
   }
 

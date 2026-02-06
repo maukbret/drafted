@@ -16,6 +16,16 @@ function OnboardingContent() {
 
   useEffect(() => {
     const checkUser = async () => {
+      const forceStep = searchParams.get('force')
+      const isLocalhost = typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+
+      if (process.env.NODE_ENV === 'development' && isLocalhost && (forceStep === 'profile' || forceStep === 'plan')) {
+        setStep(forceStep)
+        setCheckingAuth(false)
+        return
+      }
+
       const { data: { user } } = await supabase.auth.getUser()
 
       if (!user) {
@@ -72,7 +82,7 @@ function OnboardingContent() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8">
-      <div className="w-full max-w-md">
+      <div className={`w-full ${step === 'plan' ? 'max-w-4xl' : 'max-w-md'}`}>
         {/* Step indicators */}
         <div className="flex items-center justify-center gap-2 mb-6">
           <div className={`h-2 w-16 rounded-full ${step === 'profile' ? 'bg-primary' : 'bg-primary'}`} />
