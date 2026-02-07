@@ -154,7 +154,7 @@ export async function GET(request: NextRequest) {
         .eq('klaviyo_account_id', klaviyoAccountId)
     }
 
-    const response = NextResponse.redirect(new URL('/connections?success=klaviyo_connected', request.url))
+    const response = NextResponse.redirect(new URL(`/connections?success=klaviyo_connected&newConnectionId=${newConnection.id}`, request.url))
     response.cookies.delete('klaviyo_code_verifier')
     response.cookies.delete('klaviyo_oauth_state')
     response.cookies.delete('klaviyo_account_name')

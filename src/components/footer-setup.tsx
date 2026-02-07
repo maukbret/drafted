@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import DOMPurify from 'dompurify'
 import {
   Dialog,
@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { Check, ChevronLeft } from 'lucide-react'
+import { Check, ChevronLeft, Loader2, AlertTriangle, Mail, ExternalLink } from 'lucide-react'
 
 interface EmailSection {
   id: string
@@ -24,23 +24,93 @@ interface EmailSection {
   index: number
 }
 
+interface KlaviyoCampaign {
+  id: string
+  name: string
+  subject: string | null
+  status: string
+  sentAt: string | null
+  createdAt: string | null
+}
+
 interface FooterSetupProps {
   connectionId: string
   hasFooter: boolean
   onComplete: () => void
   onCancel: () => void
+  isPostOAuth?: boolean
+  onSkip?: () => void
 }
 
-export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: FooterSetupProps) {
-  const [step, setStep] = useState<'input' | 'select' | 'confirm'>('input')
+export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel, isPostOAuth = false, onSkip }: FooterSetupProps) {
+  const [step, setStep] = useState<'campaigns' | 'manual' | 'select' | 'confirm'>('campaigns')
   const [previewUrl, setPreviewUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sections, setSections] = useState<EmailSection[]>([])
   const [selectedSections, setSelectedSections] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
+  const [campaigns, setCampaigns] = useState<KlaviyoCampaign[]>([])
+  const [campaignsLoading, setCampaignsLoading] = useState(true)
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
+  const [sourceUrl, setSourceUrl] = useState('')
 
-  const fetchSections = async () => {
+  // Fetch campaigns on mount
+  useEffect(() => {
+    const fetchCampaigns = async () => {
+      setCampaignsLoading(true)
+      try {
+        const response = await fetch(`/api/klaviyo/campaigns?connectionId=${connectionId}`)
+        if (response.ok) {
+          const data = await response.json()
+          setCampaigns(data.campaigns || [])
+        }
+      } catch (err) {
+        console.error('Failed to fetch campaigns:', err)
+      } finally {
+        setCampaignsLoading(false)
+      }
+    }
+
+    fetchCampaigns()
+  }, [connectionId])
+
+  const fetchSectionsFromCampaign = async (campaignId: string) => {
+    setSelectedCampaignId(campaignId)
+    setLoading(true)
+    setError(null)
+
+    const syntheticUrl = `https://www.klaviyo.com/campaign/${campaignId}`
+    setSourceUrl(syntheticUrl)
+
+    try {
+      const response = await fetch('/api/klaviyo/footer/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ previewUrl: syntheticUrl, connectionId }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch campaign content')
+      }
+
+      if (!data.sections || data.sections.length === 0) {
+        throw new Error('No sections found in this campaign. Try another campaign or enter a URL manually.')
+      }
+
+      setSections(data.sections)
+      setStep('select')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch campaign content')
+      setSelectedCampaignId(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchSectionsFromUrl = async () => {
     if (!previewUrl.trim()) {
       setError('Please enter a campaign URL')
       return
@@ -48,6 +118,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
 
     setLoading(true)
     setError(null)
+    setSourceUrl(previewUrl.trim())
 
     try {
       const response = await fetch('/api/klaviyo/footer/fetch', {
@@ -107,7 +178,6 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
       .join('\n')
   }
 
-  // Sanitize HTML to prevent XSS attacks
   const sanitizeHtml = (html: string) => {
     return DOMPurify.sanitize(html, {
       ADD_TAGS: ['style'],
@@ -128,7 +198,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
         body: JSON.stringify({
           connectionId,
           footerHtml: getCombinedHtml(),
-          sourceUrl: previewUrl,
+          sourceUrl,
         }),
       })
 
@@ -147,41 +217,149 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
   }
 
   const goBack = () => {
+    setError(null)
     if (step === 'confirm') {
       setStep('select')
     } else if (step === 'select') {
       setSections([])
       setSelectedSections(new Set())
-      setStep('input')
+      setSelectedCampaignId(null)
+      if (previewUrl) {
+        setStep('manual')
+      } else {
+        setStep('campaigns')
+      }
+    } else if (step === 'manual') {
+      setStep('campaigns')
     }
+  }
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return null
+    try {
+      return new Date(dateStr).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    } catch {
+      return null
+    }
+  }
+
+  const getDialogTitle = () => {
+    if (step === 'campaigns') return hasFooter ? 'Update Footer' : 'Set Up Footer'
+    if (step === 'manual') return hasFooter ? 'Update Footer' : 'Set Up Footer'
+    if (step === 'select') return 'Select Footer Sections'
+    return 'Confirm Footer'
+  }
+
+  const getDialogDescription = () => {
+    if (step === 'campaigns') return 'Select a recent campaign to extract your footer from'
+    if (step === 'manual') return 'Paste a Klaviyo campaign URL to extract your footer'
+    if (step === 'select') return 'Select the sections that make up your footer'
+    return 'Is this the correct footer?'
   }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>
-            {step === 'input' && (hasFooter ? 'Update Footer' : 'Setup Footer')}
-            {step === 'select' && 'Select Footer Sections'}
-            {step === 'confirm' && 'Confirm Footer'}
-          </DialogTitle>
-          <DialogDescription>
-            {step === 'input' && 'Paste a Klaviyo campaign URL to extract your footer'}
-            {step === 'select' && 'Select the sections that make up your footer'}
-            {step === 'confirm' && 'Is this the correct footer?'}
-          </DialogDescription>
+          <DialogTitle>{getDialogTitle()}</DialogTitle>
+          <DialogDescription>{getDialogDescription()}</DialogDescription>
         </DialogHeader>
 
         {/* Content */}
         <div className="flex-1 overflow-y-visible py-4">
+          {isPostOAuth && step === 'campaigns' && (
+            <div className="mb-4 p-3 border border-amber-500/20 bg-amber-50 dark:bg-amber-950/20 rounded-lg flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800 dark:text-amber-200">
+                <p className="font-medium">Footer setup recommended</p>
+                <p className="mt-1 text-amber-700 dark:text-amber-300">
+                  Without a footer, your emails may have deliverability issues. Klaviyo requires unsubscribe links and a physical address in every email.
+                </p>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
               {error}
             </div>
           )}
 
-          {/* Step 1: Input URL */}
-          {step === 'input' && (
+          {/* Step: Campaign Picker */}
+          {step === 'campaigns' && (
+            <div className="space-y-4">
+              {campaignsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading campaigns...</span>
+                </div>
+              ) : campaigns.length === 0 ? (
+                <div className="text-center py-12 space-y-3">
+                  <Mail className="h-10 w-10 text-muted-foreground/50 mx-auto" />
+                  <p className="text-sm text-muted-foreground">
+                    No sent campaigns found in this Klaviyo account.
+                  </p>
+                  <Button variant="link" onClick={() => setStep('manual')}>
+                    Enter a campaign URL manually
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <ScrollArea className="h-[400px] w-full">
+                    <div className="space-y-2 pr-4">
+                      {campaigns.map((campaign) => (
+                        <button
+                          key={campaign.id}
+                          onClick={() => fetchSectionsFromCampaign(campaign.id)}
+                          disabled={loading}
+                          className={cn(
+                            'w-full text-left p-4 border rounded-lg transition-colors',
+                            selectedCampaignId === campaign.id && loading
+                              ? 'border-primary bg-muted'
+                              : 'border-border hover:border-muted-foreground hover:bg-muted/50'
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium truncate">{campaign.name}</p>
+                              {campaign.subject && (
+                                <p className="text-sm text-muted-foreground truncate mt-0.5">
+                                  {campaign.subject}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {campaign.sentAt && (
+                                <span className="text-xs text-muted-foreground">
+                                  {formatDate(campaign.sentAt)}
+                                </span>
+                              )}
+                              {selectedCampaignId === campaign.id && loading && (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                  <div className="text-center">
+                    <Button variant="link" size="sm" onClick={() => setStep('manual')}>
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      Can&apos;t find your campaign? Enter URL manually
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Step: Manual URL Input */}
+          {step === 'manual' && (
             <div className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="preview-url">Campaign URL</Label>
@@ -210,7 +388,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
             </div>
           )}
 
-          {/* Step 2: Select Section */}
+          {/* Step: Select Sections */}
           {step === 'select' && (
             <div className="space-y-6">
               <p className="text-sm text-muted-foreground">
@@ -269,7 +447,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
             </div>
           )}
 
-          {/* Step 3: Confirm */}
+          {/* Step: Confirm */}
           {step === 'confirm' && selectedSections.size > 0 && (
             <div className="space-y-6">
               <Card>
@@ -294,7 +472,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
         {/* Footer */}
         <div className="flex justify-between pt-4 border-t">
           <div>
-            {(step === 'select' || step === 'confirm') && (
+            {(step === 'select' || step === 'confirm' || step === 'manual') && (
               <Button variant="ghost" onClick={goBack}>
                 <ChevronLeft className="h-4 w-4 mr-2" />
                 Back
@@ -302,12 +480,19 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel }: F
             )}
           </div>
           <div className="flex gap-3">
-            <Button variant="outline" onClick={onCancel}>
-              Cancel
-            </Button>
-            {step === 'input' && (
+            {isPostOAuth && step === 'campaigns' && onSkip ? (
+              <Button variant="ghost" onClick={onSkip}>
+                Skip for now
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={onCancel}>
+                Cancel
+              </Button>
+            )}
+            {step === 'campaigns' && null}
+            {step === 'manual' && (
               <Button
-                onClick={fetchSections}
+                onClick={fetchSectionsFromUrl}
                 disabled={loading || !previewUrl.trim()}
               >
                 {loading ? 'Fetching...' : 'Fetch Email'}

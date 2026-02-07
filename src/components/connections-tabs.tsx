@@ -24,7 +24,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
-import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, ChevronDown, MoreVertical } from 'lucide-react'
+import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, ChevronDown, MoreVertical, Plus } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,6 +83,8 @@ export function ConnectionsTabs({
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
   const [showLimitError, setShowLimitError] = useState(false)
+  const [isPostOAuthSetup, setIsPostOAuthSetup] = useState(false)
+  const [activeTab, setActiveTab] = useState('klaviyo')
   const [ownConnectionsOpen, setOwnConnectionsOpen] = useState(() => klaviyoConnections.length > 0)
   const [teamConnectionsOpen, setTeamConnectionsOpen] = useState(() => teamConnections.length > 0)
   const router = useRouter()
@@ -98,6 +100,26 @@ export function ConnectionsTabs({
       window.history.replaceState({}, '', url.toString())
     }
   }, [searchParams])
+
+  // Auto-trigger footer setup after successful OAuth connection
+  useEffect(() => {
+    const success = searchParams.get('success')
+    const newConnectionId = searchParams.get('newConnectionId')
+
+    if (success === 'klaviyo_connected' && newConnectionId) {
+      const matchingConnection = klaviyoConnections.find(c => c.id === newConnectionId)
+      if (matchingConnection && !matchingConnection.hasFooter) {
+        setFooterSetupConnection(matchingConnection)
+        setIsPostOAuthSetup(true)
+      }
+
+      // Clean up URL params
+      const url = new URL(window.location.href)
+      url.searchParams.delete('success')
+      url.searchParams.delete('newConnectionId')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [searchParams, klaviyoConnections])
 
   useEffect(() => {
     if (!footerPreviewConnection) return
@@ -325,19 +347,44 @@ export function ConnectionsTabs({
           </p>
         </div>
 
-        {(klaviyoConnections.length > 0 || figmaConnection) && (
-          <Button
-            variant="outline"
-            onClick={refreshConnectionStatuses}
-            disabled={isRefreshing}
-          >
-            <RefreshCw className={`h-4 w-4 mr-1 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Checking...' : 'Check status'}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {(klaviyoConnections.length > 0 || figmaConnection) && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={refreshConnectionStatuses}
+              disabled={isRefreshing}
+              aria-label="Check connection status"
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
+          )}
+          {activeTab === 'klaviyo' ? (
+            canAddConnection ? (
+              <Button onClick={() => setShowAddForm(true)}>
+                <Plus className="h-4 w-4" />
+                Add Klaviyo account
+              </Button>
+            ) : currentTier !== 'pro' ? (
+              <Button
+                variant="outline"
+                onClick={() => setShowUpgradePrompt(true)}
+              >
+                Upgrade to add more
+              </Button>
+            ) : null
+          ) : (
+            !figmaConnection && (
+              <Button onClick={startFigmaOAuth}>
+                <Plus className="h-4 w-4" />
+                Connect Figma
+              </Button>
+            )
+          )}
+        </div>
       </div>
 
-      <Tabs defaultValue="klaviyo" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="mb-6">
           <TabsTrigger value="klaviyo">
             Klaviyo ({klaviyoConnections.length + teamConnections.length})
@@ -592,7 +639,7 @@ export function ConnectionsTabs({
             </Collapsible>
           )}
 
-          {showAddForm ? (
+          {showAddForm && (
             <Card>
               <CardContent className="p-6 space-y-6">
                 <div className="space-y-2">
@@ -627,18 +674,6 @@ export function ConnectionsTabs({
                 </div>
               </CardContent>
             </Card>
-          ) : canAddConnection ? (
-            <Button onClick={() => setShowAddForm(true)}>
-              Add Klaviyo account
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              onClick={() => setShowUpgradePrompt(true)}
-              disabled={currentTier === 'pro'}
-            >
-              {currentTier === 'pro' ? 'Maximum accounts reached' : 'Upgrade to add more accounts'}
-            </Button>
           )}
         </TabsContent>
 
@@ -646,7 +681,7 @@ export function ConnectionsTabs({
         <TabsContent value="figma" className="space-y-6">
           {figmaConnection ? (
             <Card>
-              <CardContent className="p-6">
+              <CardContent className="px-5 py-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
@@ -687,13 +722,10 @@ export function ConnectionsTabs({
               </CardContent>
             </Card>
           ) : (
-            <div>
-              <p className="text-sm text-muted-foreground mb-4">
-                Connect your Figma account to import designs.
+            <div className="text-center py-8">
+              <p className="text-sm text-muted-foreground">
+                No Figma account connected. Click the button above to get started.
               </p>
-              <Button onClick={startFigmaOAuth}>
-                Connect Figma
-              </Button>
             </div>
           )}
         </TabsContent>
@@ -704,11 +736,21 @@ export function ConnectionsTabs({
         <FooterSetup
           connectionId={footerSetupConnection.id}
           hasFooter={footerSetupConnection.hasFooter}
+          isPostOAuth={isPostOAuthSetup}
           onComplete={() => {
             setFooterSetupConnection(null)
+            setIsPostOAuthSetup(false)
+            window.dispatchEvent(new CustomEvent('footer-setup-complete'))
             router.refresh()
           }}
-          onCancel={() => setFooterSetupConnection(null)}
+          onCancel={() => {
+            setFooterSetupConnection(null)
+            setIsPostOAuthSetup(false)
+          }}
+          onSkip={() => {
+            setFooterSetupConnection(null)
+            setIsPostOAuthSetup(false)
+          }}
         />
       )}
 
