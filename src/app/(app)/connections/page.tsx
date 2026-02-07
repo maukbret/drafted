@@ -92,9 +92,9 @@ export default async function ConnectionsPage() {
     .select('klaviyo_account_id')
     .eq('user_id', user.id)
 
-  // Also get team admin's footers
+  // Also get team admin's footers (supports multiple admins regardless of viewer role)
   let teamFooters: typeof footers = []
-  if (teamMembership && teamMembership.role !== 'admin') {
+  if (teamMembership) {
     const { data: adminMembers } = await supabase
       .from('team_members')
       .select('user_id')
