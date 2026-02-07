@@ -24,7 +24,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
   // Fetch the campaign first
   const { data: campaign, error } = await supabase
     .from('campaigns')
-    .select('id, name, status, user_id, klaviyo_connection_id, klaviyo_campaign_id, project_id, included_audiences, subject_line, preview_text, scheduled_at, created_at')
+    .select('id, user_id, klaviyo_connection_id, klaviyo_account_id, project_id, name, subject_line, preview_text, included_audiences, excluded_audiences, klaviyo_campaign_id, klaviyo_template_id, status, scheduled_at, send_in_recipient_timezone, wizard_step, figma_url, created_at, updated_at')
     .eq('id', id)
     .single()
 
