@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { klaviyoFetch } from '@/lib/klaviyo'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { CampaignWizard } from '@/components/campaign-wizard'
@@ -20,63 +21,53 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     redirect('/login')
   }
 
-  // Get user's team membership
-  const { data: teamMembership } = await supabase
-    .from('team_members')
-    .select('team_id')
-    .eq('user_id', user.id)
+  // Fetch the campaign first
+  const { data: campaign, error } = await supabase
+    .from('campaigns')
+    .select('id, name, status, user_id, klaviyo_connection_id, klaviyo_campaign_id, project_id, included_audiences, subject_line, preview_text, scheduled_at, created_at')
+    .eq('id', id)
     .single()
 
-  // Get team name for shared connection labeling
-  const { data: team } = teamMembership
-    ? await supabase
-        .from('teams')
-        .select('name')
-        .eq('id', teamMembership.team_id)
-        .single()
-    : { data: null }
+  if (error || !campaign) {
+    notFound()
+  }
 
-  // Get user's own Klaviyo connections
-  const { data: ownConnections } = await supabase
-    .from('klaviyo_connections')
-    .select('id')
-    .eq('user_id', user.id)
+  // Verify access: owner or team admin connection
+  let hasAccess = campaign.user_id === user.id
+  let teamMembership: { team_id: string } | null = null
 
-  const ownConnectionIds = ownConnections?.map(c => c.id) || []
-
-  // Get team admin's connections if user is in a team
-  let teamConnectionIds: string[] = []
-  if (teamMembership) {
-    const { data: adminMembers } = await supabase
+  if (!hasAccess) {
+    const { data: membership } = await supabase
       .from('team_members')
-      .select('user_id')
-      .eq('team_id', teamMembership.team_id)
-      .eq('role', 'admin')
+      .select('team_id')
+      .eq('user_id', user.id)
+      .single()
 
-    if (adminMembers && adminMembers.length > 0) {
-      const { data: teamConnections } = await supabase
-        .from('klaviyo_connections')
-        .select('id')
-        .in('user_id', adminMembers.map(m => m.user_id))
+    teamMembership = membership
 
-      teamConnectionIds = teamConnections?.map(c => c.id) || []
+    if (teamMembership) {
+      const { data: adminMembers } = await supabase
+        .from('team_members')
+        .select('user_id')
+        .eq('team_id', teamMembership.team_id)
+        .eq('role', 'admin')
+
+      if (adminMembers && adminMembers.length > 0) {
+        const { data: teamConnection } = await supabase
+          .from('klaviyo_connections')
+          .select('id')
+          .eq('id', campaign.klaviyo_connection_id)
+          .in('user_id', adminMembers.map(m => m.user_id))
+          .single()
+
+        if (teamConnection) {
+          hasAccess = true
+        }
+      }
     }
   }
 
-  // All connection IDs the user has access to
-  const accessibleConnectionIds = [...new Set([...ownConnectionIds, ...teamConnectionIds])]
-
-  // Fetch the campaign - only allow viewing if user has access to its connection
-  const { data: campaign, error } = accessibleConnectionIds.length > 0
-    ? await supabase
-        .from('campaigns')
-        .select('*')
-        .eq('id', id)
-        .in('klaviyo_connection_id', accessibleConnectionIds)
-        .single()
-    : { data: null, error: { message: 'No accessible connections' } }
-
-  if (error || !campaign) {
+  if (!hasAccess) {
     notFound()
   }
 
@@ -112,6 +103,56 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
 
     // Get audience info
     const includedAudiences = campaign.included_audiences || []
+    const shouldUseKlaviyoSchedule = campaign.status === 'scheduled' || campaign.status === 'sent'
+    let scheduledAtSource: string | null = campaign.scheduled_at
+
+    if (shouldUseKlaviyoSchedule && campaign.klaviyo_campaign_id) {
+      try {
+        const klaviyoResponse = await klaviyoFetch(
+          supabase,
+          campaign.klaviyo_connection_id,
+          `/api/campaigns/${campaign.klaviyo_campaign_id}`
+        )
+
+        if (klaviyoResponse?.ok) {
+          const klaviyoData = await klaviyoResponse.json()
+          const sendStrategy = klaviyoData?.data?.attributes?.send_strategy
+          const klaviyoDatetime =
+            sendStrategy?.datetime ||
+            sendStrategy?.options_static?.datetime ||
+            sendStrategy?.options_throttled?.datetime ||
+            sendStrategy?.options?.datetime ||
+            null
+
+          if (klaviyoDatetime) {
+            scheduledAtSource = klaviyoDatetime
+          }
+        } else {
+          console.error('Failed to fetch Klaviyo campaign schedule:', klaviyoResponse?.status)
+        }
+      } catch (err) {
+        console.error('Error fetching Klaviyo campaign schedule:', err)
+      }
+    }
+
+    const formatAmsterdamDateTime = (value: string | null) => {
+      if (!value) return null
+      const date = new Date(value)
+      if (Number.isNaN(date.getTime())) return null
+      const formatted = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/Amsterdam',
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZoneName: 'short',
+      }).format(date)
+      return `${formatted} (Europe/Amsterdam)`
+    }
+
+    const scheduledAtDisplay = formatAmsterdamDateTime(scheduledAtSource)
 
     return (
       <div className="p-8">
@@ -177,7 +218,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
                           ? 'Scheduled for'
                           : 'Was scheduled for'}
                     </p>
-                    <p>{new Date(campaign.scheduled_at).toLocaleString('en-GB')}</p>
+                    <p>{scheduledAtDisplay || new Date(campaign.scheduled_at).toLocaleString('en-GB')}</p>
                   </div>
                 )}
                 {campaignWithRelations.klaviyo_connections?.account_name && (
@@ -225,6 +266,25 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
   }
 
   // Fetch Klaviyo connections for the wizard
+  if (!teamMembership) {
+    const { data: membership } = await supabase
+      .from('team_members')
+      .select('team_id')
+      .eq('user_id', user.id)
+      .single()
+
+    teamMembership = membership
+  }
+
+  // Get team name for shared connection labeling
+  const { data: team } = teamMembership
+    ? await supabase
+        .from('teams')
+        .select('name')
+        .eq('id', teamMembership.team_id)
+        .single()
+    : { data: null }
+
   const { data: klaviyoConnections } = await supabase
     .from('klaviyo_connections')
     .select('id, account_name')

@@ -247,8 +247,10 @@ function getColumns(opts: {
         const isInProgress =
           campaign.status === 'in_progress' || (campaign.status as string) === 'draft'
 
+        const isCancelled = campaign.status === 'cancelled'
+
         const isReadOnlyPreviewStatus =
-          campaign.status === 'sent' || campaign.status === 'scheduled' || campaign.status === 'cancelled'
+          campaign.status === 'sent' || campaign.status === 'scheduled'
 
         const isKlaviyoDraft =
           (campaign.status === 'klaviyo_draft' || (campaign.status as string) === 'ready') &&
@@ -275,7 +277,7 @@ function getColumns(opts: {
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end">
-                {!isReadOnlyPreviewStatus && !isInProgress && (
+                {!isReadOnlyPreviewStatus && !isInProgress && !isCancelled && (
                   <DropdownMenuItem asChild>
                     <Link href={`/campaigns/${campaign.id}`}>
                       <Pencil className="h-4 w-4 mr-1.5" />
