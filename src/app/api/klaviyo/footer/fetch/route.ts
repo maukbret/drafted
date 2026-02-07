@@ -216,6 +216,29 @@ function parseEmailSections(html: string): EmailSection[] {
 
   console.log('Tables after dedup:', deduped.length)
 
+  // Fallback: if only one top-level table is found, it's likely a wrapper
+  // (e.g., Drafted-generated HTML). In that case, extract its immediate
+  // descendant tables as sections.
+  if (deduped.length === 1) {
+    const wrapper = deduped[0]
+    const descendantTables = $(wrapper).find('table')
+    const extracted: any[] = []
+
+    descendantTables.each((_, table) => {
+      const text = $(table).text().trim()
+      const hasContent = text.length > 5 || $(table).find('img').length > 0
+      if (hasContent) {
+        extracted.push(table)
+      }
+    })
+
+    if (extracted.length > 0) {
+      console.log('Wrapper table detected; extracted descendant tables:', extracted.length)
+      deduped.length = 0
+      extracted.forEach(t => deduped.push(t))
+    }
+  }
+
   // Convert to sections
   deduped.forEach((element, index) => {
     const outerHtml = $.html(element)
