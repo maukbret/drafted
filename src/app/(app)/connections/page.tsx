@@ -146,6 +146,7 @@ export default async function ConnectionsPage() {
         figmaConnection={figmaConnection}
         connectionLimit={connectionLimit}
         currentTier={currentTier}
+        isTeamAdmin={teamMembership?.role === 'admin'}
       />
     </div>
   )

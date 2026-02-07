@@ -121,3 +121,8 @@
 .black-button {
   text: red;
 }
+
+.px-5 {
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}

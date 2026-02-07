@@ -24,7 +24,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
-import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, ChevronDown } from 'lucide-react'
+import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, ChevronDown, MoreVertical } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface KlaviyoConnection {
   id: string
@@ -50,11 +56,19 @@ interface ConnectionsTabsProps {
   figmaConnection: FigmaConnection | null
   connectionLimit: number
   currentTier: string | null
+  isTeamAdmin?: boolean
 }
 
 type ConnectionStatus = 'active' | 'expired' | 'error' | 'checking' | 'unknown'
 
-export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figmaConnection, connectionLimit, currentTier }: ConnectionsTabsProps) {
+export function ConnectionsTabs({
+  klaviyoConnections,
+  teamConnections = [],
+  figmaConnection,
+  connectionLimit,
+  currentTier,
+  isTeamAdmin = false,
+}: ConnectionsTabsProps) {
   const [accountName, setAccountName] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -277,6 +291,22 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
     )
   }
 
+  const renderFooterStatus = (hasFooter: boolean) => (
+    <div className="flex items-center gap-2">
+      {hasFooter ? (
+        <>
+          <span className="w-2 h-2 bg-green-500 rounded-full" />
+          <span className="text-sm text-muted-foreground">Footer configured</span>
+        </>
+      ) : (
+        <>
+          <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
+          <span className="text-sm text-muted-foreground">No footer set up</span>
+        </>
+      )}
+    </div>
+  )
+
   const sanitizeHtml = (html: string) => {
     return DOMPurify.sanitize(html, {
       ADD_TAGS: ['style'],
@@ -394,65 +424,71 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
                   <Badge variant="secondary">{klaviyoConnections.length}</Badge>
                 </Button>
               </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-6 pt-2">
+              <CollapsibleContent className="space-y-4 pt-2">
                 {klaviyoConnections.map((conn) => (
                   <Card key={conn.id}>
-                    <CardContent className="p-6">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div>
-                            <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Added {new Date(conn.created_at).toLocaleDateString('en-GB')}
-                            </p>
+                    <CardContent className="px-5 py-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3">
+                              <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
+                              <span className="text-xs text-muted-foreground">
+                                Added {new Date(conn.created_at).toLocaleDateString('en-GB')}
+                              </span>
+                            </div>
+                            {getStatusBadge(conn.id)}
                           </div>
-                          {getStatusBadge(conn.id)}
+                          {renderFooterStatus(conn.hasFooter)}
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => confirmDelete('klaviyo', conn.id, conn.account_name || 'Unnamed account')}
-                          disabled={deletingId === conn.id}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          {deletingId === conn.id ? 'Removing...' : 'Remove'}
-                        </Button>
-                      </div>
-                      {/* Footer status */}
-                      <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {conn.hasFooter ? (
-                            <>
-                              <span className="w-2 h-2 bg-green-500 rounded-full" />
-                              <span className="text-sm text-muted-foreground">Footer configured</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
-                              <span className="text-sm text-muted-foreground">No footer set up</span>
-                            </>
+                        <div className="flex items-center justify-end gap-2">
+                          {!conn.hasFooter && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setFooterSetupConnection(conn)}
+                            >
+                              <Pencil className="h-4 w-4 mr-1.5" />
+                              Set up footer
+                            </Button>
                           )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setFooterPreviewConnection(conn)}
-                            disabled={!conn.hasFooter}
-                            className="h-auto px-2"
-                          >
-                            <Eye className="h-4 w-4" />
-                            View footer
-                          </Button>
-                          <Button
-                            variant="link"
-                            size="sm"
-                            onClick={() => setFooterSetupConnection(conn)}
-                            className="h-auto p-0"
-                          >
-                            <Pencil className="h-4 w-4" />
-                            {conn.hasFooter ? 'Update footer' : 'Setup footer'}
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                aria-label="Open connection actions"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => setFooterPreviewConnection(conn)}
+                                disabled={!conn.hasFooter}
+                              >
+                                <Eye className="h-4 w-4 mr-1.5" />
+                                View footer
+                              </DropdownMenuItem>
+                              {conn.hasFooter && (
+                                <DropdownMenuItem
+                                  onClick={() => setFooterSetupConnection(conn)}
+                                >
+                                  <Pencil className="h-4 w-4 mr-1.5" />
+                                  Update footer
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                onClick={() => confirmDelete('klaviyo', conn.id, conn.account_name || 'Unnamed account')}
+                                disabled={deletingId === conn.id}
+                                className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                              >
+                                <Trash2 className="h-4 w-4 mr-1.5" />
+                                {deletingId === conn.id ? 'Removing...' : 'Delete connection'}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </div>
                     </CardContent>
@@ -483,48 +519,71 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
                   <Badge variant="secondary">{teamConnections.length}</Badge>
                 </Button>
               </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-6 pt-2">
+              <CollapsibleContent className="space-y-4 pt-2">
                 {teamConnections.map((conn) => (
                   <Card key={conn.id} className="border-dashed">
-                    <CardContent className="p-6">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div>
+                    <CardContent className="px-5 py-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-3">
                             <div className="flex items-center gap-2">
                               <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
                               <Badge variant="secondary" className="text-xs">Shared</Badge>
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                              Shared by {conn.owner_name || 'Team Admin'}
-                            </p>
                           </div>
+                          {renderFooterStatus(conn.hasFooter)}
                         </div>
-                      </div>
-                      {/* Footer status (read-only) */}
-                      <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {conn.hasFooter ? (
-                            <>
-                              <span className="w-2 h-2 bg-green-500 rounded-full" />
-                              <span className="text-sm text-muted-foreground">Footer configured</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
-                              <span className="text-sm text-muted-foreground">No footer set up</span>
-                            </>
+                        <div className="flex items-center justify-end gap-2">
+                          {isTeamAdmin && !conn.hasFooter && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setFooterSetupConnection(conn)}
+                            >
+                              <Pencil className="h-4 w-4 mr-1.5" />
+                              Set up footer
+                            </Button>
                           )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                aria-label="Open connection actions"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => setFooterPreviewConnection(conn)}
+                                disabled={!conn.hasFooter}
+                              >
+                                <Eye className="h-4 w-4 mr-1.5" />
+                                View footer
+                              </DropdownMenuItem>
+                              {isTeamAdmin && conn.hasFooter && (
+                                <DropdownMenuItem
+                                  onClick={() => setFooterSetupConnection(conn)}
+                                >
+                                  <Pencil className="h-4 w-4 mr-1.5" />
+                                  Update footer
+                                </DropdownMenuItem>
+                              )}
+                              {isTeamAdmin && (
+                                <DropdownMenuItem
+                                  onClick={() => confirmDelete('klaviyo', conn.id, conn.account_name || 'Unnamed account')}
+                                  disabled={deletingId === conn.id}
+                                  className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-1.5" />
+                                  {deletingId === conn.id ? 'Removing...' : 'Delete connection'}
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setFooterPreviewConnection(conn)}
-                          disabled={!conn.hasFooter}
-                          className="h-auto px-2"
-                        >
-                          <Eye className="h-4 w-4 mr-1" />
-                          View footer
-                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -587,25 +646,44 @@ export function ConnectionsTabs({ klaviyoConnections, teamConnections = [], figm
         <TabsContent value="figma" className="space-y-6">
           {figmaConnection ? (
             <Card>
-              <CardContent className="flex items-center justify-between p-6">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <p className="font-medium">{figmaConnection.figma_email || 'Figma account'}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Added {new Date(figmaConnection.created_at).toLocaleDateString('en-GB')}
-                    </p>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3">
+                        <p className="font-medium">{figmaConnection.figma_email || 'Figma account'}</p>
+                        <span className="text-xs text-muted-foreground">
+                          Added {new Date(figmaConnection.created_at).toLocaleDateString('en-GB')}
+                        </span>
+                      </div>
+                      {getStatusBadge(figmaConnection.id)}
+                    </div>
                   </div>
-                  {getStatusBadge(figmaConnection.id)}
+                  <div className="flex items-center justify-end gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          aria-label="Open connection actions"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => confirmDelete('figma', figmaConnection.id, figmaConnection.figma_email || 'Figma account')}
+                          disabled={deletingId === figmaConnection.id}
+                          className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                        >
+                          <Trash2 className="h-4 w-4 mr-1.5" />
+                          {deletingId === figmaConnection.id ? 'Removing...' : 'Delete connection'}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => confirmDelete('figma', figmaConnection.id, figmaConnection.figma_email || 'Figma account')}
-                  disabled={deletingId === figmaConnection.id}
-                  className="text-destructive hover:text-destructive"
-                >
-                  {deletingId === figmaConnection.id ? 'Removing...' : 'Remove'}
-                </Button>
               </CardContent>
             </Card>
           ) : (
