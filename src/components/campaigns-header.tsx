@@ -11,6 +11,8 @@ interface CampaignsHeaderProps {
   hasConnections: boolean
   searchQuery: string
   onSearchQueryChange: (value: string) => void
+  onCreateCampaign?: () => void
+  isCreating?: boolean
 }
 
 // Auto-refresh interval: 60 seconds
@@ -20,6 +22,8 @@ export function CampaignsHeader({
   hasConnections,
   searchQuery,
   onSearchQueryChange,
+  onCreateCampaign,
+  isCreating = false,
 }: CampaignsHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
@@ -41,10 +45,7 @@ export function CampaignsHeader({
       if (response.ok) {
         const data = await response.json()
         console.log('Sync result:', data)
-
-        if (data.updated > 0) {
-          router.refresh()
-        }
+        router.refresh()
       }
     } catch (err) {
       console.error('Failed to sync statuses:', err)
@@ -136,11 +137,18 @@ export function CampaignsHeader({
 
         {/* Primary action */}
         {hasConnections ? (
-          <Button asChild>
-            <Link href="/campaigns/new">
-              <Plus className="h-4 w-4 buttonIcon" />
-              New campaign
-            </Link>
+          <Button onClick={onCreateCampaign} disabled={isCreating}>
+            {isCreating ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
+                Creating
+              </span>
+            ) : (
+              <>
+                <Plus className="h-4 w-4 buttonIcon" />
+                New campaign
+              </>
+            )}
           </Button>
         ) : (
           <Button variant="outline" asChild>

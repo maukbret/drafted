@@ -46,6 +46,14 @@ export default async function CampaignsPage() {
   const accessibleConnectionIds = [...new Set([...ownConnectionIds, ...teamConnectionIds])]
   const hasConnections = accessibleConnectionIds.length > 0
 
+  const { data: defaultConnection } = await supabase
+    .from('klaviyo_connections')
+    .select('id')
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  const defaultKlaviyoConnectionId = defaultConnection?.[0]?.id || null
+
   // Fetch campaigns that use connections the user has access to
   // This ensures ex-members can't see campaigns using team connections after leaving
   const { data: campaigns } = accessibleConnectionIds.length > 0
@@ -82,6 +90,7 @@ export default async function CampaignsPage() {
         hasConnections={hasConnections}
         campaigns={campaignsWithCreator}
         currentUserId={user.id}
+        defaultKlaviyoConnectionId={defaultKlaviyoConnectionId}
       />
     </div>
   )

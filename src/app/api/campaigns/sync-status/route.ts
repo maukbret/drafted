@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getValidKlaviyoToken } from '@/lib/klaviyo'
 import { NextResponse } from 'next/server'
 
@@ -31,12 +32,55 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch all campaigns that have been exported to Klaviyo
-    const { data: campaigns, error: campaignsError } = await supabase
-      .from('campaigns')
-      .select('id, klaviyo_campaign_id, klaviyo_connection_id, status')
+    // Get user's team membership
+    const { data: teamMembership } = await supabase
+      .from('team_members')
+      .select('team_id, role')
       .eq('user_id', user.id)
-      .not('klaviyo_campaign_id', 'is', null)
+      .single()
+
+    // Get user's own Klaviyo connections
+    const { data: ownConnections } = await supabase
+      .from('klaviyo_connections')
+      .select('id')
+      .eq('user_id', user.id)
+
+    const ownConnectionIds = ownConnections?.map(c => c.id) || []
+
+    // Get team admin's connections if user is in a team
+    let teamConnectionIds: string[] = []
+    if (teamMembership) {
+      const { data: adminMembers } = await supabase
+        .from('team_members')
+        .select('user_id')
+        .eq('team_id', teamMembership.team_id)
+        .eq('role', 'admin')
+
+      if (adminMembers && adminMembers.length > 0) {
+        const { data: teamConnections } = await supabase
+          .from('klaviyo_connections')
+          .select('id')
+          .in('user_id', adminMembers.map(m => m.user_id))
+
+        teamConnectionIds = teamConnections?.map(c => c.id) || []
+      }
+    }
+
+    const accessibleConnectionIds = [...new Set([...ownConnectionIds, ...teamConnectionIds])]
+
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    // Fetch all campaigns that have been exported to Klaviyo
+    const { data: campaigns, error: campaignsError } = accessibleConnectionIds.length > 0
+      ? await supabaseAdmin
+          .from('campaigns')
+          .select('id, klaviyo_campaign_id, klaviyo_connection_id, status')
+          .in('klaviyo_connection_id', accessibleConnectionIds)
+          .not('klaviyo_campaign_id', 'is', null)
+      : { data: [], error: null }
 
     if (campaignsError) {
       console.error('Error fetching campaigns:', campaignsError)
@@ -61,7 +105,7 @@ export async function POST() {
     // Process each connection's campaigns
     for (const [connectionId, connectionCampaigns] of Object.entries(campaignsByConnection)) {
       // Get valid token for this connection
-      const token = await getValidKlaviyoToken(supabase, connectionId)
+      const token = await getValidKlaviyoToken(supabaseAdmin, connectionId)
 
       if (!token) {
         console.log('Skipping connection (no valid token):', connectionId)
@@ -93,7 +137,7 @@ export async function POST() {
 
           // Only update if status has changed
           if (campaign.status !== newStatus) {
-            const { error: updateError } = await supabase
+            const { error: updateError } = await supabaseAdmin
               .from('campaigns')
               .update({ status: newStatus })
               .eq('id', campaign.id)

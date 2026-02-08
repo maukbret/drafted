@@ -7,6 +7,7 @@ import { Step1Import } from './step-1-import'
 import { Step2Editor } from './step-2-editor'
 import { EmailSlicer } from './email-slicer'
 import { Step3Settings } from './step-3-settings'
+import { CampaignLeaveGuard } from './leave-campaign-guard'
 import { Campaign, KlaviyoAudience } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
@@ -126,6 +127,11 @@ export function CampaignWizard({
           : 'flex-1 flex flex-col min-h-0'
       }
     >
+      <CampaignLeaveGuard
+        campaignId={campaign.id}
+        step={step}
+        isActive={campaign.status === 'in_progress' || (campaign.status as string) === 'concept'}
+      />
       <div className="flex items-center justify-between mb-8 flex-shrink-0">
         <h1 className="text-2xl font-bold">{campaignName}</h1>
         {step >= 2 && selectedAccount && (
