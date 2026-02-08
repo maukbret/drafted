@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { WizardProgress } from './wizard-progress'
 import { Step1Import } from './step-1-import'
 import { Step2Editor } from './step-2-editor'
+import { EmailSlicer } from './email-slicer'
 import { Step3Settings } from './step-3-settings'
 import { Campaign, KlaviyoAudience } from '@/types/database'
 import { Button } from '@/components/ui/button'
@@ -58,6 +59,12 @@ export function CampaignWizard({
   const [frames, setFrames] = useState<Frame[]>(initialCampaign.projects?.frames || [])
   // Track connectionId separately to handle reconnection scenarios
   const [connectionId, setConnectionId] = useState(initialCampaign.klaviyo_connection_id || '')
+  const [sliceMode, setSliceMode] = useState(initialCampaign.slice_mode || false)
+  // Track whether slices have been finalized (so going back shows the link editor, not the slicer)
+  const [slicesFinalized, setSlicesFinalized] = useState(
+    // If resuming a campaign that's already past step 2 in slice mode, slices are finalized
+    initialCampaign.slice_mode && (initialCampaign.wizard_step || 1) > 2
+  )
 
   // Update wizard step in database when it changes
   useEffect(() => {
@@ -70,15 +77,16 @@ export function CampaignWizard({
     }
   }, [step, campaign.id, campaign.wizard_step])
 
-  const handleStep1Complete = async (data: { connectionId: string; figmaUrl: string }) => {
-    // Store the selected connection ID in state and database
+  const handleStep1Complete = async (data: { connectionId: string; figmaUrl: string; sliceMode: boolean }) => {
+    // Store the selected connection ID and slice mode in state
     setConnectionId(data.connectionId)
+    setSliceMode(data.sliceMode)
 
-    // Save the connection ID to the campaign
+    // Save the connection ID and slice_mode to the campaign
     await fetch(`/api/campaigns/${campaign.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ klaviyo_connection_id: data.connectionId }),
+      body: JSON.stringify({ klaviyo_connection_id: data.connectionId, slice_mode: data.sliceMode }),
     })
 
     // Fetch updated campaign with frames
@@ -88,11 +96,13 @@ export function CampaignWizard({
       setCampaign(updatedCampaign)
       setFrames(updatedCampaign.projects?.frames || [])
     }
+    setSlicesFinalized(false)
     setStep(2)
   }
 
   const handleStep2Complete = (updatedFrames: Frame[]) => {
     setFrames(updatedFrames)
+    if (sliceMode) setSlicesFinalized(true)
     setStep(3)
   }
 
@@ -148,7 +158,17 @@ export function CampaignWizard({
           />
         )}
 
-        {step === 2 && (
+        {step === 2 && sliceMode && !slicesFinalized && (
+          <EmailSlicer
+            campaignId={campaign.id}
+            projectId={campaign.project_id!}
+            frames={frames}
+            onComplete={handleStep2Complete}
+            onBack={goBack}
+          />
+        )}
+
+        {step === 2 && (!sliceMode || slicesFinalized) && (
           <Step2Editor
             frames={frames}
             onComplete={handleStep2Complete}

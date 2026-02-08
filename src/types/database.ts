@@ -113,6 +113,7 @@ export interface Campaign {
   status: 'in_progress' | 'klaviyo_draft' | 'scheduled' | 'cancelled' | 'sent' | 'error'
   scheduled_at: string | null
   send_in_recipient_timezone: boolean
+  slice_mode: boolean
   wizard_step: number
   figma_url: string | null
 

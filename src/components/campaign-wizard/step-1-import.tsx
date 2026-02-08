@@ -18,6 +18,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Link as LinkIcon, Check, ChevronsUpDown } from 'lucide-react'
 
 interface KlaviyoConnection {
@@ -33,7 +34,7 @@ interface Step1ImportProps {
   campaignId: string
   initialConnectionId?: string
   initialFigmaUrl?: string
-  onComplete: (data: { connectionId: string; figmaUrl: string }) => void
+  onComplete: (data: { connectionId: string; figmaUrl: string; sliceMode: boolean }) => void
 }
 
 export function Step1Import({
@@ -49,6 +50,7 @@ export function Step1Import({
   const [connectionId, setConnectionId] = useState(initialConnectionId || klaviyoConnections[0]?.id || teamConnections[0]?.id || '')
   const [connectionOpen, setConnectionOpen] = useState(false)
   const [figmaUrl, setFigmaUrl] = useState(initialFigmaUrl || '')
+  const [designedWithSections, setDesignedWithSections] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
@@ -74,7 +76,7 @@ export function Step1Import({
       const response = await fetch(`/api/campaigns/${campaignId}/process-figma`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ figmaUrl }),
+        body: JSON.stringify({ figmaUrl, sliceMode: !designedWithSections }),
       })
 
       const reader = response.body?.getReader()
@@ -105,7 +107,7 @@ export function Step1Import({
               throw new Error(data.message)
             } else if (data.type === 'done') {
               setProgress(null)
-              onComplete({ connectionId, figmaUrl })
+              onComplete({ connectionId, figmaUrl, sliceMode: !designedWithSections })
               return
             }
           } catch (e) {
@@ -124,7 +126,7 @@ export function Step1Import({
             throw new Error(data.message)
           } else if (data.type === 'done') {
             setProgress(null)
-            onComplete({ connectionId, figmaUrl })
+            onComplete({ connectionId, figmaUrl, sliceMode: !designedWithSections })
             return
           }
         } catch (e) {
@@ -275,6 +277,26 @@ export function Step1Import({
         <p className="text-xs text-muted-foreground">
           Paste the URL of your Figma frame. Make sure the URL includes a node-id parameter.
         </p>
+      </div>
+
+      <div className="flex items-start space-x-3">
+        <Checkbox
+          id="designed-with-sections"
+          checked={designedWithSections}
+          onCheckedChange={(checked) => setDesignedWithSections(checked === true)}
+          disabled={loading}
+        />
+        <div className="grid gap-1.5 leading-none">
+          <Label
+            htmlFor="designed-with-sections"
+            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          >
+            I designed my email with sections
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Check this if you&apos;ve set up separate frames/slices in your Figma design. Leave unchecked to slice your email in the next step.
+          </p>
+        </div>
       </div>
 
       {error && (

@@ -1,0 +1,873 @@
+'use client'
+
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { cn } from '@/lib/utils'
+import { Plus, Columns2, GripHorizontal, X, Loader2, RectangleHorizontal } from 'lucide-react'
+
+interface Frame {
+  id: string
+  figma_node_id: string
+  name: string
+  width: number | null
+  image_url: string | null
+  link_url: string | null
+  display_order: number
+}
+
+interface SliceDefinition {
+  id: string
+  y: number
+  height: number
+  type: 'full' | 'half'
+  linkUrl: string
+  altText: string
+  leftLinkUrl: string
+  leftAltText: string
+  rightLinkUrl: string
+  rightAltText: string
+}
+
+interface EmailSlicerProps {
+  campaignId: string
+  projectId: string
+  frames: Frame[]
+  onComplete: (frames: Frame[]) => void
+  onBack: () => void
+}
+
+const MIN_SLICE_HEIGHT = 20
+
+function generateId() {
+  return Math.random().toString(36).substring(2, 9)
+}
+
+export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack }: EmailSlicerProps) {
+  // The full email image is the first (and only) frame in slice mode
+  const fullImage = frames[0]
+  const imageUrl = fullImage?.image_url || ''
+  const designWidth = fullImage?.width || 600
+
+  const [imageNaturalHeight, setImageNaturalHeight] = useState(0)
+  const [imageNaturalWidth, setImageNaturalWidth] = useState(0)
+  const [imageLoaded, setImageLoaded] = useState(false)
+
+  // Design height calculated from the natural image dimensions
+  // Images are exported at 2x scale, so design dimensions = natural / 2
+  const designHeight = imageNaturalHeight > 0 ? Math.round(imageNaturalHeight / 2) : 0
+
+  const [slices, setSlices] = useState<SliceDefinition[]>([])
+  const [activeSliceId, setActiveSliceId] = useState<string | null>(null)
+  const [draggingDivider, setDraggingDivider] = useState<number | null>(null)
+  const [processing, setProcessing] = useState(false)
+  const [progressMessage, setProgressMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [showValidation, setShowValidation] = useState(false)
+  const [hoverY, setHoverY] = useState<number | null>(null) // design-pixel Y of hover line
+  const [isHoveringImage, setIsHoveringImage] = useState(false)
+
+  const imageContainerRef = useRef<HTMLDivElement>(null)
+  const imageRef = useRef<HTMLImageElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // Initialize slices once image is loaded
+  useEffect(() => {
+    if (imageLoaded && designHeight > 0 && slices.length === 0) {
+      const initialId = generateId()
+      setSlices([{
+        id: initialId,
+        y: 0,
+        height: designHeight,
+        type: 'full',
+        linkUrl: '',
+        altText: 'Email section',
+        leftLinkUrl: '',
+        leftAltText: 'Left column',
+        rightLinkUrl: '',
+        rightAltText: 'Right column',
+      }])
+      setActiveSliceId(initialId)
+    }
+  }, [imageLoaded, designHeight, slices.length])
+
+  const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget
+    setImageNaturalWidth(img.naturalWidth)
+    setImageNaturalHeight(img.naturalHeight)
+    setImageLoaded(true)
+  }, [])
+
+  // Display scale: how the image is scaled for display in the container
+  const containerWidth = imageContainerRef.current?.clientWidth || 600
+  const displayScale = containerWidth / designWidth
+
+  // Scroll the image preview to show the active section
+  useEffect(() => {
+    if (!activeSliceId || !scrollContainerRef.current || !imageContainerRef.current) return
+    const slice = slices.find(s => s.id === activeSliceId)
+    if (!slice) return
+
+    const containerRect = imageContainerRef.current.getBoundingClientRect()
+    const scrollEl = scrollContainerRef.current
+    const scrollRect = scrollEl.getBoundingClientRect()
+
+    const sliceTopInContainer = slice.y * displayScale
+    const sliceBottomInContainer = (slice.y + slice.height) * displayScale
+
+    const imageOffsetTop = containerRect.top - scrollRect.top + scrollEl.scrollTop
+
+    const sliceTopAbsolute = imageOffsetTop + sliceTopInContainer
+    const sliceBottomAbsolute = imageOffsetTop + sliceBottomInContainer
+    const viewTop = scrollEl.scrollTop
+    const viewBottom = viewTop + scrollEl.clientHeight
+
+    if (sliceTopAbsolute < viewTop || sliceBottomAbsolute > viewBottom) {
+      scrollEl.scrollTo({ top: sliceTopAbsolute - 16, behavior: 'smooth' })
+    }
+  }, [activeSliceId, slices, displayScale])
+
+  // Check if a design-Y position is valid for a new cut (>= MIN_SLICE_HEIGHT from all existing boundaries)
+  const isValidCutPosition = useCallback((designY: number, currentSlices: SliceDefinition[]) => {
+    if (designY < MIN_SLICE_HEIGHT || designY > designHeight - MIN_SLICE_HEIGHT) return false
+    for (const s of currentSlices) {
+      // Check distance from top and bottom edge of each slice
+      if (Math.abs(designY - s.y) < MIN_SLICE_HEIGHT) return false
+      if (Math.abs(designY - (s.y + s.height)) < MIN_SLICE_HEIGHT) return false
+    }
+    return true
+  }, [designHeight])
+
+  const handleImageMouseMove = useCallback((e: React.MouseEvent) => {
+    if (draggingDivider !== null || !imageContainerRef.current) return
+    const rect = imageContainerRef.current.getBoundingClientRect()
+    const mouseY = e.clientY - rect.top
+    const designY = mouseY / displayScale
+    setHoverY(designY)
+    setIsHoveringImage(true)
+  }, [draggingDivider, displayScale])
+
+  const handleImageMouseLeave = useCallback(() => {
+    setHoverY(null)
+    setIsHoveringImage(false)
+  }, [])
+
+  const handleImageClick = useCallback((e: React.MouseEvent) => {
+    if (draggingDivider !== null || !imageContainerRef.current) return
+    // Don't handle clicks on dividers or badges (those have stopPropagation, but just in case)
+    if ((e.target as HTMLElement).closest('[data-divider]') || (e.target as HTMLElement).closest('[data-badge]')) return
+
+    const rect = imageContainerRef.current.getBoundingClientRect()
+    const mouseY = e.clientY - rect.top
+    const designY = mouseY / displayScale
+
+    setSlices(prev => {
+      if (!isValidCutPosition(designY, prev)) return prev
+
+      // Find which slice this click falls into
+      const targetIndex = prev.findIndex(s => designY >= s.y && designY < s.y + s.height)
+      if (targetIndex === -1) return prev
+
+      const target = prev[targetIndex]
+      const cutOffset = designY - target.y
+
+      // Ensure both resulting slices meet minimum height
+      if (cutOffset < MIN_SLICE_HEIGHT || target.height - cutOffset < MIN_SLICE_HEIGHT) return prev
+
+      const topSlice: SliceDefinition = {
+        ...target,
+        height: cutOffset,
+      }
+
+      const newBottomId = generateId()
+      const bottomSlice: SliceDefinition = {
+        id: newBottomId,
+        y: target.y + cutOffset,
+        height: target.height - cutOffset,
+        type: 'full',
+        linkUrl: '',
+        altText: 'Email section',
+        leftLinkUrl: '',
+        leftAltText: 'Left column',
+        rightLinkUrl: '',
+        rightAltText: 'Right column',
+      }
+
+      // Make the new bottom slice active
+      setTimeout(() => setActiveSliceId(newBottomId), 0)
+
+      const result = [...prev]
+      result.splice(targetIndex, 1, topSlice, bottomSlice)
+      return result
+    })
+  }, [draggingDivider, displayScale, isValidCutPosition])
+
+  const removeCut = useCallback((dividerIndex: number) => {
+    // dividerIndex is the index of the divider between slices[dividerIndex] and slices[dividerIndex + 1]
+    setSlices(prev => {
+      if (dividerIndex < 0 || dividerIndex >= prev.length - 1) return prev
+
+      const above = prev[dividerIndex]
+      const below = prev[dividerIndex + 1]
+
+      const merged: SliceDefinition = {
+        ...above,
+        height: above.height + below.height,
+      }
+
+      const result = [...prev]
+      result.splice(dividerIndex, 2, merged)
+      return result
+    })
+  }, [])
+
+  const handleDividerMouseDown = useCallback((dividerIndex: number, e: React.MouseEvent) => {
+    e.preventDefault()
+    setDraggingDivider(dividerIndex)
+  }, [])
+
+  useEffect(() => {
+    if (draggingDivider === null) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!imageContainerRef.current) return
+
+      const rect = imageContainerRef.current.getBoundingClientRect()
+      const mouseY = e.clientY - rect.top
+      const designY = mouseY / displayScale
+
+      setSlices(prev => {
+        const dividerIdx = draggingDivider
+        if (dividerIdx < 0 || dividerIdx >= prev.length - 1) return prev
+
+        const above = prev[dividerIdx]
+        const below = prev[dividerIdx + 1]
+        const combinedTop = above.y
+        const combinedBottom = below.y + below.height
+
+        // Clamp to ensure minimum heights
+        const newDividerY = Math.max(
+          combinedTop + MIN_SLICE_HEIGHT,
+          Math.min(combinedBottom - MIN_SLICE_HEIGHT, designY)
+        )
+
+        const newAbove: SliceDefinition = {
+          ...above,
+          height: newDividerY - above.y,
+        }
+
+        const newBelow: SliceDefinition = {
+          ...below,
+          y: newDividerY,
+          height: combinedBottom - newDividerY,
+        }
+
+        const result = [...prev]
+        result[dividerIdx] = newAbove
+        result[dividerIdx + 1] = newBelow
+        return result
+      })
+    }
+
+    const handleMouseUp = () => {
+      setDraggingDivider(null)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [draggingDivider, displayScale])
+
+  // Whether the current hover position is a valid place for a cut
+  const hoverIsValid = hoverY !== null && isHoveringImage && draggingDivider === null && isValidCutPosition(hoverY, slices)
+
+  const toggleSliceType = useCallback((sliceId: string) => {
+    setSlices(prev => prev.map(s =>
+      s.id === sliceId ? { ...s, type: s.type === 'full' ? 'half' : 'full' } : s
+    ))
+  }, [])
+
+  const updateSliceField = useCallback((sliceId: string, field: keyof SliceDefinition, value: string) => {
+    setSlices(prev => prev.map(s =>
+      s.id === sliceId ? { ...s, [field]: value } : s
+    ))
+  }, [])
+
+  // Validation: check that all required links are filled
+  const missingLinks = useMemo(() => {
+    const missing: { sliceId: string; field: string }[] = []
+    slices.forEach(s => {
+      if (s.type === 'full') {
+        if (!s.linkUrl.trim()) missing.push({ sliceId: s.id, field: 'linkUrl' })
+      } else {
+        if (!s.leftLinkUrl.trim()) missing.push({ sliceId: s.id, field: 'leftLinkUrl' })
+        if (!s.rightLinkUrl.trim()) missing.push({ sliceId: s.id, field: 'rightLinkUrl' })
+      }
+    })
+    return missing
+  }, [slices])
+
+  const normalizeUrl = (url: string): string => {
+    if (!url || url.trim() === '') return ''
+    const trimmed = url.trim()
+    if (/^https?:\/\//i.test(trimmed)) return trimmed
+    if (/^[a-z]+:/i.test(trimmed)) return trimmed
+    return `https://${trimmed}`
+  }
+
+  const handleContinue = async () => {
+    if (missingLinks.length > 0) {
+      setShowValidation(true)
+      setError(null)
+      if (missingLinks[0]) {
+        setActiveSliceId(missingLinks[0].sliceId)
+      }
+      return
+    }
+
+    setProcessing(true)
+    setError(null)
+
+    try {
+      // Load full image into a canvas for cropping
+      setProgressMessage('Loading image...')
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve()
+        img.onerror = () => reject(new Error('Failed to load image for cropping'))
+        img.src = imageUrl
+      })
+
+      const scale2x = img.naturalWidth / designWidth
+
+      // Crop and upload each slice
+      const sliceData: Array<{
+        imageUrl: string
+        width: number
+        name: string
+        linkUrl: string
+        displayOrder: number
+      }> = []
+
+      let displayOrder = 0
+
+      for (let i = 0; i < slices.length; i++) {
+        const slice = slices[i]
+        setProgressMessage(`Cropping section ${i + 1} of ${slices.length}...`)
+
+        if (slice.type === 'full') {
+          // Full-width: crop entire width
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.round(designWidth * scale2x)
+          canvas.height = Math.round(slice.height * scale2x)
+          const ctx = canvas.getContext('2d')!
+          ctx.drawImage(
+            img,
+            0, Math.round(slice.y * scale2x),
+            Math.round(designWidth * scale2x), Math.round(slice.height * scale2x),
+            0, 0,
+            canvas.width, canvas.height
+          )
+
+          setProgressMessage(`Uploading section ${i + 1}...`)
+          const blob = await canvasToBlob(canvas)
+          const url = await uploadSliceImage(blob, `slice-${displayOrder}`)
+
+          sliceData.push({
+            imageUrl: url,
+            width: 600,
+            name: slice.altText || 'Email section',
+            linkUrl: normalizeUrl(slice.linkUrl),
+            displayOrder,
+          })
+          displayOrder++
+        } else {
+          // Half-width: crop left half and right half separately
+          const halfWidth = Math.round((designWidth * scale2x) / 2)
+
+          // Left column
+          const leftCanvas = document.createElement('canvas')
+          leftCanvas.width = halfWidth
+          leftCanvas.height = Math.round(slice.height * scale2x)
+          const leftCtx = leftCanvas.getContext('2d')!
+          leftCtx.drawImage(
+            img,
+            0, Math.round(slice.y * scale2x),
+            halfWidth, Math.round(slice.height * scale2x),
+            0, 0,
+            halfWidth, leftCanvas.height
+          )
+
+          setProgressMessage(`Uploading section ${i + 1} (left)...`)
+          const leftBlob = await canvasToBlob(leftCanvas)
+          const leftUrl = await uploadSliceImage(leftBlob, `slice-${displayOrder}`)
+
+          sliceData.push({
+            imageUrl: leftUrl,
+            width: 300,
+            name: slice.leftAltText || 'Left column',
+            linkUrl: normalizeUrl(slice.leftLinkUrl),
+            displayOrder,
+          })
+          displayOrder++
+
+          // Right column
+          const rightCanvas = document.createElement('canvas')
+          rightCanvas.width = halfWidth
+          rightCanvas.height = Math.round(slice.height * scale2x)
+          const rightCtx = rightCanvas.getContext('2d')!
+          rightCtx.drawImage(
+            img,
+            halfWidth, Math.round(slice.y * scale2x),
+            halfWidth, Math.round(slice.height * scale2x),
+            0, 0,
+            halfWidth, rightCanvas.height
+          )
+
+          setProgressMessage(`Uploading section ${i + 1} (right)...`)
+          const rightBlob = await canvasToBlob(rightCanvas)
+          const rightUrl = await uploadSliceImage(rightBlob, `slice-${displayOrder}`)
+
+          sliceData.push({
+            imageUrl: rightUrl,
+            width: 300,
+            name: slice.rightAltText || 'Right column',
+            linkUrl: normalizeUrl(slice.rightLinkUrl),
+            displayOrder,
+          })
+          displayOrder++
+        }
+      }
+
+      // Finalize: create frame records
+      setProgressMessage('Saving sections...')
+      const response = await fetch(`/api/campaigns/${campaignId}/finalize-slices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slices: sliceData }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to save slices')
+      }
+
+      const { frames: newFrames } = await response.json()
+      onComplete(newFrames)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
+    } finally {
+      setProcessing(false)
+      setProgressMessage(null)
+    }
+  }
+
+  async function uploadSliceImage(blob: Blob, fileName: string): Promise<string> {
+    const formData = new FormData()
+    formData.append('image', blob)
+    formData.append('projectId', projectId)
+    formData.append('fileName', fileName)
+
+    const response = await fetch('/api/frames/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.error || 'Failed to upload image')
+    }
+
+    const { url } = await response.json()
+    return url
+  }
+
+  function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => {
+        if (blob) resolve(blob)
+        else reject(new Error('Canvas toBlob failed'))
+      }, 'image/png')
+    })
+  }
+
+  if (!imageUrl) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-muted-foreground">No image available. Please go back and re-import.</p>
+        <Button variant="outline" onClick={onBack} className="mt-4">Back</Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex gap-6 h-full min-h-[400px]">
+      {/* Left: Image with slice dividers */}
+      <div className="flex-1 min-w-0 border rounded-xl overflow-hidden flex flex-col">
+        <div className="bg-muted px-4 py-3 border-b flex-shrink-0">
+          <h2 className="font-medium">Slice your email</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Click on the image to add cuts and split into sections
+          </p>
+        </div>
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 bg-muted/50">
+          <div
+            ref={imageContainerRef}
+            className="max-w-[600px] mx-auto relative select-none"
+            style={{ cursor: draggingDivider !== null ? 'row-resize' : hoverIsValid ? 'crosshair' : undefined }}
+            onMouseMove={handleImageMouseMove}
+            onMouseLeave={handleImageMouseLeave}
+            onClick={handleImageClick}
+          >
+            {/* The full email image */}
+            <img
+              ref={imageRef}
+              src={imageUrl}
+              alt="Full email design"
+              className="w-full h-auto block"
+              onLoad={handleImageLoad}
+              draggable={false}
+            />
+
+            {/* Active section overlay */}
+            {imageLoaded && slices.map((slice, index) => {
+              const topPx = slice.y * displayScale
+              const heightPx = slice.height * displayScale
+              const isActive = activeSliceId === slice.id
+
+              return (
+                <div
+                  key={slice.id}
+                  className="absolute left-0 right-0 pointer-events-none transition-opacity duration-150"
+                  style={{
+                    top: topPx,
+                    height: heightPx,
+                    backgroundColor: isActive ? 'rgba(255, 71, 2, 0.15)' : undefined,
+                  }}
+                >
+                  {/* Slice label */}
+                  <div className="absolute top-1 left-1 pointer-events-auto" data-badge>
+                    <Badge
+                      variant={isActive ? 'default' : 'secondary'}
+                      className={cn(
+                        'text-[10px] cursor-pointer',
+                        isActive && 'bg-[#FF4702] hover:bg-[#FF4702]/90'
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setActiveSliceId(slice.id)
+                      }}
+                    >
+                      {index + 1}{slice.type === 'half' ? ' (2 col)' : ''}
+                    </Badge>
+                  </div>
+
+                  {/* Half-width center line indicator */}
+                  {slice.type === 'half' && (
+                    <div
+                      className="absolute top-0 bottom-0 left-1/2 w-px border-l border-dashed"
+                      style={{ borderColor: 'rgba(255, 71, 2, 0.4)' }}
+                    />
+                  )}
+                </div>
+              )
+            })}
+
+            {/* Draggable dividers between slices */}
+            {imageLoaded && slices.slice(0, -1).map((slice, index) => {
+              const dividerY = (slice.y + slice.height) * displayScale
+
+              return (
+                <div
+                  key={`divider-${index}`}
+                  data-divider
+                  className="absolute left-0 right-0 group"
+                  style={{
+                    top: dividerY - 8,
+                    height: 16,
+                    cursor: 'row-resize',
+                    zIndex: 10,
+                  }}
+                  onMouseDown={(e) => handleDividerMouseDown(index, e)}
+                >
+                  {/* Visible line */}
+                  <div
+                    className="absolute left-0 right-0 top-1/2 -translate-y-px h-[2px] transition-colors"
+                    style={{ backgroundColor: 'rgba(255, 71, 2, 0.6)' }}
+                  />
+
+                  {/* Grip handle */}
+                  <div
+                    className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 rounded-full w-6 h-6 flex items-center justify-center opacity-70 group-hover:opacity-100 transition-opacity"
+                    style={{ backgroundColor: '#FF4702', color: 'white' }}
+                  >
+                    <GripHorizontal className="w-3.5 h-3.5" />
+                  </div>
+
+                  {/* Remove button */}
+                  <button
+                    type="button"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 bg-destructive text-destructive-foreground rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeCut(index)
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    title="Remove cut"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )
+            })}
+
+            {/* Hover line for click-to-cut */}
+            {hoverIsValid && hoverY !== null && (
+              <div
+                className="absolute left-0 right-0 pointer-events-none"
+                style={{
+                  top: hoverY * displayScale - 0.5,
+                  height: 1,
+                  zIndex: 20,
+                }}
+              >
+                <div
+                  className="absolute left-0 right-0 top-0 h-[1px] border-t-[2px] border-dashed"
+                  style={{ borderColor: '#FF4702' }}
+                />
+                <div
+                  className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full w-5 h-5 flex items-center justify-center"
+                  style={{ backgroundColor: '#FF4702', color: 'white' }}
+                >
+                  <Plus className="w-3 h-3" />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right: Slice settings */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <div className="border rounded-xl overflow-hidden flex-1 flex flex-col">
+          <div className="bg-muted px-4 py-3 border-b flex-shrink-0">
+            <h2 className="font-medium">Sections</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              {slices.length} section{slices.length !== 1 ? 's' : ''}. Set links and layout for each.
+            </p>
+          </div>
+          <ScrollArea className="flex-1">
+            <div className="divide-y">
+              {slices.map((slice, index) => (
+                <div
+                  key={slice.id}
+                  className={cn(
+                    'p-3 cursor-pointer transition-colors',
+                    activeSliceId === slice.id ? 'bg-muted' : 'hover:bg-muted/50',
+                  )}
+                  onClick={() => setActiveSliceId(slice.id)}
+                >
+                  {/* Header row */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
+                      {index + 1}
+                    </div>
+                    <span className="text-sm font-medium flex-1 truncate">
+                      Section {index + 1}
+                    </span>
+
+                    {/* Layout toggle */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        variant={slice.type === 'full' ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (slice.type !== 'full') toggleSliceType(slice.id)
+                        }}
+                        disabled={processing}
+                      >
+                        <RectangleHorizontal className="w-3.5 h-3.5 mr-1" />
+                        Full
+                      </Button>
+                      <Button
+                        variant={slice.type === 'half' ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (slice.type !== 'half') toggleSliceType(slice.id)
+                        }}
+                        disabled={processing}
+                      >
+                        <Columns2 className="w-3.5 h-3.5 mr-1" />
+                        2 col
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Inputs for full-width slice */}
+                  {slice.type === 'full' && (
+                    <div className="space-y-2 ml-8">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Link URL</Label>
+                        <Input
+                          type="text"
+                          value={slice.linkUrl}
+                          onChange={(e) => updateSliceField(slice.id, 'linkUrl', e.target.value)}
+                          onBlur={(e) => updateSliceField(slice.id, 'linkUrl', normalizeUrl(e.target.value))}
+                          onClick={(e) => e.stopPropagation()}
+                          placeholder="google.com or https://..."
+                          className={cn(
+                            'h-8',
+                            showValidation && !slice.linkUrl.trim() && 'border-destructive focus-visible:ring-destructive'
+                          )}
+                          disabled={processing}
+                        />
+                        {showValidation && !slice.linkUrl.trim() && (
+                          <p className="mt-1 text-xs text-destructive">Required</p>
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Alt text</Label>
+                        <Input
+                          type="text"
+                          value={slice.altText}
+                          onChange={(e) => updateSliceField(slice.id, 'altText', e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          placeholder="Email section"
+                          className="h-8"
+                          disabled={processing}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Inputs for half-width (2-column) slice */}
+                  {slice.type === 'half' && (
+                    <div className="space-y-3 ml-8">
+                      <div className="space-y-2">
+                        <span className="text-xs font-medium text-muted-foreground">Left column</span>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Link URL</Label>
+                          <Input
+                            type="text"
+                            value={slice.leftLinkUrl}
+                            onChange={(e) => updateSliceField(slice.id, 'leftLinkUrl', e.target.value)}
+                            onBlur={(e) => updateSliceField(slice.id, 'leftLinkUrl', normalizeUrl(e.target.value))}
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="google.com or https://..."
+                            className={cn(
+                              'h-8',
+                              showValidation && !slice.leftLinkUrl.trim() && 'border-destructive focus-visible:ring-destructive'
+                            )}
+                            disabled={processing}
+                          />
+                          {showValidation && !slice.leftLinkUrl.trim() && (
+                            <p className="mt-1 text-xs text-destructive">Required</p>
+                          )}
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Alt text</Label>
+                          <Input
+                            type="text"
+                            value={slice.leftAltText}
+                            onChange={(e) => updateSliceField(slice.id, 'leftAltText', e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="Left column"
+                            className="h-8"
+                            disabled={processing}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <span className="text-xs font-medium text-muted-foreground">Right column</span>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Link URL</Label>
+                          <Input
+                            type="text"
+                            value={slice.rightLinkUrl}
+                            onChange={(e) => updateSliceField(slice.id, 'rightLinkUrl', e.target.value)}
+                            onBlur={(e) => updateSliceField(slice.id, 'rightLinkUrl', normalizeUrl(e.target.value))}
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="google.com or https://..."
+                            className={cn(
+                              'h-8',
+                              showValidation && !slice.rightLinkUrl.trim() && 'border-destructive focus-visible:ring-destructive'
+                            )}
+                            disabled={processing}
+                          />
+                          {showValidation && !slice.rightLinkUrl.trim() && (
+                            <p className="mt-1 text-xs text-destructive">Required</p>
+                          )}
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Alt text</Label>
+                          <Input
+                            type="text"
+                            value={slice.rightAltText}
+                            onChange={(e) => updateSliceField(slice.id, 'rightAltText', e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="Right column"
+                            className="h-8"
+                            disabled={processing}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* Actions */}
+        <div className="mt-4 space-y-3">
+          {showValidation && missingLinks.length > 0 && (
+            <p className="text-sm text-destructive">
+              {missingLinks.length} link{missingLinks.length === 1 ? '' : 's'} missing.
+            </p>
+          )}
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
+          {progressMessage && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {progressMessage}
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onBack}
+              disabled={processing}
+              className="flex-1"
+            >
+              Back
+            </Button>
+            <Button
+              type="button"
+              onClick={handleContinue}
+              disabled={processing || !imageLoaded}
+              className="flex-1"
+            >
+              {processing ? 'Processing...' : 'Continue'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
