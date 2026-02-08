@@ -87,17 +87,26 @@ export async function POST() {
       return NextResponse.json({ error: 'Failed to fetch campaigns' }, { status: 500 })
     }
 
-    if (!campaigns || campaigns.length === 0) {
+    type SyncCampaign = {
+      id: string
+      klaviyo_campaign_id: string | null
+      klaviyo_connection_id: string
+      status: string
+    }
+
+    const campaignsList = (campaigns || []) as SyncCampaign[]
+
+    if (!campaignsList || campaignsList.length === 0) {
       return NextResponse.json({ updated: 0, message: 'No campaigns to sync' })
     }
 
     // Group campaigns by connection to minimize token refreshes
-    const campaignsByConnection = campaigns.reduce((acc, campaign) => {
+    const campaignsByConnection = campaignsList.reduce<Record<string, SyncCampaign[]>>((acc, campaign) => {
       const connId = campaign.klaviyo_connection_id
       if (!acc[connId]) acc[connId] = []
       acc[connId].push(campaign)
       return acc
-    }, {} as Record<string, typeof campaigns>)
+    }, {})
 
     let updatedCount = 0
     const updates: { id: string; oldStatus: string; newStatus: string }[] = []
@@ -160,7 +169,7 @@ export async function POST() {
 
     return NextResponse.json({
       updated: updatedCount,
-      total: campaigns.length,
+      total: campaignsList.length,
       updates,
     })
   } catch (err) {
