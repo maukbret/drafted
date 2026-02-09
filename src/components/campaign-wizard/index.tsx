@@ -66,6 +66,7 @@ export function CampaignWizard({
     // If resuming a campaign that's already past step 2 in slice mode, slices are finalized
     initialCampaign.slice_mode && (initialCampaign.wizard_step || 1) > 2
   )
+  const [conceptUpdates, setConceptUpdates] = useState<Record<string, unknown> | null>(null)
 
   // Update wizard step in database when it changes
   useEffect(() => {
@@ -131,6 +132,7 @@ export function CampaignWizard({
         campaignId={campaign.id}
         step={step}
         isActive={campaign.status === 'in_progress' || (campaign.status as string) === 'concept'}
+        getConceptUpdates={() => conceptUpdates}
       />
       <div className="flex items-center justify-between mb-8 flex-shrink-0">
         <h1 className="text-2xl font-bold">{campaignName}</h1>
@@ -186,13 +188,16 @@ export function CampaignWizard({
           <Step3Settings
             campaignId={campaign.id}
             connectionId={connectionId}
+            frames={frames}
             initialName={campaign.name}
             initialSubjectLine={campaign.subject_line || ''}
             initialPreviewText={campaign.preview_text || ''}
             initialIncludedAudiences={campaign.included_audiences as KlaviyoAudience[] || []}
             initialExcludedAudiences={campaign.excluded_audiences as KlaviyoAudience[] || []}
             initialScheduledAt={campaign.scheduled_at || null}
+            initialUseRecipientTimezone={campaign.send_in_recipient_timezone || false}
             isUpdate={!!(campaign.klaviyo_template_id && campaign.klaviyo_campaign_id)}
+            onConceptDraftChange={setConceptUpdates}
             onComplete={handleStep3Complete}
             onBack={goBack}
           />

@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, ChevronsUpDown, HelpCircle } from 'lucide-react'
+import { Check, ChevronsUpDown, Eye, HelpCircle } from 'lucide-react'
 import { AudienceSelector } from '../audience-selector'
 import { ProgressToast, ProgressStep } from '../progress-toast'
+import { CampaignPreviewSheet } from './campaign-preview-sheet'
 import { KlaviyoAudience } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,13 +35,16 @@ import { cn } from '@/lib/utils'
 interface Step3SettingsProps {
   campaignId: string
   connectionId: string
+  frames: Frame[]
   initialName: string
   initialSubjectLine: string
   initialPreviewText: string
   initialIncludedAudiences: KlaviyoAudience[]
   initialExcludedAudiences: KlaviyoAudience[]
   initialScheduledAt: string | null
+  initialUseRecipientTimezone: boolean
   isUpdate: boolean
+  onConceptDraftChange?: (updates: Record<string, unknown>) => void
   onComplete: () => void
   onBack: () => void
 }
@@ -48,6 +52,14 @@ interface Step3SettingsProps {
 interface DefaultAudiencePreset {
   includedAudiences: KlaviyoAudience[]
   excludedAudiences: KlaviyoAudience[]
+}
+
+interface Frame {
+  id: string
+  name: string
+  width: number | null
+  image_url: string | null
+  link_url: string | null
 }
 
 interface DefaultAudienceResponse {
@@ -70,6 +82,34 @@ function parseScheduledAt(scheduledAt: string | null): { date: string; time: str
   } catch {
     return { date: '', time: '' }
   }
+}
+
+function getTimezoneOffsetString(timezone: string, date: Date): string {
+  const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }))
+  const tzDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }))
+  const offsetMs = tzDate.getTime() - utcDate.getTime()
+  const offsetMinutes = offsetMs / 60000
+  const hours = Math.floor(Math.abs(offsetMinutes) / 60)
+  const minutes = Math.abs(offsetMinutes) % 60
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+}
+
+function buildScheduledAtValue(
+  scheduledDate: string,
+  scheduledTime: string,
+  timezone: string,
+  useRecipientTimezone: boolean
+): string | null {
+  if (!scheduledDate || !scheduledTime) return null
+
+  if (useRecipientTimezone) {
+    return `${scheduledDate}T${scheduledTime}:00`
+  }
+
+  const dateForOffset = new Date(`${scheduledDate}T${scheduledTime}:00Z`)
+  const offset = getTimezoneOffsetString(timezone, dateForOffset)
+  return `${scheduledDate}T${scheduledTime}:00${offset}`
 }
 
 // Generate steps based on whether it's an update or create
@@ -106,13 +146,16 @@ const TIMEZONES = [
 export function Step3Settings({
   campaignId,
   connectionId,
+  frames,
   initialName,
   initialSubjectLine,
   initialPreviewText,
   initialIncludedAudiences,
   initialExcludedAudiences,
   initialScheduledAt,
+  initialUseRecipientTimezone,
   isUpdate,
+  onConceptDraftChange,
   onComplete,
   onBack,
 }: Step3SettingsProps) {
@@ -143,7 +186,7 @@ export function Step3Settings({
   })
   const [timezone, setTimezone] = useState('Europe/Amsterdam')
   const [timezoneOpen, setTimezoneOpen] = useState(false)
-  const [useRecipientTimezone, setUseRecipientTimezone] = useState(false)
+  const [useRecipientTimezone, setUseRecipientTimezone] = useState(initialUseRecipientTimezone)
   const [publishOption, setPublishOption] = useState<'draft' | 'schedule'>('draft')
   const [useCustomFooter, setUseCustomFooter] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -155,6 +198,32 @@ export function Step3Settings({
   const [progressError, setProgressError] = useState<string | null>(null)
   const [klaviyoCampaignId, setKlaviyoCampaignId] = useState<string | null>(null)
   const [isComplete, setIsComplete] = useState(false)
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+
+  useEffect(() => {
+    if (!onConceptDraftChange) return
+
+    onConceptDraftChange({
+      name: name.trim(),
+      subject_line: subjectLine.trim(),
+      preview_text: previewText.trim() || null,
+      included_audiences: includedAudiences,
+      excluded_audiences: excludedAudiences,
+      scheduled_at: buildScheduledAtValue(scheduledDate, scheduledTime, timezone, useRecipientTimezone),
+      send_in_recipient_timezone: useRecipientTimezone,
+    })
+  }, [
+    excludedAudiences,
+    includedAudiences,
+    name,
+    onConceptDraftChange,
+    previewText,
+    scheduledDate,
+    scheduledTime,
+    subjectLine,
+    timezone,
+    useRecipientTimezone,
+  ])
 
   useEffect(() => {
     let isActive = true
@@ -715,6 +784,15 @@ export function Step3Settings({
               : 'Schedule Campaign'
           }
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setIsPreviewOpen(true)}
+          disabled={saving}
+        >
+          <Eye className="h-4 w-4 mr-2" />
+          Preview email
+        </Button>
       </div>
 
       {showProgress && (
@@ -726,6 +804,14 @@ export function Step3Settings({
           isComplete={isComplete}
         />
       )}
+
+      <CampaignPreviewSheet
+        open={isPreviewOpen}
+        onOpenChange={setIsPreviewOpen}
+        subjectLine={subjectLine}
+        previewText={previewText}
+        frames={frames}
+      />
     </div>
   )
 }

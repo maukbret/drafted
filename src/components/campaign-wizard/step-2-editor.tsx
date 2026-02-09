@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { CampaignEmailPreview } from './campaign-email-preview'
 import { Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -30,33 +31,6 @@ interface Frame {
 
 // Half-width threshold: 50% of 600px email width
 const HALF_WIDTH_THRESHOLD = 300
-
-// Group frames for side-by-side layout
-// Consecutive frames with width <= 300px are grouped in pairs
-function groupFramesForLayout(frames: Frame[]): (Frame | [Frame, Frame])[] {
-  const result: (Frame | [Frame, Frame])[] = []
-  let i = 0
-
-  while (i < frames.length) {
-    const current = frames[i]
-    const next = frames[i + 1]
-
-    const currentIsHalf = (current.width ?? 600) <= HALF_WIDTH_THRESHOLD
-    const nextIsHalf = next && (next.width ?? 600) <= HALF_WIDTH_THRESHOLD
-
-    if (currentIsHalf && nextIsHalf) {
-      // Group two half-width frames together
-      result.push([current, next])
-      i += 2
-    } else {
-      // Single frame (full-width or unpaired half-width)
-      result.push(current)
-      i += 1
-    }
-  }
-
-  return result
-}
 
 interface Step2EditorProps {
   frames: Frame[]
@@ -82,8 +56,6 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
   const [isDeleting, setIsDeleting] = useState(false)
   const [showValidation, setShowValidation] = useState(false)
 
-  // Memoize grouped frames to avoid recalculating on every render
-  const groupedFrames = useMemo(() => groupFramesForLayout(frames), [frames])
   const missingLinkFrames = useMemo(
     () => frames.filter(frame => !frame.link_url || frame.link_url.trim() === ''),
     [frames]
@@ -201,82 +173,12 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
           <h2 className="font-medium">Email preview</h2>
         </div>
         <div className="flex-1 overflow-y-auto p-4 bg-muted/50">
-          <div className="max-w-[600px] mx-auto bg-background shadow-sm-sm">
-            {groupedFrames.map((item, index) => {
-              // Check if this is a pair of frames (side-by-side)
-              if (Array.isArray(item)) {
-                const [left, right] = item
-                return (
-                  <div key={`row-${index}`} className="flex">
-                    {[left, right].map((frame) => (
-                      <div
-                        key={frame.id}
-                        className={cn(
-                          'relative cursor-pointer transition-all w-1/2',
-                          activeFrameId === frame.id && 'outline outline-2 outline-primary -outline-offset-2'
-                        )}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setActiveFrameId(frame.id)
-                        }}
-                      >
-                        {frame.image_url ? (
-                          <img
-                            src={frame.image_url}
-                            alt={frame.name}
-                            className="w-full h-auto block pointer-events-none"
-                          />
-                        ) : (
-                          <div className="aspect-video bg-muted flex items-center justify-center pointer-events-none">
-                            <span className="text-muted-foreground text-xs">No image</span>
-                          </div>
-                        )}
-                        {frame.link_url && (
-                          <div className="absolute bottom-1 left-1 right-1 pointer-events-none">
-                            <span className="text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded truncate block">
-                              {frame.link_url}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )
-              }
-
-              // Single frame (full-width)
-              const frame = item
-              return (
-                <div
-                  key={frame.id}
-                  className={cn(
-                    'relative cursor-pointer transition-all',
-                    activeFrameId === frame.id && 'ring-2 ring-primary'
-                  )}
-                  onClick={() => setActiveFrameId(frame.id)}
-                >
-                  {frame.image_url ? (
-                    <img
-                      src={frame.image_url}
-                      alt={frame.name}
-                      className="w-full h-auto block"
-                    />
-                  ) : (
-                    <div className="aspect-video bg-muted flex items-center justify-center">
-                      <span className="text-muted-foreground">No image</span>
-                    </div>
-                  )}
-                  {frame.link_url && (
-                    <div className="absolute bottom-2 left-2 right-2">
-                      <span className="text-xs bg-black/70 text-white px-2 py-1 rounded truncate block">
-                        {frame.link_url}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+          <CampaignEmailPreview
+            frames={frames}
+            activeFrameId={activeFrameId}
+            onFrameSelect={setActiveFrameId}
+            showLinkBadges
+          />
         </div>
       </div>
 

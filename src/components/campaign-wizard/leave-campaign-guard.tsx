@@ -26,12 +26,15 @@ interface CampaignLeaveGuardProps {
   step: number
   /** Whether the campaign is still in creation mode. */
   isActive: boolean
+  /** Optional callback to fetch unsaved step data for concept save. */
+  getConceptUpdates?: () => Record<string, unknown> | null
 }
 
 export function CampaignLeaveGuard({
   campaignId,
   step,
   isActive,
+  getConceptUpdates,
 }: CampaignLeaveGuardProps) {
   const router = useRouter()
   const [isOpen, setIsOpen] = React.useState(false)
@@ -65,12 +68,13 @@ export function CampaignLeaveGuard({
   }, [campaignId])
 
   const saveAsConcept = React.useCallback(async () => {
+    const conceptUpdates = getConceptUpdates?.() || {}
     await fetch(`/api/campaigns/${campaignId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'in_progress', wizard_step: step }),
+      body: JSON.stringify({ status: 'in_progress', wizard_step: step, ...conceptUpdates }),
     })
-  }, [campaignId, step])
+  }, [campaignId, getConceptUpdates, step])
 
   const handleAttemptLeave = React.useCallback(
     async (pending: PendingNavigation) => {

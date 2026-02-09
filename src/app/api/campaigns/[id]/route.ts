@@ -77,6 +77,7 @@ export async function PATCH(
       'excluded_audiences',
       'status',
       'scheduled_at',
+      'send_in_recipient_timezone',
       'wizard_step',
       'figma_url',
       'project_id',
