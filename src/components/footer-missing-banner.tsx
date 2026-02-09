@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useRealtimeSubscription } from '@/hooks/use-realtime-subscription'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { FooterSetup } from './footer-setup'
@@ -14,14 +15,14 @@ interface ConnectionWithoutFooter {
   isOwn: boolean
 }
 
-export function FooterMissingBanner() {
+export function FooterMissingBanner({ userId }: { userId: string }) {
   const [connections, setConnections] = useState<ConnectionWithoutFooter[]>([])
   const [isTeamAdmin, setIsTeamAdmin] = useState(false)
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
   const [footerSetupConnectionId, setFooterSetupConnectionId] = useState<string | null>(null)
   const router = useRouter()
 
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
       const response = await fetch('/api/connections/klaviyo/footer-status')
       if (response.ok) {
@@ -32,7 +33,7 @@ export function FooterMissingBanner() {
     } catch (err) {
       console.error('Failed to fetch footer status:', err)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchStatus()
@@ -40,7 +41,17 @@ export function FooterMissingBanner() {
     const handleFooterSetup = () => fetchStatus()
     window.addEventListener('footer-setup-complete', handleFooterSetup)
     return () => window.removeEventListener('footer-setup-complete', handleFooterSetup)
-  }, [])
+  }, [fetchStatus])
+
+  const footerSubscriptions = useMemo(() => [
+    { table: 'klaviyo_footers', events: ['INSERT', 'UPDATE'] as const },
+  ], [])
+
+  useRealtimeSubscription({
+    subscriptions: footerSubscriptions,
+    currentUserId: userId,
+    onExternalChange: fetchStatus,
+  })
 
   const handleDismiss = (id: string) => {
     setDismissedIds(prev => new Set(prev).add(id))

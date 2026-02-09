@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useRealtimeSubscription } from '@/hooks/use-realtime-subscription'
 import DOMPurify from 'dompurify'
 import { FooterSetup } from './footer-setup'
 import { UpgradePrompt } from './upgrade-prompt'
@@ -57,6 +58,7 @@ interface ConnectionsTabsProps {
   connectionLimit: number
   currentTier: string | null
   isTeamAdmin?: boolean
+  currentUserId?: string
 }
 
 type ConnectionStatus = 'active' | 'expired' | 'error' | 'checking' | 'unknown'
@@ -68,6 +70,7 @@ export function ConnectionsTabs({
   connectionLimit,
   currentTier,
   isTeamAdmin = false,
+  currentUserId = '',
 }: ConnectionsTabsProps) {
   const [accountName, setAccountName] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
@@ -89,6 +92,17 @@ export function ConnectionsTabs({
   const [teamConnectionsOpen, setTeamConnectionsOpen] = useState(() => teamConnections.length > 0)
   const router = useRouter()
   const searchParams = useSearchParams()
+
+  const connectionsSubscriptions = useMemo(() => [
+    { table: 'klaviyo_connections', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
+    { table: 'klaviyo_footers', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
+  ], [])
+
+  useRealtimeSubscription({
+    subscriptions: connectionsSubscriptions,
+    currentUserId,
+    enabled: !!currentUserId,
+  })
 
   // Check for limit_reached error from OAuth callback
   useEffect(() => {

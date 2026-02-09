@@ -25,8 +25,8 @@ export default async function AppLayout({
 
   return (
     <SidebarLayout userEmail={user.email || ''} profile={profile}>
-      <TeamInvitationBanner />
-      <FooterMissingBanner />
+      <TeamInvitationBanner userId={user.id} />
+      <FooterMissingBanner userId={user.id} />
       {children}
     </SidebarLayout>
   )

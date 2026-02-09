@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useRealtimeTeam } from '@/hooks/use-realtime-team'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -29,6 +30,8 @@ export function TeamPageClient({ team, role, currentUserId }: TeamPageClientProp
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
+
+  useRealtimeTeam({ currentUserId, teamId: team?.id || null })
 
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -15,9 +15,6 @@ interface CampaignsHeaderProps {
   isCreating?: boolean
 }
 
-// Auto-refresh interval: 60 seconds
-const AUTO_REFRESH_INTERVAL = 60 * 1000
-
 export function CampaignsHeader({
   hasConnections,
   searchQuery,
@@ -58,14 +55,9 @@ export function CampaignsHeader({
     }
   }, [isRefreshing, router])
 
+  // Sync statuses once on mount (Klaviyo API check)
   useEffect(() => {
     syncStatuses()
-
-    const interval = setInterval(() => {
-      syncStatuses()
-    }, AUTO_REFRESH_INTERVAL)
-
-    return () => clearInterval(interval)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

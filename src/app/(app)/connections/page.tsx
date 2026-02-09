@@ -147,6 +147,7 @@ export default async function ConnectionsPage() {
         connectionLimit={connectionLimit}
         currentTier={currentTier}
         isTeamAdmin={teamMembership?.role === 'admin'}
+        currentUserId={user.id}
       />
     </div>
   )

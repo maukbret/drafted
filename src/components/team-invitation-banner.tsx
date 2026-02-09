@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useRealtimeSubscription } from '@/hooks/use-realtime-subscription'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { X, Users, Loader2 } from 'lucide-react'
@@ -16,17 +17,13 @@ interface Invitation {
   inviter_name: string | null
 }
 
-export function TeamInvitationBanner() {
+export function TeamInvitationBanner({ userId }: { userId: string }) {
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
   const [processingId, setProcessingId] = useState<string | null>(null)
   const router = useRouter()
 
-  useEffect(() => {
-    fetchInvitations()
-  }, [])
-
-  const fetchInvitations = async () => {
+  const fetchInvitations = useCallback(async () => {
     try {
       const response = await fetch('/api/invitations')
       if (response.ok) {
@@ -36,7 +33,21 @@ export function TeamInvitationBanner() {
     } catch (err) {
       console.error('Failed to fetch invitations:', err)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchInvitations()
+  }, [fetchInvitations])
+
+  const realtimeSubscriptions = useMemo(() => [
+    { table: 'team_invitations', events: ['INSERT', 'UPDATE'] as const },
+  ], [])
+
+  useRealtimeSubscription({
+    subscriptions: realtimeSubscriptions,
+    currentUserId: userId,
+    onExternalChange: fetchInvitations,
+  })
 
   const handleAccept = async (invitation: Invitation) => {
     setProcessingId(invitation.id)
