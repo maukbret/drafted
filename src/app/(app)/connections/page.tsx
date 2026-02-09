@@ -53,6 +53,7 @@ export default async function ConnectionsPage() {
     : { data: null }
 
   // Get team admin's connections (if user is in a team)
+  let teamAdminIds: string[] = []
   let teamConnections: typeof klaviyoConnections = []
   if (teamMembership) {
     // Get admin members (without profile join - no FK relationship exists)
@@ -63,20 +64,14 @@ export default async function ConnectionsPage() {
       .eq('role', 'admin')
 
     if (adminMembers && adminMembers.length > 0) {
-      const adminUserIds = adminMembers.map(m => m.user_id).filter(id => id !== user.id)
+      teamAdminIds = adminMembers.map(m => m.user_id)
+      const adminUserIds = teamAdminIds.filter(id => id !== user.id)
 
-      // Fetch connections and profiles separately
-      const [{ data: adminConnections }, { data: adminProfiles }] = await Promise.all([
-        supabase
-          .from('klaviyo_connections')
-          .select('id, account_name, klaviyo_account_id, created_at, user_id')
-          .in('user_id', adminUserIds)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', adminUserIds)
-      ])
+      const { data: adminConnections } = await supabase
+        .from('klaviyo_connections')
+        .select('id, account_name, klaviyo_account_id, created_at, user_id')
+        .in('user_id', adminUserIds)
+        .order('created_at', { ascending: false })
 
       const fallbackTeamName = team?.name || 'Team'
       teamConnections = (adminConnections || []).map(conn => ({
@@ -94,21 +89,30 @@ export default async function ConnectionsPage() {
 
   // Also get team admin's footers (supports multiple admins regardless of viewer role)
   let teamFooters: typeof footers = []
-  if (teamMembership) {
-    const { data: adminMembers } = await supabase
-      .from('team_members')
-      .select('user_id')
-      .eq('team_id', teamMembership.team_id)
-      .eq('role', 'admin')
+  if (teamAdminIds.length > 0) {
+    const { data: adminFooters } = await supabase
+      .from('klaviyo_footers')
+      .select('klaviyo_account_id')
+      .in('user_id', teamAdminIds)
 
-    if (adminMembers && adminMembers.length > 0) {
-      const { data: adminFooters } = await supabase
-        .from('klaviyo_footers')
-        .select('klaviyo_account_id')
-        .in('user_id', adminMembers.map(m => m.user_id))
+    teamFooters = adminFooters || []
+  }
 
-      teamFooters = adminFooters || []
-    }
+  // Get default audiences for this user
+  const { data: defaultAudiences } = await supabase
+    .from('klaviyo_default_audiences')
+    .select('user_id, klaviyo_account_id')
+    .eq('user_id', user.id)
+
+  // Also get team admin default audiences (shared)
+  let teamDefaultAudiences: typeof defaultAudiences = []
+  if (teamAdminIds.length > 0) {
+    const { data: adminDefaultAudiences } = await supabase
+      .from('klaviyo_default_audiences')
+      .select('user_id, klaviyo_account_id')
+      .in('user_id', teamAdminIds)
+
+    teamDefaultAudiences = adminDefaultAudiences || []
   }
 
   // Create a set of account IDs that have footers
@@ -117,10 +121,18 @@ export default async function ConnectionsPage() {
     ...(teamFooters?.map(f => f.klaviyo_account_id) || [])
   ])
 
+  const accountsWithDefaultAudiences = new Set(
+    [...(defaultAudiences || []), ...(teamDefaultAudiences || [])]
+      .map((defaultAudience) => `${defaultAudience.user_id}:${defaultAudience.klaviyo_account_id}`)
+  )
+
   // Add hasFooter flag to each connection
   const connectionsWithFooterStatus = (klaviyoConnections || []).map(conn => ({
     ...conn,
     hasFooter: conn.klaviyo_account_id ? accountsWithFooters.has(conn.klaviyo_account_id) : false,
+    hasDefaultAudience: conn.klaviyo_account_id
+      ? accountsWithDefaultAudiences.has(`${conn.user_id}:${conn.klaviyo_account_id}`)
+      : false,
     isShared: false,
   }))
 
@@ -128,6 +140,9 @@ export default async function ConnectionsPage() {
   const teamConnectionsWithStatus = (teamConnections || []).map(conn => ({
     ...conn,
     hasFooter: conn.klaviyo_account_id ? accountsWithFooters.has(conn.klaviyo_account_id) : false,
+    hasDefaultAudience: conn.klaviyo_account_id
+      ? accountsWithDefaultAudiences.has(`${conn.user_id}:${conn.klaviyo_account_id}`)
+      : false,
     isShared: true,
   }))
 

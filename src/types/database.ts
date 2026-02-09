@@ -69,6 +69,16 @@ export interface KlaviyoFooter {
   updated_at: string
 }
 
+export interface KlaviyoDefaultAudience {
+  id: string
+  user_id: string
+  klaviyo_account_id: string
+  included_audiences: KlaviyoAudience[]
+  excluded_audiences: KlaviyoAudience[]
+  created_at: string
+  updated_at: string
+}
+
 export interface Project {
   id: string
   user_id: string

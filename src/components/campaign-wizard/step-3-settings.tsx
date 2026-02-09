@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, ChevronsUpDown, HelpCircle } from 'lucide-react'
 import { AudienceSelector } from '../audience-selector'
 import { ProgressToast, ProgressStep } from '../progress-toast'
@@ -43,6 +43,16 @@ interface Step3SettingsProps {
   isUpdate: boolean
   onComplete: () => void
   onBack: () => void
+}
+
+interface DefaultAudiencePreset {
+  includedAudiences: KlaviyoAudience[]
+  excludedAudiences: KlaviyoAudience[]
+}
+
+interface DefaultAudienceResponse {
+  defaultAudience: DefaultAudiencePreset | null
+  error?: string
 }
 
 function parseScheduledAt(scheduledAt: string | null): { date: string; time: string } {
@@ -112,6 +122,11 @@ export function Step3Settings({
   const [previewText, setPreviewText] = useState(initialPreviewText || '')
   const [includedAudiences, setIncludedAudiences] = useState<KlaviyoAudience[]>(initialIncludedAudiences || [])
   const [excludedAudiences, setExcludedAudiences] = useState<KlaviyoAudience[]>(initialExcludedAudiences || [])
+  const [defaultAudience, setDefaultAudience] = useState<DefaultAudiencePreset | null>(null)
+  const [loadingDefaultAudience, setLoadingDefaultAudience] = useState(true)
+  const [applyingDefaultAudience, setApplyingDefaultAudience] = useState(false)
+  const [defaultAudienceError, setDefaultAudienceError] = useState<string | null>(null)
+  const [defaultAudienceWarning, setDefaultAudienceWarning] = useState<string | null>(null)
   const [scheduledDate, setScheduledDate] = useState(() => {
     // Default to today's date if no initial date
     if (parsedSchedule.date) return parsedSchedule.date
@@ -140,6 +155,46 @@ export function Step3Settings({
   const [progressError, setProgressError] = useState<string | null>(null)
   const [klaviyoCampaignId, setKlaviyoCampaignId] = useState<string | null>(null)
   const [isComplete, setIsComplete] = useState(false)
+
+  useEffect(() => {
+    let isActive = true
+
+    const fetchDefaultAudience = async () => {
+      setLoadingDefaultAudience(true)
+      setDefaultAudienceError(null)
+      setDefaultAudienceWarning(null)
+
+      try {
+        const response = await fetch(`/api/klaviyo/default-audience?connectionId=${connectionId}`)
+        const data: DefaultAudienceResponse = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load default audience')
+        }
+
+        if (!isActive) return
+        setDefaultAudience(data.defaultAudience || null)
+      } catch (err) {
+        if (!isActive) return
+        setDefaultAudience(null)
+        setDefaultAudienceError(err instanceof Error ? err.message : 'Failed to load default audience')
+      } finally {
+        if (!isActive) return
+        setLoadingDefaultAudience(false)
+      }
+    }
+
+    if (connectionId) {
+      fetchDefaultAudience()
+    } else {
+      setDefaultAudience(null)
+      setLoadingDefaultAudience(false)
+    }
+
+    return () => {
+      isActive = false
+    }
+  }, [connectionId])
 
   const validateForm = () => {
     if (!name.trim()) {
@@ -282,6 +337,56 @@ export function Step3Settings({
     }
   }
 
+  const handleApplyDefaultAudience = async () => {
+    if (!defaultAudience || applyingDefaultAudience) {
+      return
+    }
+
+    setApplyingDefaultAudience(true)
+    setDefaultAudienceError(null)
+    setDefaultAudienceWarning(null)
+
+    try {
+      const response = await fetch(`/api/klaviyo/audiences?connectionId=${connectionId}`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load current audiences')
+      }
+
+      const availableAudiences = (data.audiences || []) as KlaviyoAudience[]
+      const audiencesById = new Map(
+        availableAudiences.map((audience) => [audience.id, audience])
+      )
+
+      const resolveAudiences = (audiences: KlaviyoAudience[]) => (
+        audiences
+          .map((audience) => audiencesById.get(audience.id))
+          .filter((audience): audience is KlaviyoAudience => !!audience)
+      )
+
+      const validIncludedAudiences = resolveAudiences(defaultAudience.includedAudiences)
+      const validExcludedAudiences = resolveAudiences(defaultAudience.excludedAudiences)
+      const missingCount =
+        (defaultAudience.includedAudiences.length - validIncludedAudiences.length) +
+        (defaultAudience.excludedAudiences.length - validExcludedAudiences.length)
+
+      // Apply replaces the current audience selection.
+      setIncludedAudiences(validIncludedAudiences)
+      setExcludedAudiences(validExcludedAudiences)
+
+      if (missingCount > 0) {
+        setDefaultAudienceWarning(
+          `${missingCount} audience${missingCount === 1 ? '' : 's'} in this default no longer exist in Klaviyo. We applied the remaining audiences.`
+        )
+      }
+    } catch (err) {
+      setDefaultAudienceError(err instanceof Error ? err.message : 'Failed to apply default audience')
+    } finally {
+      setApplyingDefaultAudience(false)
+    }
+  }
+
   // Get minimum date/time for scheduling (now + 5 minutes)
   const now = new Date()
   const minDate = now.toISOString().split('T')[0]
@@ -342,6 +447,43 @@ export function Step3Settings({
         <h3 className="text-lg font-semibold mb-4">Audience</h3>
 
         <div className="space-y-6">
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Default audience preset</p>
+                <p className="text-xs text-muted-foreground">
+                  {loadingDefaultAudience
+                    ? 'Loading default audience...'
+                    : defaultAudience
+                      ? `${defaultAudience.includedAudiences.length} include · ${defaultAudience.excludedAudiences.length} exclude`
+                      : 'No default audience is set for this account. Set one from Connections.'}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleApplyDefaultAudience}
+                disabled={saving || loadingDefaultAudience || !defaultAudience || applyingDefaultAudience}
+                className="rounded-full"
+              >
+                {applyingDefaultAudience ? 'Applying...' : 'Apply default audience'}
+              </Button>
+            </div>
+          </div>
+
+          {defaultAudienceError && (
+            <div className="p-3 border border-destructive/20 bg-destructive/10 rounded-lg">
+              <p className="text-sm text-destructive">{defaultAudienceError}</p>
+            </div>
+          )}
+
+          {defaultAudienceWarning && (
+            <div className="p-3 border border-amber-500/40 bg-amber-500/10 rounded-lg">
+              <p className="text-sm text-amber-700 dark:text-amber-300">{defaultAudienceWarning}</p>
+            </div>
+          )}
+
           <AudienceSelector
             connectionId={connectionId}
             selectedAudiences={includedAudiences}

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRealtimeSubscription } from '@/hooks/use-realtime-subscription'
 import DOMPurify from 'dompurify'
 import { FooterSetup } from './footer-setup'
+import { DefaultAudienceSetup } from './default-audience-setup'
 import { UpgradePrompt } from './upgrade-prompt'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,7 +26,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
-import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, ChevronDown, MoreVertical, Plus } from 'lucide-react'
+import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, ChevronDown, MoreVertical, Plus, Users } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +39,7 @@ interface KlaviyoConnection {
   account_name: string | null
   klaviyo_account_id: string | null
   hasFooter: boolean
+  hasDefaultAudience: boolean
   created_at: string
   isShared?: boolean
   owner_name?: string
@@ -77,6 +79,7 @@ export function ConnectionsTabs({
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'klaviyo' | 'figma'; id: string; name: string } | null>(null)
   const [footerSetupConnection, setFooterSetupConnection] = useState<KlaviyoConnection | null>(null)
+  const [defaultAudienceConnection, setDefaultAudienceConnection] = useState<KlaviyoConnection | null>(null)
   const [footerPreviewConnection, setFooterPreviewConnection] = useState<KlaviyoConnection | null>(null)
   const [footerPreviewHtml, setFooterPreviewHtml] = useState<string | null>(null)
   const [footerPreviewSourceUrl, setFooterPreviewSourceUrl] = useState<string | null>(null)
@@ -96,6 +99,7 @@ export function ConnectionsTabs({
   const connectionsSubscriptions = useMemo(() => [
     { table: 'klaviyo_connections', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
     { table: 'klaviyo_footers', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
+    { table: 'klaviyo_default_audiences', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
   ], [])
 
   useRealtimeSubscription({
@@ -328,7 +332,7 @@ export function ConnectionsTabs({
   }
 
   const renderFooterStatus = (hasFooter: boolean) => (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 status-badge w-fit">
       {hasFooter ? (
         <>
           <span className="w-2 h-2 bg-green-500 rounded-full" />
@@ -338,6 +342,22 @@ export function ConnectionsTabs({
         <>
           <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
           <span className="text-sm text-muted-foreground">No footer set up</span>
+        </>
+      )}
+    </div>
+  )
+
+  const renderDefaultAudienceStatus = (hasDefaultAudience: boolean) => (
+    <div className="flex items-center gap-2 status-badge w-fit">
+      {hasDefaultAudience ? (
+        <>
+          <span className="w-2 h-2 bg-blue-500 rounded-full" />
+          <span className="text-sm text-muted-foreground">Default audience configured</span>
+        </>
+      ) : (
+        <>
+          <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
+          <span className="text-sm text-muted-foreground">No default audience</span>
         </>
       )}
     </div>
@@ -490,7 +510,7 @@ export function ConnectionsTabs({
                   <Card key={conn.id}>
                     <CardContent className="px-5 py-4">
                       <div className="flex items-center justify-between gap-4">
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           <div className="flex items-center gap-3">
                             <div className="flex items-center gap-3">
                               <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
@@ -500,7 +520,10 @@ export function ConnectionsTabs({
                             </div>
                             {getStatusBadge(conn.id)}
                           </div>
-                          {renderFooterStatus(conn.hasFooter)}
+                          <div className="flex flex-wrap items-center gap-4">
+                            {renderFooterStatus(conn.hasFooter)}
+                            {renderDefaultAudienceStatus(conn.hasDefaultAudience)}
+                          </div>
                         </div>
                         <div className="flex items-center justify-end gap-2">
                           {!conn.hasFooter && (
@@ -540,6 +563,12 @@ export function ConnectionsTabs({
                                   Update footer
                                 </DropdownMenuItem>
                               )}
+                              <DropdownMenuItem
+                                onClick={() => setDefaultAudienceConnection(conn)}
+                              >
+                                <Users className="h-4 w-4 mr-1.5" />
+                                {conn.hasDefaultAudience ? 'Edit default audience' : 'Set default audience'}
+                              </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => confirmDelete('klaviyo', conn.id, conn.account_name || 'Unnamed account')}
                                 disabled={deletingId === conn.id}
@@ -585,14 +614,17 @@ export function ConnectionsTabs({
                   <Card key={conn.id} className="border-dashed">
                     <CardContent className="px-5 py-4">
                       <div className="flex items-center justify-between gap-4">
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           <div className="flex items-center gap-3">
                             <div className="flex items-center gap-2">
                               <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
                               <Badge variant="secondary" className="text-xs">Shared</Badge>
                             </div>
                           </div>
-                          {renderFooterStatus(conn.hasFooter)}
+                          <div className="flex flex-wrap items-center gap-4">
+                            {renderFooterStatus(conn.hasFooter)}
+                            {renderDefaultAudienceStatus(conn.hasDefaultAudience)}
+                          </div>
                         </div>
                         <div className="flex items-center justify-end gap-2">
                           {isTeamAdmin && !conn.hasFooter && (
@@ -778,6 +810,20 @@ export function ConnectionsTabs({
           onSkip={() => {
             setFooterSetupConnection(null)
             setIsPostOAuthSetup(false)
+          }}
+        />
+      )}
+
+      {defaultAudienceConnection && (
+        <DefaultAudienceSetup
+          connectionId={defaultAudienceConnection.id}
+          connectionName={defaultAudienceConnection.account_name || 'Unnamed account'}
+          onComplete={() => {
+            setDefaultAudienceConnection(null)
+            router.refresh()
+          }}
+          onCancel={() => {
+            setDefaultAudienceConnection(null)
           }}
         />
       )}
