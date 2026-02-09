@@ -45,13 +45,16 @@ export function CampaignsHeader({
       if (response.ok) {
         const data = await response.json()
         console.log('Sync result:', data)
-        router.refresh()
+        return
       }
     } catch (err) {
       console.error('Failed to sync statuses:', err)
     } finally {
       setIsRefreshing(false)
       setLastRefresh(new Date())
+      // Always refresh the page data so internal changes (names, accounts, etc.)
+      // show up even if the Klaviyo sync fails.
+      router.refresh()
     }
   }, [isRefreshing, router])
 

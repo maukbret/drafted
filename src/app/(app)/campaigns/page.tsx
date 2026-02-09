@@ -84,11 +84,16 @@ export default async function CampaignsPage() {
     }
   })
 
+  // Hide step-1 drafts from other team members to avoid clutter.
+  const visibleCampaigns = campaignsWithCreator.filter(
+    (campaign) => !(campaign.user_id !== user.id && campaign.wizard_step === 1)
+  )
+
   return (
     <div className="p-8">
       <CampaignsPageClient
         hasConnections={hasConnections}
-        campaigns={campaignsWithCreator}
+        campaigns={visibleCampaigns}
         currentUserId={user.id}
         defaultKlaviyoConnectionId={defaultKlaviyoConnectionId}
       />

@@ -639,9 +639,23 @@ export function ConnectionsTabs({
             </Collapsible>
           )}
 
-          {showAddForm && (
-            <Card>
-              <CardContent className="p-6 space-y-6">
+          <Dialog
+            open={showAddForm}
+            onOpenChange={(open) => {
+              setShowAddForm(open)
+              if (!open) {
+                setAccountName('')
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add Klaviyo account</DialogTitle>
+                <DialogDescription>
+                  Connect a new account to sync campaigns, templates, and images.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="account-name">Account name</Label>
                   <Input
@@ -672,9 +686,9 @@ export function ConnectionsTabs({
                     Cancel
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* Figma tab content */}
