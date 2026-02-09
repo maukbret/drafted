@@ -77,9 +77,7 @@ export function TeamPageClient({ team, role, currentUserId }: TeamPageClientProp
         </p>
       </div>
 
-        <div className="max-w-2xl">
-          <TeamSettings team={team} role={role} currentUserId={currentUserId} />
-        </div>
+        <TeamSettings team={team} role={role} currentUserId={currentUserId} />
       </div>
     )
   }

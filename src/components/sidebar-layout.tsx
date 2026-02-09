@@ -41,8 +41,8 @@ export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutPro
       <aside className="w-56 flex-shrink-0 border-r bg-muted/30 sticky top-0 h-screen">
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="p-4 border-b">
-            <img className="logo-img" src="https://i.postimg.cc/mk26ky4p/Frame-3.png" width="120px" alt="logo" />
+          <div className="px-5 pt-5 pb-2">
+            <img className="logo-img" src="https://i.postimg.cc/mk26ky4p/Frame-3.png" width="116px" alt="logo" />
           </div>
 
           {/* Navigation */}
@@ -54,9 +54,9 @@ export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutPro
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                    'flex items-center gap-2 px-2 py-2 rounded-md text-sm font-medium transition-colors',
                     isActive
-                      ? 'bg-background text-foreground shadow-sm-sm border'
+                      ? 'bg-secondary text-foreground shadow-sm-sm nav-active'
                       : 'text-muted-foreground hover:bg-background hover:text-foreground'
                   )}
                 >
@@ -71,7 +71,7 @@ export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutPro
           <div className="p-3 border-t">
             <button
               onClick={() => setSettingsOpen(true)}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-background transition-colors text-left"
+              className="w-full flex items-center gap-3 px-2 py-2 rounded-md hover:bg-background transition-colors text-left"
             >
               <UserAvatar
                 name={displayName}
@@ -94,7 +94,7 @@ export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutPro
                 size="sm"
                 className="w-full justify-start mt-2 text-muted-foreground"
               >
-                <LogOut className="h-4 w-4 mr-2" />
+                <LogOut className="h-4 w-4 mr-1" />
                 Sign out
               </Button>
             </form>

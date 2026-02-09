@@ -362,7 +362,6 @@ function DataTable({
                   {headerGroup.headers.map((header) => (
                     <TableHead
                       key={header.id}
-                      className="bg-muted/40 border-y border-border/60 first:border-l first:rounded-tl-lg last:border-r last:rounded-tr-lg"
                     >
                       {header.isPlaceholder
                         ? null

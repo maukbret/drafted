@@ -63,6 +63,92 @@ export async function GET(
   }
 }
 
+// PATCH - Transfer admin role to another member
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const { memberId, role } = await request.json()
+
+    if (!memberId || role !== 'admin') {
+      return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+    }
+
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Verify requester is admin
+    const { data: membership } = await supabase
+      .from('team_members')
+      .select('id, role')
+      .eq('team_id', id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (!membership || membership.role !== 'admin') {
+      return NextResponse.json({ error: 'Only admins can transfer the admin role' }, { status: 403 })
+    }
+
+    // Verify target member exists
+    const { data: targetMember } = await supabase
+      .from('team_members')
+      .select('id, role')
+      .eq('id', memberId)
+      .eq('team_id', id)
+      .single()
+
+    if (!targetMember) {
+      return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+    }
+
+    if (targetMember.role === 'admin') {
+      return NextResponse.json({ error: 'Member is already admin' }, { status: 400 })
+    }
+
+    // Transfer: promote target, demote current admin
+    const { error: promoteError } = await supabase
+      .from('team_members')
+      .update({ role: 'admin' })
+      .eq('id', memberId)
+      .eq('team_id', id)
+
+    if (promoteError) {
+      console.error('Promote error:', promoteError)
+      return NextResponse.json({ error: 'Failed to transfer admin role' }, { status: 500 })
+    }
+
+    const { error: demoteError } = await supabase
+      .from('team_members')
+      .update({ role: 'member' })
+      .eq('id', membership.id)
+      .eq('team_id', id)
+
+    if (demoteError) {
+      // Rollback: restore target to member
+      await supabase
+        .from('team_members')
+        .update({ role: 'member' })
+        .eq('id', memberId)
+        .eq('team_id', id)
+
+      console.error('Demote error:', demoteError)
+      return NextResponse.json({ error: 'Failed to transfer admin role' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+
+  } catch (err) {
+    console.error('Transfer admin error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
 // DELETE - Remove a member from the team
 export async function DELETE(
   request: NextRequest,
