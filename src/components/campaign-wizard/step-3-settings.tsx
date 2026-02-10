@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { Check, ChevronsUpDown, Eye, HelpCircle } from 'lucide-react'
 import { AudienceSelector } from '../audience-selector'
-import { ProgressToast, ProgressStep } from '../progress-toast'
 import { CampaignPreviewSheet } from './campaign-preview-sheet'
+import { startCampaignExport } from '@/lib/campaign-export'
 import { KlaviyoAudience } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -112,18 +112,6 @@ function buildScheduledAtValue(
   return `${scheduledDate}T${scheduledTime}:00${offset}`
 }
 
-// Generate steps based on whether it's an update or create
-function getInitialSteps(isUpdate: boolean, asDraft: boolean): ProgressStep[] {
-  return [
-    { id: 'settings', label: 'Saving settings', status: 'pending' },
-    // Only show images step for new campaigns (updates already have images uploaded)
-    ...(!isUpdate ? [{ id: 'images', label: 'Uploading images', status: 'pending' as const }] : []),
-    { id: 'template', label: isUpdate ? 'Updating template' : 'Creating template', status: 'pending' },
-    { id: 'campaign', label: isUpdate ? 'Updating campaign' : 'Creating campaign', status: 'pending' },
-    { id: 'finalizing', label: asDraft ? 'Saving as draft' : 'Scheduling campaign', status: 'pending' },
-  ]
-}
-
 // Common timezones with their UTC offsets
 const TIMEZONES = [
   { value: 'Europe/Amsterdam', label: 'Amsterdam (CET/CEST)', offset: '+01:00' },
@@ -191,13 +179,6 @@ export function Step3Settings({
   const [useCustomFooter, setUseCustomFooter] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // Progress toast state
-  const [showProgress, setShowProgress] = useState(false)
-  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([])
-  const [progressError, setProgressError] = useState<string | null>(null)
-  const [klaviyoCampaignId, setKlaviyoCampaignId] = useState<string | null>(null)
-  const [isComplete, setIsComplete] = useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
 
   useEffect(() => {
@@ -284,7 +265,7 @@ export function Step3Settings({
     return true
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!validateForm()) return
 
     if (!scheduledDate || !scheduledTime) {
@@ -295,115 +276,29 @@ export function Step3Settings({
     setSaving(true)
     setError(null)
 
-    // Reset and show progress toast with correct steps for create vs update
     const asDraft = publishOption === 'draft'
-    setProgressSteps(getInitialSteps(isUpdate, asDraft))
-    setProgressError(null)
-    setKlaviyoCampaignId(null)
-    setIsComplete(false)
-    setShowProgress(true)
 
-    try {
-      const response = await fetch(`/api/campaigns/${campaignId}/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          asDraft: publishOption === 'draft',
-          settings: {
-            name: name.trim(),
-            subjectLine: subjectLine.trim(),
-            previewText: previewText.trim() || null,
-            includedAudiences,
-            excludedAudiences,
-            scheduledDate,
-            scheduledTime,
-            timezone,
-            useRecipientTimezone,
-            useCustomFooter,
-          },
-        }),
-      })
+    // Fire and forget - export continues in background via sonner toasts
+    startCampaignExport(
+      campaignId,
+      {
+        name: name.trim(),
+        subjectLine: subjectLine.trim(),
+        previewText: previewText.trim() || null,
+        includedAudiences,
+        excludedAudiences,
+        scheduledDate,
+        scheduledTime,
+        timezone,
+        useRecipientTimezone,
+        useCustomFooter,
+      },
+      asDraft,
+      isUpdate,
+    )
 
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      if (!reader) {
-        throw new Error('Failed to read response')
-      }
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || '' // Keep incomplete line in buffer
-
-        for (const line of lines) {
-          if (!line.trim()) continue
-
-          try {
-            const data = JSON.parse(line)
-
-            if (data.step === 'done') {
-              setKlaviyoCampaignId(data.klaviyoCampaignId)
-              setIsComplete(true)
-            } else if (data.step === 'error') {
-              setProgressError(data.message)
-            } else if (data.status) {
-              // Update step status (in_progress, complete, or skip)
-              setProgressSteps(prev => {
-                if (data.status === 'skip') {
-                  // Remove skipped steps entirely
-                  return prev.filter(step => step.id !== data.step)
-                }
-                return prev.map(step => {
-                  if (step.id === data.step) {
-                    // Update label if provided (e.g., "Updating" vs "Creating")
-                    return {
-                      ...step,
-                      status: data.status,
-                      label: data.label || step.label
-                    }
-                  }
-                  return step
-                })
-              })
-            }
-          } catch (e) {
-            console.error('Failed to parse line:', line, e)
-          }
-        }
-      }
-
-      // Process any remaining buffer
-      if (buffer.trim()) {
-        try {
-          const data = JSON.parse(buffer)
-          if (data.step === 'done') {
-            setKlaviyoCampaignId(data.klaviyoCampaignId)
-            setIsComplete(true)
-          } else if (data.step === 'error') {
-            setProgressError(data.message)
-          }
-        } catch (e) {
-          console.error('Failed to parse final buffer:', buffer, e)
-        }
-      }
-
-    } catch (err) {
-      setProgressError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleCloseProgress = () => {
-    setShowProgress(false)
-    if (isComplete && !progressError) {
-      onComplete()
-    }
+    // Navigate back to campaigns immediately
+    onComplete()
   }
 
   const handleApplyDefaultAudience = async () => {
@@ -794,16 +689,6 @@ export function Step3Settings({
           Preview email
         </Button>
       </div>
-
-      {showProgress && (
-        <ProgressToast
-          steps={progressSteps}
-          error={progressError}
-          onClose={handleCloseProgress}
-          klaviyoCampaignId={klaviyoCampaignId}
-          isComplete={isComplete}
-        />
-      )}
 
       <CampaignPreviewSheet
         open={isPreviewOpen}

@@ -148,3 +148,7 @@
   background: #fafafa;
   border-radius: 100px
 }
+
+.toaster-test {
+  background: red !important;
+}
