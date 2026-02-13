@@ -28,6 +28,18 @@ interface DefaultAudienceResponse {
   error?: string
 }
 
+interface LastUsedAudiencePreset {
+  campaignName: string
+  sentAt: string | null
+  includedAudiences: KlaviyoAudience[]
+  excludedAudiences: KlaviyoAudience[]
+}
+
+interface LastUsedAudienceResponse {
+  lastUsedAudience: LastUsedAudiencePreset | null
+  error?: string
+}
+
 export function DefaultAudienceSetup({
   connectionId,
   connectionName,
@@ -40,6 +52,11 @@ export function DefaultAudienceSetup({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [loadingLastUsed, setLoadingLastUsed] = useState(true)
+  const [applyingLastUsed, setApplyingLastUsed] = useState(false)
+  const [lastUsedAudience, setLastUsedAudience] = useState<LastUsedAudiencePreset | null>(null)
+  const [lastUsedError, setLastUsedError] = useState<string | null>(null)
+  const [lastUsedWarning, setLastUsedWarning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -78,6 +95,88 @@ export function DefaultAudienceSetup({
       isActive = false
     }
   }, [connectionId])
+
+  useEffect(() => {
+    let isActive = true
+
+    const fetchLastUsedAudience = async () => {
+      setLoadingLastUsed(true)
+      setLastUsedError(null)
+      setLastUsedWarning(null)
+
+      try {
+        const response = await fetch(`/api/klaviyo/last-used-audience?connectionId=${connectionId}`)
+        const data: LastUsedAudienceResponse = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load last used audience')
+        }
+
+        if (!isActive) return
+        setLastUsedAudience(data.lastUsedAudience || null)
+      } catch (err) {
+        if (!isActive) return
+        setLastUsedAudience(null)
+        setLastUsedError(err instanceof Error ? err.message : 'Failed to load last used audience')
+      } finally {
+        if (!isActive) return
+        setLoadingLastUsed(false)
+      }
+    }
+
+    fetchLastUsedAudience()
+
+    return () => {
+      isActive = false
+    }
+  }, [connectionId])
+
+  const applyLastUsedAudience = async () => {
+    if (!lastUsedAudience || applyingLastUsed) return
+
+    setApplyingLastUsed(true)
+    setLastUsedError(null)
+    setLastUsedWarning(null)
+
+    try {
+      const response = await fetch(`/api/klaviyo/audiences?connectionId=${connectionId}`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load current audiences')
+      }
+
+      const availableAudiences = (data.audiences || []) as KlaviyoAudience[]
+      const audiencesById = new Map(
+        availableAudiences.map((audience) => [audience.id, audience])
+      )
+
+      const resolveAudiences = (audiences: KlaviyoAudience[]) => (
+        audiences
+          .map((audience) => audiencesById.get(audience.id))
+          .filter((audience): audience is KlaviyoAudience => !!audience)
+      )
+
+      const validIncludedAudiences = resolveAudiences(lastUsedAudience.includedAudiences)
+      const validExcludedAudiences = resolveAudiences(lastUsedAudience.excludedAudiences)
+      const missingCount =
+        (lastUsedAudience.includedAudiences.length - validIncludedAudiences.length) +
+        (lastUsedAudience.excludedAudiences.length - validExcludedAudiences.length)
+
+      setIncludedAudiences(validIncludedAudiences)
+      setExcludedAudiences(validExcludedAudiences)
+
+      if (missingCount > 0) {
+        setLastUsedWarning(
+          `${missingCount} audience${missingCount === 1 ? '' : 's'} from this campaign no longer exist in Klaviyo. We applied the remaining audiences.`
+        )
+      }
+    } catch (err) {
+      setLastUsedError(err instanceof Error ? err.message : 'Failed to apply last used audience')
+    } finally {
+      setApplyingLastUsed(false)
+    }
+  }
 
   const saveDefaultAudience = async () => {
     if (includedAudiences.length === 0) {
@@ -167,6 +266,44 @@ export function DefaultAudienceSetup({
             <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
               In campaign step 3, users can click <span className="font-medium text-foreground">Apply default audience</span> to fill include and exclude audiences from this preset.
             </div>
+
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Last used audience</p>
+                  <p className="text-xs text-muted-foreground">
+                    {loadingLastUsed
+                      ? 'Loading last used audience...'
+                      : lastUsedAudience
+                        ? `${lastUsedAudience.campaignName} · ${lastUsedAudience.includedAudiences.length} include · ${lastUsedAudience.excludedAudiences.length} exclude`
+                        : 'No sent campaigns found'}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={applyLastUsedAudience}
+                  disabled={isBusy || loadingLastUsed || !lastUsedAudience || applyingLastUsed}
+                  className="rounded-full"
+                >
+                  {applyingLastUsed ? 'Applying...' : 'Apply last used'}
+                </Button>
+              </div>
+            </div>
+
+            {lastUsedError && (
+              <div className="p-3 border border-destructive/20 bg-destructive/10 rounded-lg text-sm text-destructive flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{lastUsedError}</span>
+              </div>
+            )}
+
+            {lastUsedWarning && (
+              <div className="p-3 border border-amber-500/40 bg-amber-500/10 rounded-lg text-sm text-amber-700 dark:text-amber-300">
+                {lastUsedWarning}
+              </div>
+            )}
 
             <AudienceSelector
               connectionId={connectionId}
