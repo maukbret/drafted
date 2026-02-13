@@ -3,12 +3,10 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import type { ColumnDef, SortingState, ColumnFiltersState } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import {
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
 
@@ -19,6 +17,14 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { UserAvatar } from '@/components/user-avatar'
 import { BrandIcon } from '@/components/brand-icon'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Tooltip,
   TooltipContent,
@@ -50,7 +56,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { EditScheduledCampaignDialog } from '@/components/edit-scheduled-campaign-dialog'
-import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, ArrowUpDown } from 'lucide-react'
+import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, Search } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface CampaignWithConnection extends Campaign {
   klaviyo_connections?: {
@@ -65,11 +72,21 @@ interface CampaignWithConnection extends Campaign {
 
 interface CampaignListProps {
   campaigns: CampaignWithConnection[]
-  searchQuery?: string
   currentUserId?: string
 }
 
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline'
+type StatusFilter = 'all' | 'scheduled' | 'sent'
+type SortOption = 'updated_desc' | 'updated_asc' | 'name_asc' | 'name_desc'
+
+const COLUMN_WIDTH_CLASSES: Record<string, string> = {
+  account: 'w-[160px] sm:w-[180px] lg:w-[200px]',
+  name: 'w-[200px] sm:w-[240px] lg:w-[300px]',
+  created_by: 'w-[64px] sm:w-[120px] lg:w-[170px]',
+  updated_at: 'w-[110px] sm:w-[120px] lg:w-[130px]',
+  status: 'w-[100px] sm:w-[110px] lg:w-[120px]',
+  actions: 'w-[56px] sm:w-[64px]',
+}
 
 const STATUS_CONFIG = {
   in_progress: {
@@ -127,9 +144,47 @@ const STATUS_CONFIG = {
   { variant: BadgeVariant; className: string; dotClassName: string; label: string }
 >
 
-function formatDateSafe(value: unknown) {
-  const d = new Date(String(value ?? ''))
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB')
+function toTimestamp(value: unknown) {
+  const date = new Date(String(value ?? ''))
+  const timestamp = date.getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
+function formatAbsoluteDateTime(value: unknown) {
+  const date = new Date(String(value ?? ''))
+  if (Number.isNaN(date.getTime())) return '—'
+
+  return date.toLocaleString('en-GB', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatRelativeUpdated(value: unknown) {
+  const timestamp = toTimestamp(value)
+  if (!timestamp) return '—'
+
+  const diffMs = Date.now() - timestamp
+  if (diffMs < 0) return 'Just now'
+
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+
+  if (diffMs < minute) return 'Just now'
+  if (diffMs < hour) return `${Math.floor(diffMs / minute)} min ago`
+  if (diffMs < day) return `${Math.floor(diffMs / hour)}h ago`
+  if (diffMs < 7 * day) return `${Math.floor(diffMs / day)}d ago`
+
+  const date = new Date(timestamp)
+  return date.toLocaleDateString('en-GB', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+  })
 }
 
 function getCreatorDisplayName(campaign: CampaignWithConnection, currentUserId?: string) {
@@ -137,11 +192,6 @@ function getCreatorDisplayName(campaign: CampaignWithConnection, currentUserId?:
   return isOwn ? 'You' : (campaign.creator_name || campaign.profiles?.full_name || 'Team member')
 }
 
-/**
- * Make "Created" the only sortable column:
- * - only Created header toggles sorting
- * - other columns are not clickable and explicitly disable sorting
- */
 function getColumns(opts: {
   onRequestDelete: (campaign: CampaignWithConnection) => void
   onRequestEdit: (campaign: CampaignWithConnection) => void
@@ -149,16 +199,73 @@ function getColumns(opts: {
 }): ColumnDef<CampaignWithConnection>[] {
   return [
     {
+      id: 'account',
+      enableSorting: false,
+      header: () => <span>Klaviyo account</span>,
+      accessorFn: (row) => row.klaviyo_connections?.account_name ?? '',
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2 text-sm">
+          <BrandIcon
+            accountName={row.original.klaviyo_connections?.account_name}
+            storeUrl={row.original.klaviyo_connections?.store_url}
+            className="h-4 w-4 account-favicon"
+          />
+          <span className="truncate text-muted-foreground font-medium">
+            {row.original.klaviyo_connections?.account_name || '—'}
+          </span>
+        </div>
+      ),
+    },
+    {
       accessorKey: 'name',
       enableSorting: false,
-      header: () => <span className="-mx-2 block px-4">Campaign</span>,
+      header: () => <span>Campaign name</span>,
       cell: ({ row }) => (
         <Link
           href={`/campaigns/${row.original.id}`}
-          className="-mx-2 block max-w-[520px] truncate px-4 font-medium hover:underline"
+          className="block w-full truncate font-medium hover:underline"
         >
           {row.original.name}
         </Link>
+      ),
+    },
+    {
+      id: 'created_by',
+      enableSorting: false,
+      header: () => <span>Created by</span>,
+      cell: ({ row }) => {
+        const campaign = row.original
+        const displayName = getCreatorDisplayName(campaign, opts.currentUserId)
+        const avatarName = campaign.creator_name || campaign.profiles?.full_name || displayName
+
+        return (
+          <div className="inline-flex items-center gap-2">
+            <UserAvatar
+              name={avatarName}
+              imageUrl={campaign.creator_avatar_url}
+              className="h-7 w-7"
+              fallbackClassName="text-xs"
+            />
+            <span className="hidden max-w-[120px] truncate text-sm text-muted-foreground sm:inline">
+              {displayName}
+            </span>
+          </div>
+        )
+      },
+    },
+    {
+      id: 'updated_at',
+      enableSorting: false,
+      header: () => <span>Last updated</span>,
+      cell: ({ row }) => (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="text-xs text-muted-foreground">
+              {formatRelativeUpdated(row.original.updated_at)}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{formatAbsoluteDateTime(row.original.updated_at)}</TooltipContent>
+        </Tooltip>
       ),
     },
     {
@@ -179,77 +286,9 @@ function getColumns(opts: {
       },
     },
     {
-      id: 'account',
-      enableSorting: false,
-      header: () => <span>Account</span>,
-      accessorFn: (row) => row.klaviyo_connections?.account_name ?? '',
-      cell: ({ row }) => (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <BrandIcon
-            accountName={row.original.klaviyo_connections?.account_name}
-            storeUrl={row.original.klaviyo_connections?.store_url}
-            className="h-4 w-4 account-favicon"
-          />
-          <span className="font-medium">{row.original.klaviyo_connections?.account_name || '—'}</span>
-        </div>
-      ),
-    },
-    {
-      id: 'created_by',
-      enableSorting: false,
-      header: () => <span>Created by</span>,
-      cell: ({ row }) => {
-        const campaign = row.original
-        const displayName = getCreatorDisplayName(campaign, opts.currentUserId)
-        const tooltipLabel = displayName === 'You' ? 'You' : displayName
-        const avatarName = campaign.creator_name || campaign.profiles?.full_name || displayName
-
-        return (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="inline-flex w-fit cursor-default">
-                <UserAvatar
-                  name={avatarName}
-                  imageUrl={campaign.creator_avatar_url}
-                  className="h-7 w-7"
-                  fallbackClassName="text-xs"
-                />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>{tooltipLabel}</TooltipContent>
-          </Tooltip>
-        )
-      },
-    },
-    {
-      id: 'created_at',
-      enableSorting: true,
-      header: ({ column }) => (
-        <Button
-          variant="ghost"
-          className="-ml-4"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-        >
-          Created
-          <ArrowUpDown className="ml-2 h-4 w-4" />
-        </Button>
-      ),
-      // Use numeric timestamp for correct sorting
-      accessorFn: (row) => {
-        const d = new Date(String(row.created_at ?? ''))
-        const t = d.getTime()
-        return Number.isNaN(t) ? 0 : t
-      },
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {formatDateSafe(row.original.created_at)}
-        </span>
-      ),
-    },
-    {
       id: 'actions',
       enableSorting: false,
-      header: () => <span className="sr-only">Actions</span>,
+      header: () => <span>Actions</span>,
       cell: ({ row }) => {
         const campaign = row.original
 
@@ -268,13 +307,7 @@ function getColumns(opts: {
           !!campaign.klaviyo_campaign_id
 
         return (
-          <div className="flex items-center justify-end gap-2">
-            {isInProgress && (
-              <Button variant="secondary" asChild>
-                <Link href={`/campaigns/${campaign.id}`}>Continue editing</Link>
-              </Button>
-            )}
-
+          <div className="flex items-center justify-center">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -288,6 +321,15 @@ function getColumns(opts: {
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end">
+                {isInProgress && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/campaigns/${campaign.id}`}>
+                      <Pencil className="h-4 w-4 mr-1.5" />
+                      Continue editing
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+
                 {!isReadOnlyPreviewStatus && !isInProgress && !isCancelled && (
                   <DropdownMenuItem asChild>
                     <Link href={`/campaigns/${campaign.id}`}>
@@ -345,81 +387,73 @@ function getColumns(opts: {
 function DataTable({
   columns,
   data,
-  searchQuery,
 }: {
   columns: ColumnDef<CampaignWithConnection, any>[]
   data: CampaignWithConnection[]
-  searchQuery: string
 }) {
-  const [sorting, setSorting] = React.useState<SortingState>([])
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
-
   const table = useReactTable({
     data,
     columns,
-    state: { sorting, columnFilters },
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
   })
-
-  React.useEffect(() => {
-    table.getColumn('name')?.setFilterValue(searchQuery)
-  }, [searchQuery, table])
 
   return (
     <TooltipProvider>
-      <div className="space-y-3">
-        <div>
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <TableHead
-                      key={header.id}
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                    </TableHead>
-                  ))}
-                </TableRow>
+      <Table className="table-fixed min-w-[760px] sm:min-w-[860px] lg:min-w-[980px]">
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead
+                  key={header.id}
+                  className={cn(
+                    'bg-muted/35 first:rounded-l-md last:rounded-r-md',
+                    COLUMN_WIDTH_CLASSES[header.id] ?? ''
+                  )}
+                >
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(header.column.columnDef.header, header.getContext())}
+                </TableHead>
               ))}
-            </TableHeader>
+            </TableRow>
+          ))}
+        </TableHeader>
 
-            <TableBody>
-              {table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} className="h-[52px]">
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
-                    No results.
+        <TableBody>
+          {table.getRowModel().rows?.length ? (
+            table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id} className="h-[56px]">
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell
+                    key={cell.id}
+                    className={cn(COLUMN_WIDTH_CLASSES[cell.column.id] ?? '')}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+                ))}
+              </TableRow>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                No results.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
     </TooltipProvider>
   )
 }
 
-export function CampaignList({ campaigns, searchQuery = '', currentUserId }: CampaignListProps) {
+export function CampaignList({ campaigns, currentUserId }: CampaignListProps) {
   const [deleteModalCampaign, setDeleteModalCampaign] = React.useState<CampaignWithConnection | null>(null)
   const [editModalCampaign, setEditModalCampaign] = React.useState<CampaignWithConnection | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
+  const [searchQuery, setSearchQuery] = React.useState('')
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all')
+  const [sortOption, setSortOption] = React.useState<SortOption>('updated_desc')
   const router = useRouter()
 
   const columns = React.useMemo(
@@ -431,6 +465,49 @@ export function CampaignList({ campaigns, searchQuery = '', currentUserId }: Cam
       }),
     [currentUserId]
   )
+
+  const filteredCampaigns = React.useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase()
+
+    const filtered = campaigns.filter((campaign) => {
+      if (statusFilter === 'scheduled' && campaign.status !== 'scheduled') return false
+      if (statusFilter === 'sent' && campaign.status !== 'sent') return false
+
+      if (!normalizedQuery) return true
+
+      const campaignName = (campaign.name || '').toLowerCase()
+      const accountName = (campaign.klaviyo_connections?.account_name || '').toLowerCase()
+      return campaignName.includes(normalizedQuery) || accountName.includes(normalizedQuery)
+    })
+
+    const sorted = [...filtered]
+
+    if (sortOption === 'updated_desc') {
+      sorted.sort((a, b) => toTimestamp(b.updated_at) - toTimestamp(a.updated_at))
+    }
+
+    if (sortOption === 'updated_asc') {
+      sorted.sort((a, b) => toTimestamp(a.updated_at) - toTimestamp(b.updated_at))
+    }
+
+    if (sortOption === 'name_asc') {
+      sorted.sort((a, b) => a.name.localeCompare(b.name))
+    }
+
+    if (sortOption === 'name_desc') {
+      sorted.sort((a, b) => b.name.localeCompare(a.name))
+    }
+
+    return sorted
+  }, [campaigns, searchQuery, statusFilter, sortOption])
+
+  const statusCounts = React.useMemo(() => {
+    return {
+      all: campaigns.length,
+      scheduled: campaigns.filter((campaign) => campaign.status === 'scheduled').length,
+      sent: campaigns.filter((campaign) => campaign.status === 'sent').length,
+    }
+  }, [campaigns])
 
   const handleDelete = React.useCallback(async () => {
     if (!deleteModalCampaign) return
@@ -469,7 +546,45 @@ export function CampaignList({ campaigns, searchQuery = '', currentUserId }: Cam
 
   return (
     <>
-      <DataTable columns={columns} data={campaigns} searchQuery={searchQuery} />
+      <div className="space-y-4">
+        <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
+          <TabsList>
+            <TabsTrigger value="all">All ({statusCounts.all})</TabsTrigger>
+            <TabsTrigger value="scheduled">Scheduled ({statusCounts.scheduled})</TabsTrigger>
+            <TabsTrigger value="sent">Sent ({statusCounts.sent})</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:max-w-md">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by campaign or account"
+                className="pl-9"
+              />
+            </div>
+
+            <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
+              <SelectTrigger className="w-full sm:w-[260px]">
+                <SelectValue placeholder="Sort" />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectItem value="updated_desc">Last updated (newest)</SelectItem>
+                <SelectItem value="updated_asc">Last updated (oldest)</SelectItem>
+                <SelectItem value="name_asc">Campaign name (A-Z)</SelectItem>
+                <SelectItem value="name_desc">Campaign name (Z-A)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="rounded-md border p-2">
+            <DataTable columns={columns} data={filteredCampaigns} />
+          </div>
+        </div>
+      </div>
 
       <AlertDialog
         open={!!deleteModalCampaign}

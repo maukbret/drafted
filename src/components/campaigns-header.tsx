@@ -1,31 +1,24 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Plus, RefreshCw, Search, X } from 'lucide-react'
+import { Plus, RefreshCw } from 'lucide-react'
 
 interface CampaignsHeaderProps {
   hasConnections: boolean
-  searchQuery: string
-  onSearchQueryChange: (value: string) => void
   onCreateCampaign?: () => void
   isCreating?: boolean
 }
 
 export function CampaignsHeader({
   hasConnections,
-  searchQuery,
-  onSearchQueryChange,
   onCreateCampaign,
   isCreating = false,
 }: CampaignsHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
-  const [isSearchOpen, setIsSearchOpen] = useState(false)
-  const inputRef = useRef<HTMLInputElement | null>(null)
 
   const router = useRouter()
 
@@ -60,16 +53,6 @@ export function CampaignsHeader({
     syncStatuses()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!isSearchOpen) return
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }, [isSearchOpen])
-
-  const closeSearch = useCallback(() => {
-    setIsSearchOpen(false)
-    onSearchQueryChange('')
-  }, [onSearchQueryChange])
-
   return (
     <div className="flex items-center justify-between mb-8">
       <div>
@@ -80,44 +63,6 @@ export function CampaignsHeader({
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Expanding search */}
-        <div className="flex items-center">
-          <div
-            className={[
-              'overflow-visible transition-all duration-200 ease-out',
-              isSearchOpen ? 'w-72 mr-2' : 'w-0 mr-0',
-            ].join(' ')}
-          >
-            <Input
-              ref={inputRef}
-              value={searchQuery}
-              onChange={(e) => onSearchQueryChange(e.target.value)}
-              placeholder="Search campaigns..."
-              className="h-9"
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') closeSearch()
-              }}
-            />
-          </div>
-
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-9 w-9"
-            onClick={() => {
-              if (isSearchOpen) {
-                closeSearch()
-              } else {
-                setIsSearchOpen(true)
-              }
-            }}
-            aria-label={isSearchOpen ? 'Close search' : 'Open search'}
-            title={isSearchOpen ? 'Close search' : 'Search campaigns'}
-          >
-            {isSearchOpen ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
-          </Button>
-        </div>
-
         {/* Sync */}
         <Button
           variant="outline"

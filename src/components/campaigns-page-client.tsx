@@ -26,7 +26,6 @@ export function CampaignsPageClient({
   currentUserId?: string
   defaultKlaviyoConnectionId?: string | null
 }) {
-  const [searchQuery, setSearchQuery] = React.useState('')
   const [isCreating, setIsCreating] = React.useState(false)
   const router = useRouter()
 
@@ -82,12 +81,10 @@ export function CampaignsPageClient({
     <div className="relative">
       <CampaignsHeader
         hasConnections={hasConnections}
-        searchQuery={searchQuery}
-        onSearchQueryChange={setSearchQuery}
         onCreateCampaign={handleCreateCampaign}
         isCreating={isCreating}
       />
-      <CampaignList campaigns={campaigns} searchQuery={searchQuery} currentUserId={currentUserId} />
+      <CampaignList campaigns={campaigns} currentUserId={currentUserId} />
       {isCreating && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/60">
           <div className="h-8 w-8 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
