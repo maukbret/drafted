@@ -48,6 +48,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { EditScheduledCampaignDialog } from '@/components/edit-scheduled-campaign-dialog'
 import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, ArrowUpDown } from 'lucide-react'
 
 interface CampaignWithConnection extends Campaign {
@@ -141,6 +142,7 @@ function getCreatorDisplayName(campaign: CampaignWithConnection, currentUserId?:
  */
 function getColumns(opts: {
   onRequestDelete: (campaign: CampaignWithConnection) => void
+  onRequestEdit: (campaign: CampaignWithConnection) => void
   currentUserId?: string
 }): ColumnDef<CampaignWithConnection>[] {
   return [
@@ -249,8 +251,10 @@ function getColumns(opts: {
 
         const isCancelled = campaign.status === 'cancelled'
 
-        const isReadOnlyPreviewStatus =
-          campaign.status === 'sent' || campaign.status === 'scheduled'
+        const isScheduled = campaign.status === 'scheduled'
+        const isSent = campaign.status === 'sent'
+
+        const isReadOnlyPreviewStatus = isSent || isScheduled
 
         const isKlaviyoDraft =
           (campaign.status === 'klaviyo_draft' || (campaign.status as string) === 'ready') &&
@@ -292,6 +296,13 @@ function getColumns(opts: {
                       <Mail className="h-4 w-4 mr-1.5" />
                       View details
                     </Link>
+                  </DropdownMenuItem>
+                )}
+
+                {isScheduled && campaign.is_own !== false && (
+                  <DropdownMenuItem onClick={() => opts.onRequestEdit(campaign)}>
+                    <Pencil className="h-4 w-4 mr-1.5" />
+                    Edit
                   </DropdownMenuItem>
                 )}
 
@@ -400,6 +411,7 @@ function DataTable({
 
 export function CampaignList({ campaigns, searchQuery = '', currentUserId }: CampaignListProps) {
   const [deleteModalCampaign, setDeleteModalCampaign] = React.useState<CampaignWithConnection | null>(null)
+  const [editModalCampaign, setEditModalCampaign] = React.useState<CampaignWithConnection | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
   const router = useRouter()
 
@@ -407,6 +419,7 @@ export function CampaignList({ campaigns, searchQuery = '', currentUserId }: Cam
     () =>
       getColumns({
         onRequestDelete: (c) => setDeleteModalCampaign(c),
+        onRequestEdit: (c) => setEditModalCampaign(c),
         currentUserId,
       }),
     [currentUserId]
@@ -488,6 +501,15 @@ export function CampaignList({ campaigns, searchQuery = '', currentUserId }: Cam
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {editModalCampaign && (
+        <EditScheduledCampaignDialog
+          campaignId={editModalCampaign.id}
+          campaignName={editModalCampaign.name}
+          open={!!editModalCampaign}
+          onOpenChange={(open) => !open && setEditModalCampaign(null)}
+        />
+      )}
     </>
   )
 }

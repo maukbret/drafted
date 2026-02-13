@@ -32,6 +32,16 @@ export function CampaignsPageClient({
 
   useRealtimeCampaigns({ currentUserId: currentUserId || '' })
 
+  // Sync campaign statuses from Klaviyo on page load
+  React.useEffect(() => {
+    fetch('/api/campaigns/sync-status', { method: 'POST' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.updated > 0) router.refresh()
+      })
+      .catch(() => {})
+  }, [router])
+
   const handleCreateCampaign = React.useCallback(async () => {
     if (isCreating) return
     setIsCreating(true)

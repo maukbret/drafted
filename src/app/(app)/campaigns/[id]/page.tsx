@@ -3,6 +3,7 @@ import { klaviyoFetch } from '@/lib/klaviyo'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { CampaignWizard } from '@/components/campaign-wizard'
+import { EditScheduledCampaignButton } from '@/components/edit-scheduled-campaign-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChevronLeft } from 'lucide-react'
@@ -180,6 +181,12 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
           >
             {campaign.status === 'sent' ? 'Sent' : campaign.status === 'scheduled' ? 'Scheduled' : 'Cancelled'}
           </Badge>
+          {campaign.status === 'scheduled' && canEdit && (
+            <EditScheduledCampaignButton
+              campaignId={campaign.id}
+              campaignName={campaign.name}
+            />
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
