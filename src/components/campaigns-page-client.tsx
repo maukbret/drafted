@@ -8,7 +8,7 @@ import { useRealtimeCampaigns } from '@/hooks/use-realtime-campaigns'
 import type { Campaign } from '@/types/database'
 
 interface CampaignWithConnection extends Campaign {
-  klaviyo_connections?: { account_name: string | null } | null
+  klaviyo_connections?: { account_name: string | null; store_url?: string | null } | null
   profiles?: { full_name: string | null } | null
   is_own?: boolean
   creator_name?: string | null

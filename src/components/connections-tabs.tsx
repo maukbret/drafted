@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -26,7 +27,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
-import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, ChevronDown, MoreVertical, Plus, Users } from 'lucide-react'
+import { normalizeStoreUrl, validateStoreUrl } from '@/lib/store-url'
+import { BrandIcon } from '@/components/brand-icon'
+import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, ChevronDown, MoreVertical, Plus, Users, Settings } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +40,7 @@ import {
 interface KlaviyoConnection {
   id: string
   account_name: string | null
+  store_url?: string | null
   klaviyo_account_id: string | null
   hasFooter: boolean
   hasDefaultAudience: boolean
@@ -75,6 +79,8 @@ export function ConnectionsTabs({
   currentUserId = '',
 }: ConnectionsTabsProps) {
   const [accountName, setAccountName] = useState('')
+  const [storeUrl, setStoreUrl] = useState('')
+  const [addFormError, setAddFormError] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'klaviyo' | 'figma'; id: string; name: string } | null>(null)
@@ -93,6 +99,11 @@ export function ConnectionsTabs({
   const [activeTab, setActiveTab] = useState('klaviyo')
   const [ownConnectionsOpen, setOwnConnectionsOpen] = useState(() => klaviyoConnections.length > 0)
   const [teamConnectionsOpen, setTeamConnectionsOpen] = useState(() => teamConnections.length > 0)
+  const [settingsConnection, setSettingsConnection] = useState<KlaviyoConnection | null>(null)
+  const [settingsAccountName, setSettingsAccountName] = useState('')
+  const [settingsStoreUrl, setSettingsStoreUrl] = useState('')
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -110,9 +121,17 @@ export function ConnectionsTabs({
 
   // Check for limit_reached error from OAuth callback
   useEffect(() => {
-    if (searchParams.get('error') === 'limit_reached') {
+    const error = searchParams.get('error')
+    if (error === 'limit_reached') {
       setShowLimitError(true)
       // Clean up URL
+      const url = new URL(window.location.href)
+      url.searchParams.delete('error')
+      window.history.replaceState({}, '', url.toString())
+    }
+    if (error === 'invalid_store_url') {
+      setShowAddForm(true)
+      setAddFormError('Please enter a valid store URL before connecting Klaviyo.')
       const url = new URL(window.location.href)
       url.searchParams.delete('error')
       window.history.replaceState({}, '', url.toString())
@@ -223,11 +242,19 @@ export function ConnectionsTabs({
 
   const startKlaviyoOAuth = () => {
     if (!accountName.trim()) {
-      alert('Please enter an account name')
+      setAddFormError('Please enter an account name')
       return
     }
 
+    const validation = validateStoreUrl(storeUrl)
+    if (!validation.valid) {
+      setAddFormError(validation.error)
+      return
+    }
+
+    setAddFormError(null)
     document.cookie = `klaviyo_account_name=${encodeURIComponent(accountName.trim())}; path=/; max-age=600; SameSite=Lax`
+    document.cookie = `klaviyo_store_url=${encodeURIComponent(validation.normalized)}; path=/; max-age=600; SameSite=Lax`
 
     const codeVerifier = generateCodeVerifier()
     document.cookie = `klaviyo_code_verifier=${codeVerifier}; path=/; max-age=600; SameSite=Lax`
@@ -368,6 +395,62 @@ export function ConnectionsTabs({
       ADD_TAGS: ['style'],
       ADD_ATTR: ['target', 'rel'],
     })
+  }
+
+  const openSettingsSheet = (connection: KlaviyoConnection) => {
+    setSettingsConnection(connection)
+    setSettingsAccountName(connection.account_name || '')
+    setSettingsStoreUrl(connection.store_url || '')
+    setSettingsError(null)
+  }
+
+  const closeSettingsSheet = () => {
+    setSettingsConnection(null)
+    setSettingsAccountName('')
+    setSettingsStoreUrl('')
+    setSettingsError(null)
+  }
+
+  const saveConnectionSettings = async () => {
+    if (!settingsConnection) return
+
+    const nextAccountName = settingsAccountName.trim()
+    if (!nextAccountName) {
+      setSettingsError('Please enter an account name')
+      return
+    }
+
+    const storeValidation = validateStoreUrl(settingsStoreUrl)
+    if (!storeValidation.valid) {
+      setSettingsError(storeValidation.error)
+      return
+    }
+
+    setIsSavingSettings(true)
+    setSettingsError(null)
+
+    try {
+      const response = await fetch(`/api/connections/klaviyo/${settingsConnection.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountName: nextAccountName,
+          storeUrl: storeValidation.normalized,
+        }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update details')
+      }
+
+      closeSettingsSheet()
+      router.refresh()
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : 'Failed to update details')
+    } finally {
+      setIsSavingSettings(false)
+    }
   }
 
   return (
@@ -513,7 +596,15 @@ export function ConnectionsTabs({
                         <div className="space-y-3">
                           <div className="flex items-center gap-3">
                             <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2">
+                                <BrandIcon
+                                accountName={conn.account_name}
+                                storeUrl={conn.store_url}
+                                className="h-6 w-6 account-favicon"
+                              />
                               <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
+                              </div>
+                              
                               <span className="text-xs text-muted-foreground">
                                 Added {new Date(conn.created_at).toLocaleDateString('en-GB')}
                               </span>
@@ -548,6 +639,12 @@ export function ConnectionsTabs({
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => openSettingsSheet(conn)}
+                              >
+                                <Settings className="h-4 w-4 mr-1.5" />
+                                General settings
+                              </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => setFooterPreviewConnection(conn)}
                                 disabled={!conn.hasFooter}
@@ -617,6 +714,11 @@ export function ConnectionsTabs({
                         <div className="space-y-3">
                           <div className="flex items-center gap-3">
                             <div className="flex items-center gap-2">
+                              <BrandIcon
+                                accountName={conn.account_name}
+                                storeUrl={conn.store_url}
+                                className="h-6 w-6 account-favicon"
+                              />
                               <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
                               <Badge variant="secondary" className="text-xs">Shared</Badge>
                             </div>
@@ -649,6 +751,14 @@ export function ConnectionsTabs({
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              {isTeamAdmin && (
+                                <DropdownMenuItem
+                                  onClick={() => openSettingsSheet(conn)}
+                                >
+                                  <Settings className="h-4 w-4 mr-1.5" />
+                                  General settings
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 onClick={() => setFooterPreviewConnection(conn)}
                                 disabled={!conn.hasFooter}
@@ -691,6 +801,8 @@ export function ConnectionsTabs({
               setShowAddForm(open)
               if (!open) {
                 setAccountName('')
+                setStoreUrl('')
+                setAddFormError(null)
               }
             }}
           >
@@ -708,17 +820,43 @@ export function ConnectionsTabs({
                     id="account-name"
                     type="text"
                     value={accountName}
-                    onChange={(e) => setAccountName(e.target.value)}
+                    onChange={(e) => {
+                      setAccountName(e.target.value)
+                      if (addFormError) setAddFormError(null)
+                    }}
                     placeholder="e.g., Client A, My Store"
                   />
                   <p className="text-xs text-muted-foreground">
                     Give this connection a name so you can identify it later
                   </p>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="store-url">Store URL</Label>
+                  <Input
+                    id="store-url"
+                    type="text"
+                    value={storeUrl}
+                    onChange={(e) => {
+                      setStoreUrl(e.target.value)
+                      if (addFormError) setAddFormError(null)
+                    }}
+                    onBlur={(e) => {
+                      const normalized = normalizeStoreUrl(e.target.value)
+                      if (normalized) setStoreUrl(normalized)
+                    }}
+                    placeholder="e.g., yourstore.com"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    We use this for link placeholders and your brand favicon.
+                  </p>
+                </div>
+                {addFormError && (
+                  <p className="text-sm text-destructive">{addFormError}</p>
+                )}
                 <div className="flex gap-3">
                   <Button
                     onClick={startKlaviyoOAuth}
-                    disabled={!accountName.trim()}
+                    disabled={!accountName.trim() || !storeUrl.trim()}
                   >
                     Connect to Klaviyo
                   </Button>
@@ -727,6 +865,8 @@ export function ConnectionsTabs({
                     onClick={() => {
                       setShowAddForm(false)
                       setAccountName('')
+                      setStoreUrl('')
+                      setAddFormError(null)
                     }}
                   >
                     Cancel
@@ -790,6 +930,79 @@ export function ConnectionsTabs({
           )}
         </TabsContent>
       </Tabs>
+
+      <Sheet
+        open={!!settingsConnection}
+        onOpenChange={(open) => {
+          if (!open && !isSavingSettings) {
+            closeSettingsSheet()
+          }
+        }}
+      >
+        <SheetContent side="right" className="sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>General settings</SheetTitle>
+            <SheetDescription>
+              Update the connection name and store URL.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-4 py-6">
+            <div className="space-y-2">
+              <Label htmlFor="settings-account-name">Account name</Label>
+              <Input
+                id="settings-account-name"
+                type="text"
+                value={settingsAccountName}
+                onChange={(e) => {
+                  setSettingsAccountName(e.target.value)
+                  if (settingsError) setSettingsError(null)
+                }}
+                disabled={isSavingSettings}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="settings-store-url">Store URL</Label>
+              <Input
+                id="settings-store-url"
+                type="text"
+                value={settingsStoreUrl}
+                onChange={(e) => {
+                  setSettingsStoreUrl(e.target.value)
+                  if (settingsError) setSettingsError(null)
+                }}
+                onBlur={(e) => {
+                  const normalized = normalizeStoreUrl(e.target.value)
+                  if (normalized) setSettingsStoreUrl(normalized)
+                }}
+                placeholder="e.g., yourstore.com"
+                disabled={isSavingSettings}
+              />
+            </div>
+
+            {settingsError && (
+              <p className="text-sm text-destructive">{settingsError}</p>
+            )}
+          </div>
+
+          <SheetFooter>
+            <Button
+              variant="outline"
+              onClick={closeSettingsSheet}
+              disabled={isSavingSettings}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={saveConnectionSettings}
+              disabled={isSavingSettings}
+            >
+              {isSavingSettings ? 'Saving...' : 'Save changes'}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       {/* Footer Setup Modal */}
       {footerSetupConnection && (

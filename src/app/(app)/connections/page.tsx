@@ -32,7 +32,7 @@ export default async function ConnectionsPage() {
   // Get all Klaviyo connections with account IDs
   const { data: klaviyoConnections } = await supabase
     .from('klaviyo_connections')
-    .select('id, account_name, klaviyo_account_id, created_at, user_id')
+    .select('id, account_name, store_url, klaviyo_account_id, created_at, user_id')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 
@@ -69,7 +69,7 @@ export default async function ConnectionsPage() {
 
       const { data: adminConnections } = await supabase
         .from('klaviyo_connections')
-        .select('id, account_name, klaviyo_account_id, created_at, user_id')
+        .select('id, account_name, store_url, klaviyo_account_id, created_at, user_id')
         .in('user_id', adminUserIds)
         .order('created_at', { ascending: false })
 

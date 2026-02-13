@@ -51,6 +51,7 @@ export interface KlaviyoConnection {
   user_id: string
   klaviyo_account_id: string | null
   account_name: string
+  store_url: string | null
   access_token: string
   refresh_token: string
   expires_at: string

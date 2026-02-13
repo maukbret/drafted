@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
+import { validateStoreUrl } from '@/lib/store-url'
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -32,6 +33,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const decodeCookieValue = (value: string | undefined) => {
+      if (!value) return ''
+      try {
+        return decodeURIComponent(value)
+      } catch {
+        return value
+      }
+    }
+
     const clientId = process.env.KLAVIYO_CLIENT_ID || process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID
     const clientSecret = process.env.KLAVIYO_CLIENT_SECRET
 
@@ -89,8 +99,15 @@ export async function GET(request: NextRequest) {
       console.error('Failed to fetch Klaviyo account ID:', err)
     }
 
-    // Get account name from cookie (set by client before redirect)
-    const accountName = cookieStore.get('klaviyo_account_name')?.value || 'Klaviyo Account'
+    // Get account details from cookies (set by client before redirect)
+    const accountNameCookie = decodeCookieValue(cookieStore.get('klaviyo_account_name')?.value)
+    const accountName = accountNameCookie || 'Klaviyo Account'
+    const storeUrlCookie = decodeCookieValue(cookieStore.get('klaviyo_store_url')?.value)
+    const storeUrlValidation = validateStoreUrl(storeUrlCookie)
+
+    if (!storeUrlValidation.valid) {
+      return NextResponse.redirect(new URL('/connections?error=invalid_store_url', request.url))
+    }
 
     // Check subscription tier and connection limits
     const { data: subscription } = await supabase
@@ -131,6 +148,7 @@ export async function GET(request: NextRequest) {
         user_id: user.id,
         klaviyo_account_id: klaviyoAccountId,
         account_name: accountName,
+        store_url: storeUrlValidation.normalized,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
@@ -158,6 +176,7 @@ export async function GET(request: NextRequest) {
     response.cookies.delete('klaviyo_code_verifier')
     response.cookies.delete('klaviyo_oauth_state')
     response.cookies.delete('klaviyo_account_name')
+    response.cookies.delete('klaviyo_store_url')
     
     return response
   } catch (err) {

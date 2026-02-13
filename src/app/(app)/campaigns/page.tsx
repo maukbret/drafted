@@ -59,7 +59,7 @@ export default async function CampaignsPage() {
   const { data: campaigns } = accessibleConnectionIds.length > 0
     ? await supabase
         .from('campaigns')
-        .select('*, klaviyo_connections(account_name)')
+        .select('*, klaviyo_connections(account_name, store_url)')
         .in('klaviyo_connection_id', accessibleConnectionIds)
         .order('created_at', { ascending: false })
     : { data: [] }

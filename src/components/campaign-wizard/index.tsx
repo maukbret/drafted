@@ -15,6 +15,7 @@ import { AlertTriangle } from 'lucide-react'
 interface KlaviyoConnection {
   id: string
   account_name: string | null
+  store_url?: string | null
   owner_name?: string
 }
 
@@ -30,7 +31,7 @@ interface Frame {
 
 interface CampaignWizardProps {
   campaign: Campaign & {
-    klaviyo_connections?: { account_name: string | null } | null
+    klaviyo_connections?: { account_name: string | null; store_url?: string | null } | null
     projects?: {
       frames?: Frame[]
     } | null
@@ -179,6 +180,7 @@ export function CampaignWizard({
         {step === 2 && (!sliceMode || slicesFinalized) && (
           <Step2Editor
             frames={frames}
+            defaultLinkPlaceholder={selectedAccount?.store_url || ''}
             onComplete={handleStep2Complete}
             onBack={goBack}
           />

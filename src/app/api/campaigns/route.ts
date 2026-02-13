@@ -12,7 +12,7 @@ export async function GET() {
 
     const { data: campaigns, error } = await supabase
       .from('campaigns')
-      .select('*, klaviyo_connections(account_name)')
+      .select('*, klaviyo_connections(account_name, store_url)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 

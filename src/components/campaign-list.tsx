@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { UserAvatar } from '@/components/user-avatar'
+import { BrandIcon } from '@/components/brand-icon'
 import {
   Tooltip,
   TooltipContent,
@@ -54,6 +55,7 @@ import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, ArrowUpDown } from 'l
 interface CampaignWithConnection extends Campaign {
   klaviyo_connections?: {
     account_name: string | null
+    store_url?: string | null
   } | null
   profiles?: { full_name: string | null } | null
   is_own?: boolean
@@ -182,9 +184,14 @@ function getColumns(opts: {
       header: () => <span>Account</span>,
       accessorFn: (row) => row.klaviyo_connections?.account_name ?? '',
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {row.original.klaviyo_connections?.account_name || '—'}
-        </span>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <BrandIcon
+            accountName={row.original.klaviyo_connections?.account_name}
+            storeUrl={row.original.klaviyo_connections?.store_url}
+            className="h-4 w-4 account-favicon"
+          />
+          <span className="font-medium">{row.original.klaviyo_connections?.account_name || '—'}</span>
+        </div>
       ),
     },
     {

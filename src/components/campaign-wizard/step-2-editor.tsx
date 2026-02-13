@@ -34,6 +34,7 @@ const HALF_WIDTH_THRESHOLD = 300
 
 interface Step2EditorProps {
   frames: Frame[]
+  defaultLinkPlaceholder?: string
   onComplete: (frames: Frame[]) => void
   onBack: () => void
 }
@@ -46,7 +47,7 @@ function normalizeUrl(url: string): string {
   return `https://${trimmed}`
 }
 
-export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2EditorProps) {
+export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onComplete, onBack }: Step2EditorProps) {
   const [frames, setFrames] = useState(initialFrames)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -280,7 +281,7 @@ export function Step2Editor({ frames: initialFrames, onComplete, onBack }: Step2
                     onChange={(e) => updateFrameLink(frame.id, e.target.value)}
                     onBlur={(e) => handleLinkBlur(frame.id, e.target.value)}
                     onClick={(e) => e.stopPropagation()}
-                    placeholder="google.com or https://..."
+                    placeholder={defaultLinkPlaceholder || 'google.com or https://...'}
                     className={cn(
                       'h-8',
                       showValidation && missingLinkFrameIds.has(frame.id) && 'border-destructive focus-visible:ring-destructive'
