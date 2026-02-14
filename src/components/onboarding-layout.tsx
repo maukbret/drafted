@@ -15,7 +15,7 @@ export function OnboardingLayout({ currentStep, completedSteps, children, onStep
       {/* Left panel - branded */}
       <div className="hidden md:flex w-1/3 items-center justify-center p-8 onboarding-left flex-col gap-6">
           <img
-          src="/assets/favicon.svg"
+          src="/assets/Favicon.svg"
           alt="Drafted"
           width={48}
           className="opacity-90"
