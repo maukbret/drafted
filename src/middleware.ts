@@ -40,6 +40,7 @@ export async function middleware(request: NextRequest) {
 
   const isPublicPage = request.nextUrl.pathname === '/' ||
                        isAuthPage ||
+                       request.nextUrl.pathname === '/onboarding' ||
                        request.nextUrl.pathname.startsWith('/api/auth') ||
                        request.nextUrl.pathname.startsWith('/invite')
 

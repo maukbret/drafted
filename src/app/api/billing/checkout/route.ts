@@ -111,6 +111,17 @@ export async function POST(request: NextRequest) {
       process.env.NEXT_PUBLIC_APP_URL ||
       'http://localhost:3000'
 
+    // Check if user is still onboarding to determine success redirect
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('onboarding_completed')
+      .eq('id', user.id)
+      .single()
+
+    const successUrl = profile?.onboarding_completed
+      ? `${origin}/campaigns?checkout=success`
+      : `${origin}/onboarding?step=figma&checkout=success`
+
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
       payment_method_types: ['card'],
@@ -128,7 +139,7 @@ export async function POST(request: NextRequest) {
           tier: tier,
         },
       },
-      success_url: `${origin}/campaigns?checkout=success`,
+      success_url: successUrl,
       cancel_url: `${origin}/onboarding?step=plan&checkout=cancelled`,
       metadata: {
         supabase_user_id: user.id,

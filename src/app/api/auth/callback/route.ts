@@ -25,6 +25,7 @@ export async function GET(request: Request) {
         const { error: insertError } = await supabase.from('profiles').insert({
           id: data.user.id,
           onboarding_completed: false,
+          onboarding_step: 1,
         })
 
         if (insertError) {

@@ -3,6 +3,7 @@ export interface Profile {
   full_name: string | null
   avatar_url: string | null
   onboarding_completed: boolean
+  onboarding_step: number
   subscription_selected: boolean
   created_at: string
   updated_at: string

@@ -109,36 +109,60 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/connections?error=invalid_store_url', request.url))
     }
 
-    // Check subscription tier and connection limits
-    const { data: subscription } = await supabase
-      .from('subscriptions')
-      .select('price_tier')
-      .eq('user_id', user.id)
-      .in('status', ['active', 'trialing'])
+    // Check onboarding status
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('onboarding_completed')
+      .eq('id', user.id)
       .single()
 
-    // Get connection limit based on tier
-    const tierLimits: Record<string, number> = {
-      starter: 1,
-      advanced: 5,
-      pro: 20,
-    }
-    const connectionLimit = subscription?.price_tier
-      ? tierLimits[subscription.price_tier] || 0
-      : 0
+    const isOnboarding = !profile?.onboarding_completed
 
-    // Count existing connections
-    const { count: existingConnections } = await supabase
-      .from('klaviyo_connections')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
+    // Check subscription tier and connection limits
+    // During onboarding, allow 1 connection regardless of subscription
+    if (!isOnboarding) {
+      const { data: subscription } = await supabase
+        .from('subscriptions')
+        .select('price_tier')
+        .eq('user_id', user.id)
+        .in('status', ['active', 'trialing'])
+        .single()
 
-    const currentCount = existingConnections || 0
+      // Get connection limit based on tier
+      const tierLimits: Record<string, number> = {
+        starter: 1,
+        advanced: 5,
+        pro: 20,
+      }
+      const connectionLimit = subscription?.price_tier
+        ? tierLimits[subscription.price_tier] || 0
+        : 0
 
-    // Check if at limit
-    if (currentCount >= connectionLimit) {
-      console.log(`User ${user.id} at connection limit: ${currentCount}/${connectionLimit}`)
-      return NextResponse.redirect(new URL('/connections?error=limit_reached', request.url))
+      // Count existing connections
+      const { count: existingConnections } = await supabase
+        .from('klaviyo_connections')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      const currentCount = existingConnections || 0
+
+      // Check if at limit
+      if (currentCount >= connectionLimit) {
+        console.log(`User ${user.id} at connection limit: ${currentCount}/${connectionLimit}`)
+        return NextResponse.redirect(new URL('/connections?error=limit_reached', request.url))
+      }
+    } else {
+      // During onboarding, check we don't already have a connection
+      const { count: existingConnections } = await supabase
+        .from('klaviyo_connections')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      const currentCount = existingConnections || 0
+      if (currentCount >= 1) {
+        console.log(`Onboarding user ${user.id} already has a connection`)
+        return NextResponse.redirect(new URL('/onboarding?step=klaviyo&error=limit_reached', request.url))
+      }
     }
 
     // Insert new connection (not upsert - we allow multiple)
@@ -172,12 +196,25 @@ export async function GET(request: NextRequest) {
         .eq('klaviyo_account_id', klaviyoAccountId)
     }
 
-    const response = NextResponse.redirect(new URL(`/connections?success=klaviyo_connected&newConnectionId=${newConnection.id}`, request.url))
+    let redirectPath: string
+    if (isOnboarding) {
+      // Update onboarding step
+      await supabase
+        .from('profiles')
+        .update({ onboarding_step: 5 })
+        .eq('id', user.id)
+
+      redirectPath = `/onboarding?step=klaviyo&success=klaviyo_connected&newConnectionId=${newConnection.id}`
+    } else {
+      redirectPath = `/connections?success=klaviyo_connected&newConnectionId=${newConnection.id}`
+    }
+
+    const response = NextResponse.redirect(new URL(redirectPath, request.url))
     response.cookies.delete('klaviyo_code_verifier')
     response.cookies.delete('klaviyo_oauth_state')
     response.cookies.delete('klaviyo_account_name')
     response.cookies.delete('klaviyo_store_url')
-    
+
     return response
   } catch (err) {
     console.error('Klaviyo callback error:', err)

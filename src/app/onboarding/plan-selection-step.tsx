@@ -1,10 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -61,11 +59,14 @@ const TIERS: TierConfig[] = [
   },
 ]
 
-export function PlanSelectionStep() {
+interface PlanSelectionStepProps {
+  onComplete: () => void
+}
+
+export function PlanSelectionStep({ onComplete }: PlanSelectionStepProps) {
   const [loading, setLoading] = useState<SubscriptionTier | null>(null)
   const [isSkipping, setIsSkipping] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const router = useRouter()
   const supabase = createClient()
 
   const handleSubscribe = async (tier: SubscriptionTier) => {
@@ -111,16 +112,16 @@ export function PlanSelectionStep() {
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
-          onboarding_completed: true,
+          onboarding_step: 3,
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id)
 
       if (profileError) {
-        throw new Error(`Failed to complete onboarding: ${profileError.message}`)
+        throw new Error(`Failed to update profile: ${profileError.message}`)
       }
 
-      router.push('/billing')
+      onComplete()
     } catch (err) {
       console.error('Skip subscription error:', err)
       setError(err instanceof Error ? err.message : 'Failed to continue without subscription')
@@ -129,86 +130,86 @@ export function PlanSelectionStep() {
   }
 
   return (
-    <div className="w-full space-y-3">
-      <Card className="w-full max-w-4xl">
-        <CardHeader className="text-center space-y-1">
-          <CardTitle className="text-2xl">Choose your plan</CardTitle>
-          <CardDescription>
-            Select the plan that best fits your needs. All plans include unlimited team members.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Tier cards */}
-        <div className="grid gap-6 md:grid-cols-3">
-          {TIERS.map((tier) => (
-            <div
-              key={tier.tier}
-              className={cn(
-                'border rounded-lg p-6 space-y-6 relative',
-                tier.popular && 'border-primary ring-1 ring-primary'
-              )}
-            >
-                {tier.popular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="bg-primary text-primary-foreground text-xs font-medium px-3 py-1 rounded-full">
-                      Most Popular
-                    </span>
-                  </div>
-                )}
+    <div className="w-full space-y-4">
+      <div className="text-left space-y-1 mb-10">
+        <h1 className="text-2xl font-semibold">Choose your plan</h1>
+        <p className="text-muted-foreground">
+          Select the plan that best fits your needs. All plans include unlimited team members.
+        </p>
+      </div>
 
-                <div>
-                  <h3 className="text-lg font-semibold">{tier.name}</h3>
-                  <div className="mt-2">
-                    <span className="text-3xl font-bold">€{tier.price}</span>
-                    <span className="text-muted-foreground">/month</span>
-                  </div>
-                </div>
-
-                <ul className="space-y-3">
-                  {tier.features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-2">
-                      <Check className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span className="text-sm">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <Button
-                  onClick={() => handleSubscribe(tier.tier)}
-                  disabled={loading !== null || isSkipping}
-                  className="w-full"
-                  variant={tier.popular ? 'default' : 'outline'}
-                >
-                  {loading === tier.tier ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Loading...
-                    </>
-                  ) : (
-                    'Subscribe'
-                  )}
-                </Button>
+      {/* Tier cards */}
+      <div className="grid gap-6 md:grid-cols-3">
+        {TIERS.map((tier) => (
+          <div
+            key={tier.tier}
+            className={cn(
+              'border rounded-lg p-6 space-y-4 relative',
+              tier.popular && 'border-primary ring-1 ring-primary'
+            )}
+          >
+            {tier.popular && (
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <span className="bg-primary text-primary-foreground text-xs font-medium px-3 py-1 rounded-full">
+                  Most Popular
+                </span>
               </div>
-            ))}
+            )}
+
+            <div>
+              <h3 className="text-lg font-semibold">{tier.name}</h3>
+              <div className="mt-2">
+                <span className="text-3xl font-bold">&euro;{tier.price}</span>
+                <span className="text-muted-foreground">/month</span>
+              </div>
+            </div>
+
+            <ul className="space-y-3">
+              {tier.features.map((feature) => (
+                <li key={feature} className="flex items-start gap-2">
+                  <Check className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
+                  <span className="text-sm">{feature}</span>
+                </li>
+              ))}
+            </ul>
+
+            <Button
+              onClick={() => handleSubscribe(tier.tier)}
+              disabled={loading !== null || isSkipping}
+              className="w-full"
+              variant={tier.popular ? 'default' : 'outline'}
+            >
+              {loading === tier.tier ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                'Subscribe'
+              )}
+            </Button>
           </div>
+        ))}
+      </div>
 
-          {error && (
-            <p className="text-sm text-destructive text-center">{error}</p>
-          )}
+      {error && (
+        <p className="text-sm text-destructive text-center">{error}</p>
+      )}
 
-          <p className="text-xs text-center text-muted-foreground">
-            Secure payment powered by Stripe. Cancel anytime.
-          </p>
-        </CardContent>
-      </Card>
-      <button
-        type="button"
-        onClick={handleSkipSubscription}
-        disabled={loading !== null || isSkipping}
-        className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-      >
-        {isSkipping ? 'Continuing...' : 'Continue without subscription'}
-      </button>
+      <div className="flex justify-between ">
+        <p className="text-xs text-left text-muted-foreground">
+          Secure payment powered by Stripe. Cancel anytime.
+        </p>
+
+        <button
+          type="button"
+          onClick={handleSkipSubscription}
+          disabled={loading !== null || isSkipping}
+          className="text-left text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+        >
+          {isSkipping ? 'Continuing...' : 'Skip for now'}
+        </button>
+      </div>
     </div>
   )
 }

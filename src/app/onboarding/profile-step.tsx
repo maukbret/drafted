@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { UserAvatar } from '@/components/user-avatar'
 import { Camera, Loader2 } from 'lucide-react'
 
@@ -28,7 +27,10 @@ export function ProfileStep({ onComplete }: ProfileStepProps) {
   useEffect(() => {
     const loadProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        setInitialLoading(false)
+        return
+      }
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -112,13 +114,14 @@ export function ProfileStep({ onComplete }: ProfileStepProps) {
         }
       }
 
-      // Update profile (don't mark onboarding complete yet - that happens after plan selection)
+      // Update profile and set onboarding step
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({
           id: user.id,
           full_name: fullName.trim(),
           avatar_url: finalAvatarUrl,
+          onboarding_step: 2,
           updated_at: new Date().toISOString(),
         })
 
@@ -149,74 +152,73 @@ export function ProfileStep({ onComplete }: ProfileStepProps) {
   }
 
   return (
-    <Card>
-      <CardHeader className="text-center space-y-1">
-        <CardTitle className="text-2xl">Welcome to Drafted</CardTitle>
-        <CardDescription>
+    <div className="space-y-6">
+      <div className="text-left space-y-1">
+        <h1 className="text-2xl font-semibold">Set up your profile</h1>
+        <p className="text-muted-foreground">
           Let&apos;s set up your profile to get started
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Avatar upload */}
-          <div className="flex flex-col items-center gap-3">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="relative group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full"
-            >
-              <UserAvatar
-                name={fullName || 'User'}
-                imageUrl={avatarPreview}
-                className="h-24 w-24 border-2 border-muted"
-                fallbackClassName="text-lg"
-              />
-              <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Camera className="h-6 w-6 text-white" />
-              </div>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleAvatarChange}
-              className="hidden"
-            />
-            <p className="text-xs text-muted-foreground">
-              Click to add a profile photo
-            </p>
-          </div>
+        </p>
+      </div>
 
-          {/* Full name */}
-          <div className="space-y-2">
-            <Label htmlFor="fullName">Full name <span className="text-destructive">*</span></Label>
-            <Input
-              id="fullName"
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="Enter your full name"
-              required
-              autoFocus
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Avatar upload */}
+        <div className="flex flex-col items-start gap-3">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="relative group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full"
+          >
+            <UserAvatar
+              name={fullName || 'User'}
+              imageUrl={avatarPreview}
+              className="h-24 w-24 border-2 border-muted"
+              fallbackClassName="text-lg"
             />
-          </div>
+            <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <Camera className="h-6 w-6 text-white" />
+            </div>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarChange}
+            className="hidden"
+          />
+          <p className="text-xs text-muted-foreground">
+            Click to add a profile photo
+          </p>
+        </div>
 
-          {error && (
-            <p className="text-sm text-destructive text-center">{error}</p>
+        {/* Full name */}
+        <div className="space-y-2">
+          <Label htmlFor="fullName">Full name <span className="text-destructive">*</span></Label>
+          <Input
+            id="fullName"
+            type="text"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="Enter your full name"
+            required
+            autoFocus
+          />
+        </div>
+
+        {error && (
+          <p className="text-sm text-destructive text-center">{error}</p>
+        )}
+
+        <Button type="submit" disabled={loading} className="w-full">
+          {loading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            'Continue'
           )}
-
-          <Button type="submit" disabled={loading} className="w-full">
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Continue'
-            )}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+        </Button>
+      </form>
+    </div>
   )
 }

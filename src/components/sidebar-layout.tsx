@@ -42,7 +42,7 @@ export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutPro
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="px-5 pt-5 pb-2">
-            <img className="logo-img" src="https://i.postimg.cc/mk26ky4p/Frame-3.png" width="116px" alt="logo" />
+            <img className="logo-img" src="/assets/logo-black.svg" width="116px" alt="logo" />
           </div>
 
           {/* Navigation */}

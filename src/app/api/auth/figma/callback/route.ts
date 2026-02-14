@@ -12,26 +12,49 @@ export async function GET(request: NextRequest) {
   const cookieStore = await cookies()
   const storedState = cookieStore.get('figma_oauth_state')?.value
 
+  // Helper to determine redirect base based on onboarding status
+  const getRedirectBase = async (supabase: Awaited<ReturnType<typeof createClient>>) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { isOnboarding: false }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('onboarding_completed')
+      .eq('id', user.id)
+      .single()
+
+    return { isOnboarding: !profile?.onboarding_completed }
+  }
+
   // Handle OAuth errors
   if (error) {
     console.error('Figma OAuth error:', error)
-    return NextResponse.redirect(
-      new URL('/connections?error=figma_auth_failed', request.url)
-    )
+    const supabase = await createClient()
+    const { isOnboarding } = await getRedirectBase(supabase)
+    const redirectPath = isOnboarding
+      ? '/onboarding?step=figma&error=figma_auth_failed'
+      : '/connections?error=figma_auth_failed'
+    return NextResponse.redirect(new URL(redirectPath, request.url))
   }
 
   if (!code) {
-    return NextResponse.redirect(
-      new URL('/connections?error=no_code', request.url)
-    )
+    const supabase = await createClient()
+    const { isOnboarding } = await getRedirectBase(supabase)
+    const redirectPath = isOnboarding
+      ? '/onboarding?step=figma&error=no_code'
+      : '/connections?error=no_code'
+    return NextResponse.redirect(new URL(redirectPath, request.url))
   }
 
   // Verify state to prevent CSRF
   if (!state || state !== storedState) {
     console.error('State mismatch:', { state, storedState })
-    return NextResponse.redirect(
-      new URL('/connections?error=state_mismatch', request.url)
-    )
+    const supabase = await createClient()
+    const { isOnboarding } = await getRedirectBase(supabase)
+    const redirectPath = isOnboarding
+      ? '/onboarding?step=figma&error=state_mismatch'
+      : '/connections?error=state_mismatch'
+    return NextResponse.redirect(new URL(redirectPath, request.url))
   }
 
   try {
@@ -100,15 +123,43 @@ export async function GET(request: NextRequest) {
       throw new Error('Failed to save Figma connection')
     }
 
+    // Check onboarding status for redirect
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('onboarding_completed')
+      .eq('id', user.id)
+      .single()
+
+    let redirectPath: string
+    if (!profile?.onboarding_completed) {
+      // Update onboarding step
+      await supabase
+        .from('profiles')
+        .update({ onboarding_step: 4 })
+        .eq('id', user.id)
+
+      redirectPath = '/onboarding?step=klaviyo&success=figma_connected'
+    } else {
+      redirectPath = '/connections?success=figma_connected'
+    }
+
     // Clear the state cookie
-    const response = NextResponse.redirect(new URL('/connections?success=figma_connected', request.url))
+    const response = NextResponse.redirect(new URL(redirectPath, request.url))
     response.cookies.delete('figma_oauth_state')
-    
+
     return response
   } catch (err) {
     console.error('Figma callback error:', err)
-    return NextResponse.redirect(
-      new URL('/connections?error=figma_auth_failed', request.url)
-    )
+    // Try to determine onboarding status for error redirect
+    try {
+      const supabase = await createClient()
+      const { isOnboarding } = await getRedirectBase(supabase)
+      const redirectPath = isOnboarding
+        ? '/onboarding?step=figma&error=figma_auth_failed'
+        : '/connections?error=figma_auth_failed'
+      return NextResponse.redirect(new URL(redirectPath, request.url))
+    } catch {
+      return NextResponse.redirect(new URL('/connections?error=figma_auth_failed', request.url))
+    }
   }
 }

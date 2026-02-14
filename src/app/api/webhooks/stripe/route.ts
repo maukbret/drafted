@@ -53,9 +53,21 @@ export async function POST(request: NextRequest) {
           }
 
           // Mark subscription as selected in profile
+          // Also advance onboarding step if still onboarding
+          const { data: userProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('onboarding_completed, onboarding_step')
+            .eq('id', userId)
+            .single()
+
+          const profileUpdate: Record<string, unknown> = { subscription_selected: true }
+          if (userProfile && !userProfile.onboarding_completed) {
+            profileUpdate.onboarding_step = 3
+          }
+
           await supabaseAdmin
             .from('profiles')
-            .update({ subscription_selected: true })
+            .update(profileUpdate)
             .eq('id', userId)
 
           // Immediately upsert subscription so middleware can see it
