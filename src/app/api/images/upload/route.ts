@@ -1,6 +1,25 @@
 import { createClient } from '@/lib/supabase/server'
+import {
+  buildFigmaRateLimitMessage,
+  FigmaRateLimitDetails,
+  FigmaRateLimitError,
+  figmaApiFetch,
+} from '@/lib/figma'
 import { getValidKlaviyoToken } from '@/lib/klaviyo'
 import { NextRequest } from 'next/server'
+
+function buildRateLimitedPayload(details: FigmaRateLimitDetails) {
+  return {
+    type: 'error' as const,
+    code: 'figma_rate_limited',
+    message: buildFigmaRateLimitMessage(details),
+    retryAfterSec: details.retryAfterSec,
+    retryAt: new Date(Date.now() + details.retryAfterSec * 1000).toISOString(),
+    planTier: details.planTier,
+    rateLimitType: details.rateLimitType,
+    upgradeUrl: details.upgradeUrl,
+  }
+}
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder()
@@ -82,16 +101,28 @@ export async function POST(request: NextRequest) {
         send({ type: 'progress', message: 'Fetching frames from Figma...' })
 
         const figmaToken = figmaConnection.access_token
+        const figmaCooldownKey = `${user.id}:${fileKey}`
 
         // Get frame children from Figma
-        const nodesResponse = await fetch(
-          `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&depth=1`,
-          {
-            headers: {
-              'Authorization': `Bearer ${figmaToken}`,
-            },
+        let nodesResponse: Response
+        try {
+          nodesResponse = await figmaApiFetch(
+            `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&depth=1`,
+            {
+              accessToken: figmaToken,
+              cooldownKey: figmaCooldownKey,
+              max429Retries: 1,
+              maxAutoRetryAfterSec: 20,
+            }
+          )
+        } catch (err) {
+          if (err instanceof FigmaRateLimitError) {
+            send(buildRateLimitedPayload(err.details))
+            controller.close()
+            return
           }
-        )
+          throw err
+        }
 
         if (!nodesResponse.ok) {
           send({ type: 'error', message: 'Failed to fetch Figma file' })
@@ -133,14 +164,25 @@ export async function POST(request: NextRequest) {
 
         // Get image URLs for all nodes
         const nodeIds = nodesToExport.map(n => n.id).join(',')
-        const imagesResponse = await fetch(
-          `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIds)}&format=png&scale=2`,
-          {
-            headers: {
-              'Authorization': `Bearer ${figmaToken}`,
-            },
+        let imagesResponse: Response
+        try {
+          imagesResponse = await figmaApiFetch(
+            `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIds)}&format=png&scale=2`,
+            {
+              accessToken: figmaToken,
+              cooldownKey: figmaCooldownKey,
+              max429Retries: 1,
+              maxAutoRetryAfterSec: 20,
+            }
+          )
+        } catch (err) {
+          if (err instanceof FigmaRateLimitError) {
+            send(buildRateLimitedPayload(err.details))
+            controller.close()
+            return
           }
-        )
+          throw err
+        }
 
         if (!imagesResponse.ok) {
           send({ type: 'error', message: 'Failed to get images from Figma' })

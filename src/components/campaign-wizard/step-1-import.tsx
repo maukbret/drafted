@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Link as LinkIcon, Check, ChevronsUpDown } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface KlaviyoConnection {
   id: string
@@ -55,22 +56,51 @@ export function Step1Import({
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
 
+  const showStreamErrorToast = (data: Record<string, unknown>) => {
+    const message = typeof data?.message === 'string' ? data.message : 'An error occurred'
+
+    if (data?.code === 'figma_rate_limited') {
+      const description = typeof data?.retryAt === 'string'
+        ? `Try again after ${new Date(data.retryAt).toLocaleString()}.`
+        : undefined
+      const upgradeUrl = typeof data?.upgradeUrl === 'string' ? data.upgradeUrl : ''
+
+      toast.error(message, {
+        description,
+        action: upgradeUrl
+          ? {
+              label: 'Upgrade options',
+              onClick: () => window.open(upgradeUrl, '_blank'),
+            }
+          : undefined,
+      })
+      return
+    }
+
+    toast.error(message)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!connectionId) {
-      setError('Please select a Klaviyo account')
+      const message = 'Please select a Klaviyo account'
+      setError(message)
+      toast.error(message)
       return
     }
 
     if (!figmaUrl) {
-      setError('Please enter a Figma URL')
+      const message = 'Please enter a Figma URL'
+      setError(message)
+      toast.error(message)
       return
     }
 
     setLoading(true)
     setError(null)
     setProgress('Starting import...')
+    let streamErrorToastShown = false
 
     try {
       const response = await fetch(`/api/campaigns/${campaignId}/process-figma`, {
@@ -103,8 +133,14 @@ export function Step1Import({
 
             if (data.type === 'progress') {
               setProgress(data.message)
+            } else if (data.type === 'warning') {
+              if (typeof data.message === 'string') {
+                toast.warning(data.message)
+              }
             } else if (data.type === 'error') {
-              throw new Error(data.message)
+              streamErrorToastShown = true
+              showStreamErrorToast(data)
+              throw new Error(typeof data.message === 'string' ? data.message : 'An error occurred')
             } else if (data.type === 'done') {
               setProgress(null)
               onComplete({ connectionId, figmaUrl, sliceMode: !designedWithSections })
@@ -122,8 +158,14 @@ export function Step1Import({
       if (buffer.trim()) {
         try {
           const data = JSON.parse(buffer)
-          if (data.type === 'error') {
-            throw new Error(data.message)
+          if (data.type === 'warning') {
+            if (typeof data.message === 'string') {
+              toast.warning(data.message)
+            }
+          } else if (data.type === 'error') {
+            streamErrorToastShown = true
+            showStreamErrorToast(data)
+            throw new Error(typeof data.message === 'string' ? data.message : 'An error occurred')
           } else if (data.type === 'done') {
             setProgress(null)
             onComplete({ connectionId, figmaUrl, sliceMode: !designedWithSections })
@@ -137,7 +179,11 @@ export function Step1Import({
       }
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
+      const message = err instanceof Error ? err.message : 'An error occurred'
+      setError(message)
+      if (!streamErrorToastShown) {
+        toast.error(message)
+      }
       setProgress(null)
     } finally {
       setLoading(false)

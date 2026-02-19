@@ -1,4 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
+import {
+  buildFigmaRateLimitMessage,
+  FigmaRateLimitError,
+  figmaApiFetch,
+} from '@/lib/figma'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
@@ -60,16 +65,34 @@ export async function POST(request: NextRequest) {
     }
 
     const figmaToken = figmaConnection.access_token
+    const figmaCooldownKey = `${user.id}:${fileKey}`
 
     // Step 1: Get frame children from Figma
-    const nodesResponse = await fetch(
-      `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&depth=1`,
-      {
-        headers: {
-          'Authorization': `Bearer ${figmaToken}`,
-        },
+    let nodesResponse: Response
+    try {
+      nodesResponse = await figmaApiFetch(
+        `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&depth=1`,
+        {
+          accessToken: figmaToken,
+          cooldownKey: figmaCooldownKey,
+          max429Retries: 1,
+          maxAutoRetryAfterSec: 20,
+        }
+      )
+    } catch (err) {
+      if (err instanceof FigmaRateLimitError) {
+        return NextResponse.json({
+          error: buildFigmaRateLimitMessage(err.details),
+          code: 'figma_rate_limited',
+          retryAfterSec: err.details.retryAfterSec,
+          retryAt: new Date(Date.now() + err.details.retryAfterSec * 1000).toISOString(),
+          planTier: err.details.planTier,
+          rateLimitType: err.details.rateLimitType,
+          upgradeUrl: err.details.upgradeUrl,
+        }, { status: 429 })
       }
-    )
+      throw err
+    }
 
     if (!nodesResponse.ok) {
       const errorText = await nodesResponse.text()
@@ -112,14 +135,31 @@ export async function POST(request: NextRequest) {
 
     // Step 2: Get image URLs for all nodes
     const nodeIds = nodesToExport.map(n => n.id).join(',')
-    const imagesResponse = await fetch(
-      `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIds)}&format=png&scale=2`,
-      {
-        headers: {
-          'Authorization': `Bearer ${figmaToken}`,
-        },
+    let imagesResponse: Response
+    try {
+      imagesResponse = await figmaApiFetch(
+        `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIds)}&format=png&scale=2`,
+        {
+          accessToken: figmaToken,
+          cooldownKey: figmaCooldownKey,
+          max429Retries: 1,
+          maxAutoRetryAfterSec: 20,
+        }
+      )
+    } catch (err) {
+      if (err instanceof FigmaRateLimitError) {
+        return NextResponse.json({
+          error: buildFigmaRateLimitMessage(err.details),
+          code: 'figma_rate_limited',
+          retryAfterSec: err.details.retryAfterSec,
+          retryAt: new Date(Date.now() + err.details.retryAfterSec * 1000).toISOString(),
+          planTier: err.details.planTier,
+          rateLimitType: err.details.rateLimitType,
+          upgradeUrl: err.details.upgradeUrl,
+        }, { status: 429 })
       }
-    )
+      throw err
+    }
 
     if (!imagesResponse.ok) {
       const errorText = await imagesResponse.text()

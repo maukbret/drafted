@@ -1,6 +1,26 @@
 import { createClient } from '@/lib/supabase/server'
+import {
+  buildFigmaRateLimitMessage,
+  FigmaRateLimitDetails,
+  FigmaRateLimitError,
+  figmaApiFetch,
+  getFigmaCooldownSeconds,
+} from '@/lib/figma'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
+
+function buildRateLimitedPayload(details: FigmaRateLimitDetails) {
+  return {
+    type: 'error' as const,
+    code: 'figma_rate_limited',
+    message: buildFigmaRateLimitMessage(details),
+    retryAfterSec: details.retryAfterSec,
+    retryAt: new Date(Date.now() + details.retryAfterSec * 1000).toISOString(),
+    planTier: details.planTier,
+    rateLimitType: details.rateLimitType,
+    upgradeUrl: details.upgradeUrl,
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -16,7 +36,7 @@ export async function POST(
       }
 
       try {
-        const { figmaUrl, sliceMode } = await request.json()
+        const { figmaUrl, sliceMode, forceRefresh = false } = await request.json()
 
         if (!figmaUrl) {
           send({ type: 'error', message: 'Figma URL is required' })
@@ -47,6 +67,63 @@ export async function POST(
           send({ type: 'error', message: 'Campaign not found' })
           controller.close()
           return
+        }
+
+        // Parse Figma URL
+        const fileKeyMatch = figmaUrl.match(/\/design\/([^\/]+)/)
+        const nodeIdMatch = figmaUrl.match(/node-id=([^&]+)/)
+
+        if (!fileKeyMatch) {
+          send({ type: 'error', message: 'Invalid Figma URL - could not extract file key' })
+          controller.close()
+          return
+        }
+
+        const fileKey = fileKeyMatch[1]
+        const nodeId = nodeIdMatch ? nodeIdMatch[1].replace('-', ':') : null
+
+        if (!nodeId) {
+          send({ type: 'error', message: 'Invalid Figma URL - please include a node-id parameter' })
+          controller.close()
+          return
+        }
+
+        const normalizedSliceMode = !!sliceMode
+        const figmaCooldownKey = `${user.id}:${fileKey}`
+        const activeCooldownSec = getFigmaCooldownSeconds(figmaCooldownKey)
+        const hasMatchingCachedImport =
+          !!campaign.project_id &&
+          campaign.figma_url === figmaUrl &&
+          !!campaign.slice_mode === normalizedSliceMode
+
+        let cachedFramesForFallback: Array<Record<string, unknown>> = []
+        if (hasMatchingCachedImport) {
+          const { data: cachedFrames } = await supabase
+            .from('frames')
+            .select('*')
+            .eq('project_id', campaign.project_id!)
+            .order('display_order', { ascending: true })
+
+          if (cachedFrames && cachedFrames.length > 0) {
+            cachedFramesForFallback = cachedFrames
+
+            if (activeCooldownSec > 0 && !forceRefresh) {
+              send({
+                type: 'warning',
+                code: 'using_cached_frames',
+                message: `Figma is temporarily rate-limited. Using your cached frames for now (retry in ~${activeCooldownSec}s).`,
+              })
+              send({
+                type: 'done',
+                projectId: campaign.project_id,
+                frameCount: cachedFrames.length,
+                frames: cachedFrames,
+                cached: true,
+              })
+              controller.close()
+              return
+            }
+          }
         }
 
         // Get user's Figma connection
@@ -102,36 +179,43 @@ export async function POST(
           }
         }
 
-        // Parse Figma URL
-        const fileKeyMatch = figmaUrl.match(/\/design\/([^\/]+)/)
-        const nodeIdMatch = figmaUrl.match(/node-id=([^&]+)/)
-
-        if (!fileKeyMatch) {
-          send({ type: 'error', message: 'Invalid Figma URL - could not extract file key' })
-          controller.close()
-          return
-        }
-
-        const fileKey = fileKeyMatch[1]
-        const nodeId = nodeIdMatch ? nodeIdMatch[1].replace('-', ':') : null
-
-        if (!nodeId) {
-          send({ type: 'error', message: 'Invalid Figma URL - please include a node-id parameter' })
-          controller.close()
-          return
-        }
-
         send({ type: 'progress', message: 'Fetching frame structure from Figma...' })
-
         // Fetch frame children from Figma
-        const nodesResponse = await fetch(
-          `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&depth=1`,
-          {
-            headers: {
-              'Authorization': `Bearer ${figmaToken}`,
-            },
+        let nodesResponse: Response
+        try {
+          nodesResponse = await figmaApiFetch(
+            `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&depth=1`,
+            {
+              accessToken: figmaToken,
+              cooldownKey: figmaCooldownKey,
+              max429Retries: 1,
+              maxAutoRetryAfterSec: 20,
+            }
+          )
+        } catch (err) {
+          if (err instanceof FigmaRateLimitError) {
+            if (cachedFramesForFallback.length > 0 && !forceRefresh) {
+              send({
+                type: 'warning',
+                code: 'using_cached_frames',
+                message: 'Figma is currently rate-limited. Using your previously imported frames.',
+              })
+              send({
+                type: 'done',
+                projectId: campaign.project_id,
+                frameCount: cachedFramesForFallback.length,
+                frames: cachedFramesForFallback,
+                cached: true,
+              })
+              controller.close()
+              return
+            }
+            send(buildRateLimitedPayload(err.details))
+            controller.close()
+            return
           }
-        )
+          throw err
+        }
 
         if (!nodesResponse.ok) {
           const errorText = await nodesResponse.text()
@@ -185,14 +269,41 @@ export async function POST(
 
         // Get image URLs
         const nodeIds = nodesToExport.map(n => n.id).join(',')
-        const imagesResponse = await fetch(
-          `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIds)}&format=png&scale=2`,
-          {
-            headers: {
-              'Authorization': `Bearer ${figmaToken}`,
-            },
+        let imagesResponse: Response
+        try {
+          imagesResponse = await figmaApiFetch(
+            `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIds)}&format=png&scale=2`,
+            {
+              accessToken: figmaToken,
+              cooldownKey: figmaCooldownKey,
+              max429Retries: 1,
+              maxAutoRetryAfterSec: 20,
+            }
+          )
+        } catch (err) {
+          if (err instanceof FigmaRateLimitError) {
+            if (cachedFramesForFallback.length > 0 && !forceRefresh) {
+              send({
+                type: 'warning',
+                code: 'using_cached_frames',
+                message: 'Figma is currently rate-limited. Using your previously imported frames.',
+              })
+              send({
+                type: 'done',
+                projectId: campaign.project_id,
+                frameCount: cachedFramesForFallback.length,
+                frames: cachedFramesForFallback,
+                cached: true,
+              })
+              controller.close()
+              return
+            }
+            send(buildRateLimitedPayload(err.details))
+            controller.close()
+            return
           }
-        )
+          throw err
+        }
 
         if (!imagesResponse.ok) {
           const errorText = await imagesResponse.text()
@@ -325,7 +436,7 @@ export async function POST(
             project_id: project.id,
             figma_url: figmaUrl,
             name: campaign.name === 'Untitled Campaign' ? frameName : campaign.name,
-            slice_mode: !!sliceMode,
+            slice_mode: normalizedSliceMode,
           })
           .eq('id', campaignId)
 

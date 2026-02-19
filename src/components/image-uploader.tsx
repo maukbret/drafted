@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Loader2, Check, Copy, Upload } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface KlaviyoConnection {
   id: string
@@ -38,16 +39,44 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
   const [progress, setProgress] = useState<string | null>(null)
 
+  const showStreamErrorToast = (data: Record<string, unknown>) => {
+    const message = typeof data?.message === 'string' ? data.message : 'An error occurred'
+
+    if (data?.code === 'figma_rate_limited') {
+      const description = typeof data?.retryAt === 'string'
+        ? `Try again after ${new Date(data.retryAt).toLocaleString()}.`
+        : undefined
+      const upgradeUrl = typeof data?.upgradeUrl === 'string' ? data.upgradeUrl : ''
+
+      toast.error(message, {
+        description,
+        action: upgradeUrl
+          ? {
+              label: 'Upgrade options',
+              onClick: () => window.open(upgradeUrl, '_blank'),
+            }
+          : undefined,
+      })
+      return
+    }
+
+    toast.error(message)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!figmaUrl.trim()) {
-      setError('Please enter a Figma URL')
+      const message = 'Please enter a Figma URL'
+      setError(message)
+      toast.error(message)
       return
     }
 
     if (!selectedKlaviyoId) {
-      setError('Please select a Klaviyo account')
+      const message = 'Please select a Klaviyo account'
+      setError(message)
+      toast.error(message)
       return
     }
 
@@ -55,10 +84,13 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
     setError(null)
     setUploadedImages([])
     setProgress('Processing Figma file...')
+    let streamErrorToastShown = false
 
     try {
       if (!figmaUrl.includes('figma.com/design/')) {
-        throw new Error('Please enter a valid Figma design URL')
+        const message = 'Please enter a valid Figma design URL'
+        toast.error(message)
+        throw new Error(message)
       }
 
       const response = await fetch('/api/images/upload', {
@@ -96,6 +128,10 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
 
             if (data.type === 'progress') {
               setProgress(data.message)
+            } else if (data.type === 'warning') {
+              if (typeof data.message === 'string') {
+                toast.warning(data.message)
+              }
             } else if (data.type === 'image') {
               images.push({
                 name: data.name,
@@ -105,29 +141,45 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
               })
               setUploadedImages([...images])
             } else if (data.type === 'error') {
-              setError(data.message)
+              streamErrorToastShown = true
+              showStreamErrorToast(data)
+              throw new Error(typeof data.message === 'string' ? data.message : 'An error occurred')
             } else if (data.type === 'done') {
               setProgress(null)
             }
           } catch (e) {
-            console.error('Failed to parse line:', line, e)
+            if (e instanceof SyntaxError) {
+              console.error('Failed to parse line:', line, e)
+            } else {
+              throw e
+            }
           }
         }
       }
 
       if (buffer.trim()) {
+        let data: Record<string, unknown> | null = null
         try {
-          const data = JSON.parse(buffer)
-          if (data.type === 'error') {
-            setError(data.message)
-          }
+          data = JSON.parse(buffer)
         } catch (e) {
           console.error('Failed to parse final buffer:', buffer, e)
+        }
+
+        if (data?.type === 'warning' && typeof data.message === 'string') {
+          toast.warning(data.message)
+        } else if (data?.type === 'error') {
+          streamErrorToastShown = true
+          showStreamErrorToast(data)
+          throw new Error(typeof data.message === 'string' ? data.message : 'An error occurred')
         }
       }
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      const message = err instanceof Error ? err.message : 'Something went wrong'
+      setError(message)
+      if (!streamErrorToastShown) {
+        toast.error(message)
+      }
       setProgress(null)
     } finally {
       setLoading(false)
