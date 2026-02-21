@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getValidKlaviyoToken } from '@/lib/klaviyo'
+import { normalizeFooterHtmlForExport } from '@/lib/email/footer-normalize'
 import { NextRequest } from 'next/server'
 
 // Helper to get timezone offset as a string (e.g., "+01:00" or "-05:00")
@@ -686,6 +687,7 @@ export async function POST(
             status: finalStatus,
             klaviyo_campaign_id: klaviyoCampaignId,
             klaviyo_template_id: templateId,
+            last_status_synced_at: new Date().toISOString(),
           })
           .eq('id', campaignId)
 
@@ -718,41 +720,6 @@ export async function POST(
 
 // Half-width threshold: 50% of 600px email width
 const HALF_WIDTH_THRESHOLD = 300
-
-// Clean up common HTML issues in footer that can break email rendering
-// Klaviyo footers often use "Ghost Table" patterns with MSO conditionals that create
-// invalid HTML nesting (e.g., <div> directly inside <tr>)
-function cleanFooterHtml(html: string): string {
-  if (!html) return ''
-
-  let cleaned = html
-
-  // Fix double </table> tags in MSO conditionals (common copy-paste error)
-  cleaned = cleaned.replace(/<!--\[if mso\]><\/table><\/table><!\[endif\]-->/gi, '<!--[if mso]></table><![endif]-->')
-  cleaned = cleaned.replace(/(<!--\[if mso\]>)(<\/table>)\2+(<!\[endif\]-->)/gi, '$1$2$3')
-
-  // Remove Ghost Table MSO conditionals that create invalid nesting
-  // These patterns put <div> elements directly inside <tr>, which is invalid HTML
-  // Pattern: <!--[if mso]><table...><tr><![endif]--> followed by <div class="kl-row">
-  // We remove the ghost table entirely and let the responsive divs handle layout
-
-  // Remove opening ghost table patterns (table + tr openers before divs)
-  cleaned = cleaned.replace(/<!--\[if mso\]>\s*<table[^>]*>\s*<tr>\s*<!\[endif\]-->/gi, '')
-
-  // Remove ghost td openers that appear after kl-row divs
-  cleaned = cleaned.replace(/<!--\[if mso\]>\s*<td[^>]*>\s*<!\[endif\]-->/gi, '')
-
-  // Remove ghost td closers
-  cleaned = cleaned.replace(/<!--\[if mso\]>\s*<\/td>\s*<!\[endif\]-->/gi, '')
-
-  // Remove closing ghost table patterns (tr + table closers)
-  cleaned = cleaned.replace(/<!--\[if mso\]>\s*<\/tr>\s*<\/table>\s*<!\[endif\]-->/gi, '')
-
-  // Clean up any resulting double whitespace/newlines
-  cleaned = cleaned.replace(/\n\s*\n\s*\n/g, '\n\n')
-
-  return cleaned
-}
 
 function generateEmailHtml(frames: Array<{
   name: string
@@ -817,13 +784,14 @@ function generateEmailHtml(frames: Array<{
 
   const frameRows = rows.join('\n')
 
-  // Clean up footer HTML and use directly (footer is already a table from selection)
-  const cleanedFooter = cleanFooterHtml(footerHtml)
-
-  // Footer goes directly below content table (no extra wrapping needed)
-  const footerSection = cleanedFooter ? `
-        <!-- Footer -->
-${cleanedFooter}` : ''
+  const normalizedFooter = normalizeFooterHtmlForExport(footerHtml)
+  const footerSection = normalizedFooter ? `
+      <tr>
+        <td align="center" valign="top" style="padding: 0;">
+          <!-- Footer -->
+${normalizedFooter}
+        </td>
+      </tr>` : ''
 
   const safePreviewText = escapeHtml(previewText.trim())
   const previewBlock = safePreviewText ? `
@@ -885,8 +853,8 @@ ${previewBlock}
         <!-- Email content table (images/sections from Figma) -->
         <table class="email-container" role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; background-color: #ffffff;">
 ${frameRows}
-        </table>
 ${footerSection}
+        </table>
         <!--[if mso]>
         </td>
         </tr>

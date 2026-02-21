@@ -1,6 +1,8 @@
 'use client'
 
+import DOMPurify from 'dompurify'
 import { cn } from '@/lib/utils'
+import { normalizeFooterHtmlForExport } from '@/lib/email/footer-normalize'
 
 export interface CampaignPreviewFrame {
   id: string
@@ -12,6 +14,7 @@ export interface CampaignPreviewFrame {
 
 interface CampaignEmailPreviewProps {
   frames: CampaignPreviewFrame[]
+  footerHtml?: string | null
   activeFrameId?: string | null
   onFrameSelect?: (frameId: string) => void
   showLinkBadges?: boolean
@@ -45,6 +48,7 @@ function groupFramesForLayout(frames: CampaignPreviewFrame[]): (CampaignPreviewF
 
 export function CampaignEmailPreview({
   frames,
+  footerHtml,
   activeFrameId,
   onFrameSelect,
   showLinkBadges = false,
@@ -52,6 +56,12 @@ export function CampaignEmailPreview({
 }: CampaignEmailPreviewProps) {
   const groupedFrames = groupFramesForLayout(frames)
   const isInteractive = typeof onFrameSelect === 'function'
+  const sanitizedFooterHtml = footerHtml
+    ? DOMPurify.sanitize(normalizeFooterHtmlForExport(footerHtml), {
+      ADD_TAGS: ['style'],
+      ADD_ATTR: ['target', 'rel'],
+    })
+    : ''
 
   if (frames.length === 0) {
     return (
@@ -137,6 +147,12 @@ export function CampaignEmailPreview({
           </div>
         )
       })}
+      {sanitizedFooterHtml && (
+        <div
+          className="[&_img]:max-w-full [&_img]:h-auto"
+          dangerouslySetInnerHTML={{ __html: sanitizedFooterHtml }}
+        />
+      )}
     </div>
   )
 }

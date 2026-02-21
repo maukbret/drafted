@@ -123,6 +123,7 @@ export interface Campaign {
   klaviyo_template_id: string | null
 
   status: 'in_progress' | 'klaviyo_draft' | 'scheduled' | 'cancelled' | 'sent' | 'error'
+  last_status_synced_at?: string | null
   scheduled_at: string | null
   send_in_recipient_timezone: boolean
   slice_mode: boolean

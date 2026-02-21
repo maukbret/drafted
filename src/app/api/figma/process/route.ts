@@ -3,6 +3,7 @@ import {
   buildFigmaRateLimitMessage,
   FigmaRateLimitError,
   figmaApiFetch,
+  getFigmaImageExportScale,
 } from '@/lib/figma'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -133,42 +134,52 @@ export async function POST(request: NextRequest) {
       }]
     }
 
-    // Step 2: Get image URLs for all nodes
-    const nodeIds = nodesToExport.map(n => n.id).join(',')
-    let imagesResponse: Response
-    try {
-      imagesResponse = await figmaApiFetch(
-        `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIds)}&format=png&scale=2`,
-        {
-          accessToken: figmaToken,
-          cooldownKey: figmaCooldownKey,
-          max429Retries: 1,
-          maxAutoRetryAfterSec: 20,
+    // Step 2: Get image URLs, grouped by scale so each node targets 1080px export width.
+    const nodesByScale = new Map<string, string[]>()
+    for (const node of nodesToExport) {
+      const scale = getFigmaImageExportScale(node.width)
+      const existingNodeIds = nodesByScale.get(scale) ?? []
+      existingNodeIds.push(node.id)
+      nodesByScale.set(scale, existingNodeIds)
+    }
+
+    const images: Record<string, string> = {}
+    for (const [scale, nodeIdsForScale] of nodesByScale.entries()) {
+      let imagesResponse: Response
+      try {
+        imagesResponse = await figmaApiFetch(
+          `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIdsForScale.join(','))}&format=png&scale=${scale}`,
+          {
+            accessToken: figmaToken,
+            cooldownKey: figmaCooldownKey,
+            max429Retries: 1,
+            maxAutoRetryAfterSec: 20,
+          }
+        )
+      } catch (err) {
+        if (err instanceof FigmaRateLimitError) {
+          return NextResponse.json({
+            error: buildFigmaRateLimitMessage(err.details),
+            code: 'figma_rate_limited',
+            retryAfterSec: err.details.retryAfterSec,
+            retryAt: new Date(Date.now() + err.details.retryAfterSec * 1000).toISOString(),
+            planTier: err.details.planTier,
+            rateLimitType: err.details.rateLimitType,
+            upgradeUrl: err.details.upgradeUrl,
+          }, { status: 429 })
         }
-      )
-    } catch (err) {
-      if (err instanceof FigmaRateLimitError) {
-        return NextResponse.json({
-          error: buildFigmaRateLimitMessage(err.details),
-          code: 'figma_rate_limited',
-          retryAfterSec: err.details.retryAfterSec,
-          retryAt: new Date(Date.now() + err.details.retryAfterSec * 1000).toISOString(),
-          planTier: err.details.planTier,
-          rateLimitType: err.details.rateLimitType,
-          upgradeUrl: err.details.upgradeUrl,
-        }, { status: 429 })
+        throw err
       }
-      throw err
-    }
 
-    if (!imagesResponse.ok) {
-      const errorText = await imagesResponse.text()
-      console.error('Figma images API error:', errorText)
-      return NextResponse.json({ error: 'Failed to get images from Figma' }, { status: 500 })
-    }
+      if (!imagesResponse.ok) {
+        const errorText = await imagesResponse.text()
+        console.error('Figma images API error:', errorText)
+        return NextResponse.json({ error: 'Failed to get images from Figma' }, { status: 500 })
+      }
 
-    const imagesData = await imagesResponse.json()
-    const images = imagesData.images || {}
+      const imagesData = await imagesResponse.json()
+      Object.assign(images, imagesData.images || {})
+    }
 
     // Step 3: Create project in database
     const { data: project, error: projectError } = await supabase

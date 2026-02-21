@@ -39,6 +39,10 @@ export class FigmaRateLimitError extends Error {
 
 const DEFAULT_429_RETRIES = 1
 const DEFAULT_MAX_AUTO_RETRY_AFTER_SEC = 30
+const DEFAULT_IMAGE_TARGET_WIDTH = 1080
+const DEFAULT_IMAGE_BASE_WIDTH = 600
+const MIN_IMAGE_SCALE = 0.01
+const MAX_IMAGE_SCALE = 4
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -144,6 +148,13 @@ export async function figmaApiFetch(url: string, options: FigmaApiFetchOptions):
     retryCount += 1
     await sleep(details.retryAfterSec * 1000)
   }
+}
+
+export function getFigmaImageExportScale(width: number, targetWidth = DEFAULT_IMAGE_TARGET_WIDTH): string {
+  const safeWidth = Number.isFinite(width) && width > 0 ? width : DEFAULT_IMAGE_BASE_WIDTH
+  const rawScale = targetWidth / safeWidth
+  const clampedScale = Math.min(MAX_IMAGE_SCALE, Math.max(MIN_IMAGE_SCALE, rawScale))
+  return clampedScale.toFixed(4).replace(/\.?0+$/, '')
 }
 
 function formatDuration(seconds: number): string {

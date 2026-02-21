@@ -428,7 +428,7 @@ export function FooterSetupInline({ connectionId, hasFooter, onComplete, onSkip,
             </CardContent>
           </Card>
           <p className="text-sm text-muted-foreground">
-            This footer will be automatically added to all emails exported from this Klaviyo account.
+            This footer will be automatically added to all emails exported from this Klaviyo account. Final export width is 600px, and the footer is resized to match if it is larger or smaller.
           </p>
         </div>
       )}

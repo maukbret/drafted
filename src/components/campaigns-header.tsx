@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -30,11 +30,12 @@ export function CampaignsHeader({
     try {
       const response = await fetch('/api/campaigns/sync-status', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'manual' }),
       })
 
       if (response.ok) {
-        const data = await response.json()
-        console.log('Sync result:', data)
+        await response.json().catch(() => null)
         return
       }
     } catch (err) {
@@ -47,11 +48,6 @@ export function CampaignsHeader({
       router.refresh()
     }
   }, [isRefreshing, router])
-
-  // Sync statuses once on mount (Klaviyo API check)
-  useEffect(() => {
-    syncStatuses()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex items-center justify-between mb-8">

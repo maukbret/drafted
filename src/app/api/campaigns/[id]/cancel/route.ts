@@ -66,7 +66,10 @@ export async function POST(
       // Update local status to match
       await supabase
         .from('campaigns')
-        .update({ status: 'sent' })
+        .update({
+          status: 'sent',
+          last_status_synced_at: new Date().toISOString(),
+        })
         .eq('id', id)
 
       return NextResponse.json(

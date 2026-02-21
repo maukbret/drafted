@@ -4,6 +4,7 @@ import {
   FigmaRateLimitDetails,
   FigmaRateLimitError,
   figmaApiFetch,
+  getFigmaImageExportScale,
   getFigmaCooldownSeconds,
 } from '@/lib/figma'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -267,54 +268,64 @@ export async function POST(
 
         send({ type: 'progress', message: `Found ${nodesToExport.length} frame(s). Creating images...` })
 
-        // Get image URLs
-        const nodeIds = nodesToExport.map(n => n.id).join(',')
-        let imagesResponse: Response
-        try {
-          imagesResponse = await figmaApiFetch(
-            `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIds)}&format=png&scale=2`,
-            {
-              accessToken: figmaToken,
-              cooldownKey: figmaCooldownKey,
-              max429Retries: 1,
-              maxAutoRetryAfterSec: 20,
-            }
-          )
-        } catch (err) {
-          if (err instanceof FigmaRateLimitError) {
-            if (cachedFramesForFallback.length > 0 && !forceRefresh) {
-              send({
-                type: 'warning',
-                code: 'using_cached_frames',
-                message: 'Figma is currently rate-limited. Using your previously imported frames.',
-              })
-              send({
-                type: 'done',
-                projectId: campaign.project_id,
-                frameCount: cachedFramesForFallback.length,
-                frames: cachedFramesForFallback,
-                cached: true,
-              })
+        // Get image URLs, grouped by scale so each node targets 1080px export width.
+        const nodesByScale = new Map<string, string[]>()
+        for (const node of nodesToExport) {
+          const scale = getFigmaImageExportScale(node.width)
+          const existingNodeIds = nodesByScale.get(scale) ?? []
+          existingNodeIds.push(node.id)
+          nodesByScale.set(scale, existingNodeIds)
+        }
+
+        const images: Record<string, string> = {}
+        for (const [scale, nodeIdsForScale] of nodesByScale.entries()) {
+          let imagesResponse: Response
+          try {
+            imagesResponse = await figmaApiFetch(
+              `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIdsForScale.join(','))}&format=png&scale=${scale}`,
+              {
+                accessToken: figmaToken,
+                cooldownKey: figmaCooldownKey,
+                max429Retries: 1,
+                maxAutoRetryAfterSec: 20,
+              }
+            )
+          } catch (err) {
+            if (err instanceof FigmaRateLimitError) {
+              if (cachedFramesForFallback.length > 0 && !forceRefresh) {
+                send({
+                  type: 'warning',
+                  code: 'using_cached_frames',
+                  message: 'Figma is currently rate-limited. Using your previously imported frames.',
+                })
+                send({
+                  type: 'done',
+                  projectId: campaign.project_id,
+                  frameCount: cachedFramesForFallback.length,
+                  frames: cachedFramesForFallback,
+                  cached: true,
+                })
+                controller.close()
+                return
+              }
+              send(buildRateLimitedPayload(err.details))
               controller.close()
               return
             }
-            send(buildRateLimitedPayload(err.details))
+            throw err
+          }
+
+          if (!imagesResponse.ok) {
+            const errorText = await imagesResponse.text()
+            console.error('Figma images API error:', errorText)
+            send({ type: 'error', message: 'Failed to get images from Figma' })
             controller.close()
             return
           }
-          throw err
-        }
 
-        if (!imagesResponse.ok) {
-          const errorText = await imagesResponse.text()
-          console.error('Figma images API error:', errorText)
-          send({ type: 'error', message: 'Failed to get images from Figma' })
-          controller.close()
-          return
+          const imagesData = await imagesResponse.json()
+          Object.assign(images, imagesData.images || {})
         }
-
-        const imagesData = await imagesResponse.json()
-        const images = imagesData.images || {}
 
         send({ type: 'progress', message: 'Saving to database...' })
 

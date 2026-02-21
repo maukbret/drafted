@@ -847,11 +847,12 @@ export function ConnectionsTabs({
                 <div className="flex items-center justify-between gap-4">
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-3">
-                        <p className="font-medium">{figmaConnection.figma_email || 'Figma account'}</p>
-                        <span className="text-xs text-muted-foreground">
+                      <div className="space-y-0.5">
+                        <p className="text-xs text-muted-foreground">Connected account</p>
+                        <p className="font-medium">{figmaConnection.figma_email || 'Email unavailable'}</p>
+                        <p className="text-xs text-muted-foreground">
                           Added {new Date(figmaConnection.created_at).toLocaleDateString('en-GB')}
-                        </span>
+                        </p>
                       </div>
                       {getStatusBadge(figmaConnection.id)}
                     </div>
@@ -1097,4 +1098,3 @@ export function ConnectionsTabs({
     </div>
   )
 }
-

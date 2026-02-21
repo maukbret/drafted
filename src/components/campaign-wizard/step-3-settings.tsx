@@ -67,6 +67,13 @@ interface DefaultAudienceResponse {
   error?: string
 }
 
+interface FooterResponse {
+  footer?: {
+    footer_html?: string | null
+  } | null
+  error?: string
+}
+
 function parseScheduledAt(scheduledAt: string | null): { date: string; time: string } {
   if (!scheduledAt) return { date: '', time: '' }
 
@@ -180,6 +187,9 @@ export function Step3Settings({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [previewFooterHtml, setPreviewFooterHtml] = useState<string | null>(null)
+  const [previewFooterLoading, setPreviewFooterLoading] = useState(false)
+  const [previewFooterError, setPreviewFooterError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!onConceptDraftChange) return
@@ -245,6 +255,44 @@ export function Step3Settings({
       isActive = false
     }
   }, [connectionId])
+
+  useEffect(() => {
+    if (!isPreviewOpen || !useCustomFooter || !connectionId) {
+      return
+    }
+
+    let isActive = true
+
+    const fetchPreviewFooter = async () => {
+      setPreviewFooterLoading(true)
+      setPreviewFooterError(null)
+
+      try {
+        const response = await fetch(`/api/klaviyo/footer?connectionId=${connectionId}`)
+        const data: FooterResponse = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load footer')
+        }
+
+        if (!isActive) return
+        setPreviewFooterHtml(data.footer?.footer_html || null)
+      } catch (err) {
+        if (!isActive) return
+        setPreviewFooterHtml(null)
+        setPreviewFooterError(err instanceof Error ? err.message : 'Failed to load footer')
+      } finally {
+        if (!isActive) return
+        setPreviewFooterLoading(false)
+      }
+    }
+
+    fetchPreviewFooter()
+
+    return () => {
+      isActive = false
+    }
+  }, [connectionId, isPreviewOpen, useCustomFooter])
 
   const validateForm = () => {
     if (!name.trim()) {
@@ -621,8 +669,8 @@ export function Step3Settings({
             </label>
             <p className="text-sm text-muted-foreground">
               {useCustomFooter
-                ? 'Uses your saved footer from Klaviyo. Disable to use a simple unsubscribe link instead.'
-                : 'Uses a simple unsubscribe link. Enable to use your saved Klaviyo footer.'}
+                ? 'Uses your saved footer from Klaviyo. Final export width is 600px, and the footer is automatically resized to match. Disable to use a simple unsubscribe link instead.'
+                : 'Uses a simple unsubscribe link. Enable to use your saved Klaviyo footer (auto-resized to the 600px export width).'}
             </p>
           </div>
         </div>
@@ -696,6 +744,10 @@ export function Step3Settings({
         subjectLine={subjectLine}
         previewText={previewText}
         frames={frames}
+        useCustomFooter={useCustomFooter}
+        footerHtml={previewFooterHtml}
+        footerLoading={previewFooterLoading}
+        footerError={previewFooterError}
       />
     </div>
   )

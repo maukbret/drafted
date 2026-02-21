@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getValidKlaviyoToken } from '@/lib/klaviyo'
+import { normalizeFooterHtmlForExport } from '@/lib/email/footer-normalize'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
@@ -251,9 +252,14 @@ function generateEmailHtml(frames: Array<{
 
   const frameRows = rows.join('\n')
 
-  const footerSection = footerHtml ? `
-        <!-- Footer -->
-${footerHtml}` : ''
+  const normalizedFooter = normalizeFooterHtmlForExport(footerHtml)
+  const footerSection = normalizedFooter ? `
+      <tr>
+        <td align="center" valign="top" style="padding: 0;">
+          <!-- Footer -->
+${normalizedFooter}
+        </td>
+      </tr>` : ''
 
   const safePreviewText = escapeHtml(previewText.trim())
   const previewBlock = safePreviewText ? `

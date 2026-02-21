@@ -152,7 +152,30 @@ export async function DELETE(
   }
 
   // Check if user can delete: owns the campaign OR owns the connection
-  const canDelete = campaign.user_id === user.id || ownConnectionIds.includes(campaign.klaviyo_connection_id)
+  let canDelete = campaign.user_id === user.id || ownConnectionIds.includes(campaign.klaviyo_connection_id)
+
+  // Also allow team admins to delete campaigns from their team members
+  if (!canDelete) {
+    const { data: adminMembership } = await supabase
+      .from('team_members')
+      .select('team_id')
+      .eq('user_id', user.id)
+      .eq('role', 'admin')
+      .single()
+
+    if (adminMembership) {
+      const { data: creatorMembership } = await supabase
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', campaign.user_id)
+        .eq('team_id', adminMembership.team_id)
+        .single()
+
+      if (creatorMembership) {
+        canDelete = true
+      }
+    }
+  }
 
   if (!canDelete) {
     return NextResponse.json({ error: 'Not authorized to delete this campaign' }, { status: 403 })

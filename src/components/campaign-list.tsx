@@ -77,7 +77,13 @@ interface CampaignListProps {
 
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline'
 type StatusFilter = 'all' | 'scheduled' | 'sent'
-type SortOption = 'updated_desc' | 'updated_asc' | 'name_asc' | 'name_desc'
+type SortOption =
+  | 'created_desc'
+  | 'created_asc'
+  | 'updated_desc'
+  | 'updated_asc'
+  | 'name_asc'
+  | 'name_desc'
 
 const COLUMN_WIDTH_CLASSES: Record<string, string> = {
   account: 'w-[160px] sm:w-[180px] lg:w-[200px]',
@@ -453,7 +459,7 @@ export function CampaignList({ campaigns, currentUserId }: CampaignListProps) {
   const [isDeleting, setIsDeleting] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all')
-  const [sortOption, setSortOption] = React.useState<SortOption>('updated_desc')
+  const [sortOption, setSortOption] = React.useState<SortOption>('created_desc')
   const router = useRouter()
 
   const columns = React.useMemo(
@@ -481,6 +487,14 @@ export function CampaignList({ campaigns, currentUserId }: CampaignListProps) {
     })
 
     const sorted = [...filtered]
+
+    if (sortOption === 'created_desc') {
+      sorted.sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at))
+    }
+
+    if (sortOption === 'created_asc') {
+      sorted.sort((a, b) => toTimestamp(a.created_at) - toTimestamp(b.created_at))
+    }
 
     if (sortOption === 'updated_desc') {
       sorted.sort((a, b) => toTimestamp(b.updated_at) - toTimestamp(a.updated_at))
@@ -572,6 +586,8 @@ export function CampaignList({ campaigns, currentUserId }: CampaignListProps) {
                 <SelectValue placeholder="Sort" />
               </SelectTrigger>
               <SelectContent align="end">
+                <SelectItem value="created_desc">Created on (newest)</SelectItem>
+                <SelectItem value="created_asc">Created on (oldest)</SelectItem>
                 <SelectItem value="updated_desc">Last updated (newest)</SelectItem>
                 <SelectItem value="updated_asc">Last updated (oldest)</SelectItem>
                 <SelectItem value="name_asc">Campaign name (A-Z)</SelectItem>

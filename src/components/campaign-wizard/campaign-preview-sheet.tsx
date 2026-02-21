@@ -16,6 +16,10 @@ interface CampaignPreviewSheetProps {
   subjectLine: string
   previewText: string
   frames: CampaignPreviewFrame[]
+  useCustomFooter: boolean
+  footerHtml: string | null
+  footerLoading: boolean
+  footerError: string | null
 }
 
 export function CampaignPreviewSheet({
@@ -24,6 +28,10 @@ export function CampaignPreviewSheet({
   subjectLine,
   previewText,
   frames,
+  useCustomFooter,
+  footerHtml,
+  footerLoading,
+  footerError,
 }: CampaignPreviewSheetProps) {
   const trimmedSubject = subjectLine.trim()
   const trimmedPreviewText = previewText.trim()
@@ -71,8 +79,22 @@ export function CampaignPreviewSheet({
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Email
               </p>
+              {useCustomFooter && (
+                <p className="text-xs text-muted-foreground">
+                  {footerLoading
+                    ? 'Loading saved footer...'
+                    : footerError
+                      ? 'Footer could not be loaded. This preview currently shows the email body only.'
+                      : footerHtml
+                        ? 'Saved footer included below.'
+                        : 'No saved footer found for this connection.'}
+                </p>
+              )}
               <div className="flex-1 min-h-0 rounded-md border overflow-y-auto bg-muted/50 p-3">
-                <CampaignEmailPreview frames={frames} />
+                <CampaignEmailPreview
+                  frames={frames}
+                  footerHtml={useCustomFooter && !footerLoading && !footerError ? footerHtml : null}
+                />
               </div>
             </div>
           </div>
