@@ -100,7 +100,9 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
   // If campaign is already sent, scheduled, or cancelled, show a read-only view
   if (campaign.status === 'sent' || campaign.status === 'scheduled' || campaign.status === 'cancelled') {
     // Get frames for email preview
-    const frames = project?.frames?.sort((a: any, b: any) => a.display_order - b.display_order) || []
+    const frames = project?.frames
+      ?.sort((a: any, b: any) => a.display_order - b.display_order)
+      .filter((frame: any) => Boolean(frame.klaviyo_image_url || frame.image_url)) || []
 
     // Get audience info
     const includedAudiences = campaign.included_audiences || []

@@ -37,7 +37,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: { accountName?: string; storeUrl?: string } = {}
+  let body: { accountName?: string; storeUrl?: string; isShared?: boolean } = {}
   try {
     body = await request.json()
   } catch {
@@ -56,15 +56,21 @@ export async function PATCH(
 
   const editableOwnerIds = await getEditableOwnerIds(supabase, user.id)
 
+  const updateData: Record<string, unknown> = {
+    account_name: accountName,
+    store_url: storeUrlValidation.normalized,
+  }
+
+  if (typeof body.isShared === 'boolean') {
+    updateData.is_shared = body.isShared
+  }
+
   const { data: connection, error } = await supabase
     .from('klaviyo_connections')
-    .update({
-      account_name: accountName,
-      store_url: storeUrlValidation.normalized,
-    })
+    .update(updateData)
     .eq('id', id)
     .in('user_id', editableOwnerIds)
-    .select('id, account_name, store_url')
+    .select('id, account_name, store_url, is_shared')
     .maybeSingle()
 
   if (error) {

@@ -56,9 +56,14 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack 
   const [imageNaturalWidth, setImageNaturalWidth] = useState(0)
   const [imageLoaded, setImageLoaded] = useState(false)
 
-  // Design height calculated from the natural image dimensions
-  // Images are exported at 2x scale, so design dimensions = natural / 2
-  const designHeight = imageNaturalHeight > 0 ? Math.round(imageNaturalHeight / 2) : 0
+  // Design height calculated from the natural image dimensions and actual export scale.
+  // Export scale is dynamic (target width based), so we cannot assume a fixed 2x ratio.
+  const exportScale = imageNaturalWidth > 0 && designWidth > 0
+    ? imageNaturalWidth / designWidth
+    : 1
+  const designHeight = imageNaturalHeight > 0 && exportScale > 0
+    ? Math.round(imageNaturalHeight / exportScale)
+    : 0
 
   const [slices, setSlices] = useState<SliceDefinition[]>([])
   const [activeSliceId, setActiveSliceId] = useState<string | null>(null)
@@ -345,7 +350,9 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack 
         img.src = imageUrl
       })
 
-      const scale2x = img.naturalWidth / designWidth
+      const imageScale = img.naturalWidth / designWidth
+      const leftWidth = Math.floor(img.naturalWidth / 2)
+      const rightWidth = img.naturalWidth - leftWidth
 
       // Crop and upload each slice
       const sliceData: Array<{
@@ -363,15 +370,21 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack 
         setProgressMessage(`Cropping section ${i + 1} of ${slices.length}...`)
 
         if (slice.type === 'full') {
+          const sourceTop = Math.round(slice.y * imageScale)
+          const sourceBottom = i === slices.length - 1
+            ? img.naturalHeight
+            : Math.round((slice.y + slice.height) * imageScale)
+          const sourceHeight = Math.max(1, sourceBottom - sourceTop)
+
           // Full-width: crop entire width
           const canvas = document.createElement('canvas')
-          canvas.width = Math.round(designWidth * scale2x)
-          canvas.height = Math.round(slice.height * scale2x)
+          canvas.width = img.naturalWidth
+          canvas.height = sourceHeight
           const ctx = canvas.getContext('2d')!
           ctx.drawImage(
             img,
-            0, Math.round(slice.y * scale2x),
-            Math.round(designWidth * scale2x), Math.round(slice.height * scale2x),
+            0, sourceTop,
+            img.naturalWidth, sourceHeight,
             0, 0,
             canvas.width, canvas.height
           )
@@ -389,20 +402,24 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack 
           })
           displayOrder++
         } else {
-          // Half-width: crop left half and right half separately
-          const halfWidth = Math.round((designWidth * scale2x) / 2)
+          const sourceTop = Math.round(slice.y * imageScale)
+          const sourceBottom = i === slices.length - 1
+            ? img.naturalHeight
+            : Math.round((slice.y + slice.height) * imageScale)
+          const sourceHeight = Math.max(1, sourceBottom - sourceTop)
 
+          // Half-width: crop left half and right half separately
           // Left column
           const leftCanvas = document.createElement('canvas')
-          leftCanvas.width = halfWidth
-          leftCanvas.height = Math.round(slice.height * scale2x)
+          leftCanvas.width = leftWidth
+          leftCanvas.height = sourceHeight
           const leftCtx = leftCanvas.getContext('2d')!
           leftCtx.drawImage(
             img,
-            0, Math.round(slice.y * scale2x),
-            halfWidth, Math.round(slice.height * scale2x),
+            0, sourceTop,
+            leftWidth, sourceHeight,
             0, 0,
-            halfWidth, leftCanvas.height
+            leftWidth, leftCanvas.height
           )
 
           setProgressMessage(`Uploading section ${i + 1} (left)...`)
@@ -420,15 +437,15 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack 
 
           // Right column
           const rightCanvas = document.createElement('canvas')
-          rightCanvas.width = halfWidth
-          rightCanvas.height = Math.round(slice.height * scale2x)
+          rightCanvas.width = rightWidth
+          rightCanvas.height = sourceHeight
           const rightCtx = rightCanvas.getContext('2d')!
           rightCtx.drawImage(
             img,
-            halfWidth, Math.round(slice.y * scale2x),
-            halfWidth, Math.round(slice.height * scale2x),
+            leftWidth, sourceTop,
+            rightWidth, sourceHeight,
             0, 0,
-            halfWidth, rightCanvas.height
+            rightWidth, rightCanvas.height
           )
 
           setProgressMessage(`Uploading section ${i + 1} (right)...`)
@@ -520,7 +537,7 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack 
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 bg-muted/50">
           <div
             ref={imageContainerRef}
-            className="max-w-[600px] mx-auto relative select-none"
+            className="max-w-[600px] mx-auto relative select-none overflow-hidden"
             style={{ cursor: draggingDivider !== null ? 'row-resize' : hoverIsValid ? 'crosshair' : undefined }}
             onMouseMove={handleImageMouseMove}
             onMouseLeave={handleImageMouseLeave}

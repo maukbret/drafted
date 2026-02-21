@@ -173,7 +173,7 @@ export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onC
         <div className="bg-muted px-4 py-3 border-b flex-shrink-0">
           <h2 className="font-medium">Email preview</h2>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 bg-muted/50">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-muted/50">
           <CampaignEmailPreview
             frames={frames}
             activeFrameId={activeFrameId}

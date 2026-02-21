@@ -34,7 +34,7 @@ export function startFigmaOAuth() {
   window.location.href = `https://www.figma.com/oauth?${params.toString()}`
 }
 
-export function startKlaviyoOAuth(accountName: string, storeUrl: string): string | null {
+export function startKlaviyoOAuth(accountName: string, storeUrl: string, isShared?: boolean): string | null {
   if (!accountName.trim()) {
     return 'Please enter an account name'
   }
@@ -46,6 +46,9 @@ export function startKlaviyoOAuth(accountName: string, storeUrl: string): string
 
   document.cookie = `klaviyo_account_name=${encodeURIComponent(accountName.trim())}; path=/; max-age=600; SameSite=Lax`
   document.cookie = `klaviyo_store_url=${encodeURIComponent(validation.normalized)}; path=/; max-age=600; SameSite=Lax`
+  if (isShared !== undefined) {
+    document.cookie = `klaviyo_is_shared=${isShared ? '1' : '0'}; path=/; max-age=600; SameSite=Lax`
+  }
 
   const codeVerifier = generateCodeVerifier()
   document.cookie = `klaviyo_code_verifier=${codeVerifier}; path=/; max-age=600; SameSite=Lax`

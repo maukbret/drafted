@@ -103,6 +103,8 @@ export async function GET(request: NextRequest) {
     const accountNameCookie = decodeCookieValue(cookieStore.get('klaviyo_account_name')?.value)
     const accountName = accountNameCookie || 'Klaviyo Account'
     const storeUrlCookie = decodeCookieValue(cookieStore.get('klaviyo_store_url')?.value)
+    const isSharedCookie = cookieStore.get('klaviyo_is_shared')?.value
+    const isShared = isSharedCookie === '1'
     const storeUrlValidation = validateStoreUrl(storeUrlCookie)
 
     if (!storeUrlValidation.valid) {
@@ -173,6 +175,7 @@ export async function GET(request: NextRequest) {
         klaviyo_account_id: klaviyoAccountId,
         account_name: accountName,
         store_url: storeUrlValidation.normalized,
+        is_shared: isShared,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
@@ -214,6 +217,7 @@ export async function GET(request: NextRequest) {
     response.cookies.delete('klaviyo_oauth_state')
     response.cookies.delete('klaviyo_account_name')
     response.cookies.delete('klaviyo_store_url')
+    response.cookies.delete('klaviyo_is_shared')
 
     return response
   } catch (err) {

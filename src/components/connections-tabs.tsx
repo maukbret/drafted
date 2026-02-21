@@ -4,6 +4,13 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRealtimeSubscription } from '@/hooks/use-realtime-subscription'
 import DOMPurify from 'dompurify'
+import type { ColumnDef } from '@tanstack/react-table'
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  useReactTable,
+} from '@tanstack/react-table'
 import { FooterSetup } from './footer-setup'
 import { DefaultAudienceSetup } from './default-audience-setup'
 import { UpgradePrompt } from './upgrade-prompt'
@@ -12,10 +19,26 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,11 +53,12 @@ import { cn } from '@/lib/utils'
 import { normalizeStoreUrl, validateStoreUrl } from '@/lib/store-url'
 import { startFigmaOAuth as startFigmaOAuthShared, startKlaviyoOAuth as startKlaviyoOAuthShared } from '@/lib/oauth'
 import { BrandIcon } from '@/components/brand-icon'
-import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, ChevronDown, MoreVertical, Plus, Users, Settings } from 'lucide-react'
+import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, MoreVertical, Plus, Users, Settings, Share2, Search } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
@@ -46,8 +70,10 @@ interface KlaviyoConnection {
   hasFooter: boolean
   hasDefaultAudience: boolean
   created_at: string
-  isShared?: boolean
-  owner_name?: string
+  user_id: string
+  is_shared: boolean
+  isOwn: boolean
+  ownerName: string
 }
 
 interface FigmaConnection {
@@ -59,8 +85,7 @@ interface FigmaConnection {
 type SubscriptionTier = 'starter' | 'advanced' | 'pro'
 
 interface ConnectionsTabsProps {
-  klaviyoConnections: KlaviyoConnection[]
-  teamConnections?: KlaviyoConnection[]
+  connections: KlaviyoConnection[]
   figmaConnection: FigmaConnection | null
   connectionLimit: number
   currentTier: string | null
@@ -70,9 +95,34 @@ interface ConnectionsTabsProps {
 
 type ConnectionStatus = 'active' | 'expired' | 'error' | 'checking' | 'unknown'
 
+type SortOption =
+  | 'created_desc'
+  | 'created_asc'
+  | 'name_asc'
+  | 'name_desc'
+  | 'owner_asc'
+  | 'owner_desc'
+
+const COLUMN_WIDTH_CLASSES: Record<string, string> = {
+  select: 'w-[40px]',
+  name: 'w-[180px] sm:w-[220px] lg:w-[260px]',
+  owner: 'w-[100px] sm:w-[120px] lg:w-[140px]',
+  status: 'w-[90px]',
+  footer: 'w-[70px]',
+  audience: 'w-[80px]',
+  shared: 'w-[80px]',
+  created: 'w-[100px] sm:w-[110px]',
+  actions: 'w-[56px] sm:w-[64px]',
+}
+
+function toTimestamp(value: unknown) {
+  const date = new Date(String(value ?? ''))
+  const timestamp = date.getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
 export function ConnectionsTabs({
-  klaviyoConnections,
-  teamConnections = [],
+  connections,
   figmaConnection,
   connectionLimit,
   currentTier,
@@ -83,8 +133,12 @@ export function ConnectionsTabs({
   const [storeUrl, setStoreUrl] = useState('')
   const [addFormError, setAddFormError] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [shareOnAdd, setShareOnAdd] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'klaviyo' | 'figma'; id: string; name: string } | null>(null)
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  const [isBulkSharing, setIsBulkSharing] = useState(false)
   const [footerSetupConnection, setFooterSetupConnection] = useState<KlaviyoConnection | null>(null)
   const [defaultAudienceConnection, setDefaultAudienceConnection] = useState<KlaviyoConnection | null>(null)
   const [footerPreviewConnection, setFooterPreviewConnection] = useState<KlaviyoConnection | null>(null)
@@ -98,13 +152,15 @@ export function ConnectionsTabs({
   const [showLimitError, setShowLimitError] = useState(false)
   const [isPostOAuthSetup, setIsPostOAuthSetup] = useState(false)
   const [activeTab, setActiveTab] = useState('klaviyo')
-  const [ownConnectionsOpen, setOwnConnectionsOpen] = useState(() => klaviyoConnections.length > 0)
-  const [teamConnectionsOpen, setTeamConnectionsOpen] = useState(() => teamConnections.length > 0)
   const [settingsConnection, setSettingsConnection] = useState<KlaviyoConnection | null>(null)
   const [settingsAccountName, setSettingsAccountName] = useState('')
   const [settingsStoreUrl, setSettingsStoreUrl] = useState('')
+  const [settingsIsShared, setSettingsIsShared] = useState(false)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [isSavingSettings, setIsSavingSettings] = useState(false)
+  const [sortOption, setSortOption] = useState<SortOption>('created_desc')
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({})
+  const [globalFilter, setGlobalFilter] = useState('')
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -125,7 +181,6 @@ export function ConnectionsTabs({
     const error = searchParams.get('error')
     if (error === 'limit_reached') {
       setShowLimitError(true)
-      // Clean up URL
       const url = new URL(window.location.href)
       url.searchParams.delete('error')
       window.history.replaceState({}, '', url.toString())
@@ -145,19 +200,18 @@ export function ConnectionsTabs({
     const newConnectionId = searchParams.get('newConnectionId')
 
     if (success === 'klaviyo_connected' && newConnectionId) {
-      const matchingConnection = klaviyoConnections.find(c => c.id === newConnectionId)
+      const matchingConnection = connections.find(c => c.id === newConnectionId)
       if (matchingConnection && !matchingConnection.hasFooter) {
         setFooterSetupConnection(matchingConnection)
         setIsPostOAuthSetup(true)
       }
 
-      // Clean up URL params
       const url = new URL(window.location.href)
       url.searchParams.delete('success')
       url.searchParams.delete('newConnectionId')
       window.history.replaceState({}, '', url.toString())
     }
-  }, [searchParams, klaviyoConnections])
+  }, [searchParams, connections])
 
   useEffect(() => {
     if (!footerPreviewConnection) return
@@ -195,15 +249,15 @@ export function ConnectionsTabs({
     }
   }, [footerPreviewConnection])
 
-  const connectionCount = klaviyoConnections.length
-  const isAtLimit = connectionCount >= connectionLimit
+  const ownConnectionCount = connections.filter(c => c.isOwn).length
+  const isAtLimit = ownConnectionCount >= connectionLimit
   const canAddConnection = connectionLimit > 0 && !isAtLimit
 
   const refreshConnectionStatuses = async () => {
     setIsRefreshing(true)
 
     const checkingStatuses: Record<string, ConnectionStatus> = {}
-    klaviyoConnections.forEach(conn => {
+    connections.forEach(conn => {
       checkingStatuses[conn.id] = 'checking'
     })
     if (figmaConnection) {
@@ -213,7 +267,7 @@ export function ConnectionsTabs({
 
     try {
       const [klaviyoResponse, figmaResponse] = await Promise.all([
-        klaviyoConnections.length > 0 ? fetch('/api/connections/klaviyo/status') : Promise.resolve(null),
+        connections.length > 0 ? fetch('/api/connections/klaviyo/status') : Promise.resolve(null),
         figmaConnection ? fetch('/api/connections/figma/status') : Promise.resolve(null),
       ])
 
@@ -242,7 +296,7 @@ export function ConnectionsTabs({
   }
 
   const startKlaviyoOAuth = () => {
-    const error = startKlaviyoOAuthShared(accountName, storeUrl)
+    const error = startKlaviyoOAuthShared(accountName, storeUrl, isTeamAdmin ? shareOnAdd : undefined)
     if (error) {
       setAddFormError(error)
     } else {
@@ -278,6 +332,79 @@ export function ConnectionsTabs({
       alert('Failed to remove connection')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const sortedConnections = useMemo(() => {
+    const sorted = [...connections]
+    if (sortOption === 'created_desc') sorted.sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at))
+    if (sortOption === 'created_asc') sorted.sort((a, b) => toTimestamp(a.created_at) - toTimestamp(b.created_at))
+    if (sortOption === 'name_asc') sorted.sort((a, b) => (a.account_name || '').localeCompare(b.account_name || ''))
+    if (sortOption === 'name_desc') sorted.sort((a, b) => (b.account_name || '').localeCompare(a.account_name || ''))
+    if (sortOption === 'owner_asc') sorted.sort((a, b) => a.ownerName.localeCompare(b.ownerName))
+    if (sortOption === 'owner_desc') sorted.sort((a, b) => b.ownerName.localeCompare(a.ownerName))
+    return sorted
+  }, [connections, sortOption])
+
+  const selectedConnectionIds = useMemo(() => {
+    return Object.keys(rowSelection).filter(key => rowSelection[key]).map(idx => {
+      const connection = sortedConnections[parseInt(idx)]
+      return connection?.id
+    }).filter(Boolean) as string[]
+  }, [rowSelection, sortedConnections])
+
+  const selectedOwnIds = useMemo(() => {
+    return selectedConnectionIds.filter(id => {
+      const conn = connections.find(c => c.id === id)
+      return conn?.isOwn
+    })
+  }, [selectedConnectionIds, connections])
+
+  const handleBulkDelete = async () => {
+    if (selectedConnectionIds.length === 0) return
+    setIsBulkDeleting(true)
+
+    try {
+      const response = await fetch('/api/connections/klaviyo/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', connectionIds: selectedConnectionIds }),
+      })
+
+      if (!response.ok) throw new Error('Failed to delete')
+
+      setRowSelection({})
+      setBulkDeleteConfirm(false)
+      router.refresh()
+    } catch {
+      alert('Failed to delete connections')
+    } finally {
+      setIsBulkDeleting(false)
+    }
+  }
+
+  const handleBulkShare = async (share: boolean) => {
+    if (selectedOwnIds.length === 0) return
+    setIsBulkSharing(true)
+
+    try {
+      const response = await fetch('/api/connections/klaviyo/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: share ? 'share' : 'unshare',
+          connectionIds: selectedOwnIds,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to update sharing')
+
+      setRowSelection({})
+      router.refresh()
+    } catch {
+      alert('Failed to update sharing')
+    } finally {
+      setIsBulkSharing(false)
     }
   }
 
@@ -320,38 +447,6 @@ export function ConnectionsTabs({
     )
   }
 
-  const renderFooterStatus = (hasFooter: boolean) => (
-    <div className="flex items-center gap-2 status-badge w-fit">
-      {hasFooter ? (
-        <>
-          <span className="w-2 h-2 bg-green-500 rounded-full" />
-          <span className="text-sm text-muted-foreground">Footer configured</span>
-        </>
-      ) : (
-        <>
-          <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
-          <span className="text-sm text-muted-foreground">No footer set up</span>
-        </>
-      )}
-    </div>
-  )
-
-  const renderDefaultAudienceStatus = (hasDefaultAudience: boolean) => (
-    <div className="flex items-center gap-2 status-badge w-fit">
-      {hasDefaultAudience ? (
-        <>
-          <span className="w-2 h-2 bg-blue-500 rounded-full" />
-          <span className="text-sm text-muted-foreground">Default audience configured</span>
-        </>
-      ) : (
-        <>
-          <span className="w-2 h-2 bg-muted-foreground/30 rounded-full" />
-          <span className="text-sm text-muted-foreground">No default audience</span>
-        </>
-      )}
-    </div>
-  )
-
   const sanitizeHtml = (html: string) => {
     return DOMPurify.sanitize(html, {
       ADD_TAGS: ['style'],
@@ -363,6 +458,7 @@ export function ConnectionsTabs({
     setSettingsConnection(connection)
     setSettingsAccountName(connection.account_name || '')
     setSettingsStoreUrl(connection.store_url || '')
+    setSettingsIsShared(connection.is_shared)
     setSettingsError(null)
   }
 
@@ -370,6 +466,7 @@ export function ConnectionsTabs({
     setSettingsConnection(null)
     setSettingsAccountName('')
     setSettingsStoreUrl('')
+    setSettingsIsShared(false)
     setSettingsError(null)
   }
 
@@ -392,13 +489,20 @@ export function ConnectionsTabs({
     setSettingsError(null)
 
     try {
+      const body: Record<string, unknown> = {
+        accountName: nextAccountName,
+        storeUrl: storeValidation.normalized,
+      }
+
+      // Only include isShared if this is the user's own connection and they're an admin
+      if (settingsConnection.isOwn && isTeamAdmin) {
+        body.isShared = settingsIsShared
+      }
+
       const response = await fetch(`/api/connections/klaviyo/${settingsConnection.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accountName: nextAccountName,
-          storeUrl: storeValidation.normalized,
-        }),
+        body: JSON.stringify(body),
       })
 
       const data = await response.json()
@@ -415,6 +519,226 @@ export function ConnectionsTabs({
     }
   }
 
+  const columns = useMemo<ColumnDef<KlaviyoConnection>[]>(() => [
+    {
+      id: 'select',
+      enableSorting: false,
+      header: ({ table }) => (
+        <Checkbox
+          checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && 'indeterminate')}
+          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+          aria-label="Select all"
+        />
+      ),
+      cell: ({ row }) => {
+        const conn = row.original
+        const canSelect = conn.isOwn || isTeamAdmin
+        return (
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            disabled={!canSelect}
+            aria-label="Select row"
+          />
+        )
+      },
+    },
+    {
+      id: 'name',
+      accessorKey: 'account_name',
+      enableSorting: false,
+      header: () => <span>Account name</span>,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2 text-sm">
+          <BrandIcon
+            accountName={row.original.account_name}
+            storeUrl={row.original.store_url}
+            className="h-4 w-4 account-favicon flex-shrink-0"
+          />
+          <span className="truncate text-muted-foreground font-medium">
+            {row.original.account_name || 'Unnamed account'}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: 'owner',
+      accessorKey: 'ownerName',
+      enableSorting: false,
+      header: () => <span>Owner</span>,
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.ownerName}
+        </span>
+      ),
+    },
+    {
+      id: 'status',
+      enableSorting: false,
+      header: () => <span>Status</span>,
+      cell: ({ row }) => getStatusBadge(row.original.id) || (
+        <span className="text-xs text-muted-foreground">—</span>
+      ),
+    },
+    {
+      id: 'footer',
+      enableSorting: false,
+      header: () => <span>Footer</span>,
+      cell: ({ row }) => (
+        <span className={cn(
+          'inline-block w-2 h-2 rounded-full',
+          row.original.hasFooter ? 'bg-green-500' : 'bg-muted-foreground/30'
+        )} />
+      ),
+    },
+    {
+      id: 'audience',
+      enableSorting: false,
+      header: () => <span>Audience</span>,
+      cell: ({ row }) => (
+        <span className={cn(
+          'inline-block w-2 h-2 rounded-full',
+          row.original.hasDefaultAudience ? 'bg-blue-500' : 'bg-muted-foreground/30'
+        )} />
+      ),
+    },
+    {
+      id: 'shared',
+      enableSorting: false,
+      header: () => <span>Shared</span>,
+      cell: ({ row }) => {
+        if (!row.original.isOwn) {
+          return row.original.is_shared ? (
+            <Badge variant="secondary" className="text-xs">Shared</Badge>
+          ) : null
+        }
+        return row.original.is_shared ? (
+          <Badge variant="secondary" className="text-xs">Shared</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">Private</span>
+        )
+      },
+    },
+    {
+      id: 'created',
+      accessorKey: 'created_at',
+      enableSorting: false,
+      header: () => <span>Created</span>,
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {new Date(row.original.created_at).toLocaleDateString('en-GB')}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      enableSorting: false,
+      header: () => <span>Actions</span>,
+      cell: ({ row }) => {
+        const conn = row.original
+        const canEdit = conn.isOwn || isTeamAdmin
+        return (
+          <div className="flex items-center justify-center">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label="Open connection actions"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => openSettingsSheet(conn)}>
+                    <Settings className="h-4 w-4 mr-1.5" />
+                    General settings
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  onClick={() => setFooterPreviewConnection(conn)}
+                  disabled={!conn.hasFooter}
+                >
+                  <Eye className="h-4 w-4 mr-1.5" />
+                  View footer
+                </DropdownMenuItem>
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => setFooterSetupConnection(conn)}>
+                    <Pencil className="h-4 w-4 mr-1.5" />
+                    {conn.hasFooter ? 'Update footer' : 'Set up footer'}
+                  </DropdownMenuItem>
+                )}
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => setDefaultAudienceConnection(conn)}>
+                    <Users className="h-4 w-4 mr-1.5" />
+                    {conn.hasDefaultAudience ? 'Edit default audience' : 'Set default audience'}
+                  </DropdownMenuItem>
+                )}
+                {conn.isOwn && isTeamAdmin && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        await fetch(`/api/connections/klaviyo/${conn.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            accountName: conn.account_name || 'Unnamed account',
+                            storeUrl: conn.store_url || '',
+                            isShared: !conn.is_shared,
+                          }),
+                        })
+                        router.refresh()
+                      }}
+                    >
+                      <Share2 className="h-4 w-4 mr-1.5" />
+                      {conn.is_shared ? 'Unshare with team' : 'Share with team'}
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {canEdit && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => confirmDelete('klaviyo', conn.id, conn.account_name || 'Unnamed account')}
+                      disabled={deletingId === conn.id}
+                      className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4 mr-1.5" />
+                      {deletingId === conn.id ? 'Removing...' : 'Delete connection'}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )
+      },
+    },
+  ], [connectionStatuses, isTeamAdmin, deletingId, router])
+
+  const table = useReactTable({
+    data: sortedConnections,
+    columns,
+    state: {
+      rowSelection,
+      globalFilter,
+    },
+    onRowSelectionChange: setRowSelection,
+    onGlobalFilterChange: setGlobalFilter,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    enableRowSelection: (row) => row.original.isOwn || isTeamAdmin,
+    globalFilterFn: (row, _columnId, filterValue) => {
+      const name = (row.original.account_name || '').toLowerCase()
+      return name.includes(filterValue.toLowerCase())
+    },
+  })
+
+  const selectedCount = Object.values(rowSelection).filter(Boolean).length
+
   return (
     <div>
       {/* Page header */}
@@ -427,7 +751,7 @@ export function ConnectionsTabs({
         </div>
 
         <div className="flex items-center gap-2">
-          {(klaviyoConnections.length > 0 || figmaConnection) && (
+          {(connections.length > 0 || figmaConnection) && (
             <Button
               variant="outline"
               size="icon"
@@ -466,7 +790,7 @@ export function ConnectionsTabs({
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="mb-6">
           <TabsTrigger value="klaviyo">
-            Klaviyo ({klaviyoConnections.length + teamConnections.length})
+            Klaviyo ({connections.length})
           </TabsTrigger>
           <TabsTrigger value="figma">
             Figma ({figmaConnection ? 1 : 0})
@@ -474,13 +798,13 @@ export function ConnectionsTabs({
         </TabsList>
 
         {/* Klaviyo tab content */}
-        <TabsContent value="klaviyo" className="space-y-6">
+        <TabsContent value="klaviyo" className="space-y-4">
           {/* Connection limit indicator */}
           {connectionLimit > 0 && (
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">
-                  Klaviyo accounts: <span className="font-medium text-foreground">{connectionCount} / {connectionLimit}</span>
+                  Klaviyo accounts: <span className="font-medium text-foreground">{ownConnectionCount} / {connectionLimit}</span>
                 </span>
                 {isAtLimit && currentTier !== 'pro' && (
                   <Badge variant="outline" className="text-amber-600 border-amber-600">
@@ -529,234 +853,139 @@ export function ConnectionsTabs({
             </div>
           )}
 
-          {/* User's own connections */}
-          {klaviyoConnections.length > 0 && (
-            <Collapsible
-              open={ownConnectionsOpen}
-              onOpenChange={setOwnConnectionsOpen}
-              className="space-y-4"
-            >
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" className="w-full justify-between px-2">
+          {/* Search + Sort / Bulk actions */}
+          {connections.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative w-full sm:max-w-md">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={globalFilter}
+                    onChange={(e) => setGlobalFilter(e.target.value)}
+                    placeholder="Search by account name"
+                    className="pl-9"
+                  />
+                </div>
+
+                {selectedCount > 0 ? (
                   <div className="flex items-center gap-2">
-                    <ChevronDown
-                      className={cn(
-                        'h-4 w-4 transition-transform',
-                        ownConnectionsOpen ? 'rotate-0' : '-rotate-90'
-                      )}
-                    />
-                    <span className="text-sm font-medium text-muted-foreground">Your connections</span>
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      {selectedCount} selected
+                    </span>
+                    {isTeamAdmin && selectedOwnIds.length > 0 && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleBulkShare(true)}
+                          disabled={isBulkSharing}
+                        >
+                          <Share2 className="h-3.5 w-3.5 mr-1.5" />
+                          Share
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleBulkShare(false)}
+                          disabled={isBulkSharing}
+                        >
+                          Unshare
+                        </Button>
+                      </>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setBulkDeleteConfirm(true)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                      Delete
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setRowSelection({})}
+                    >
+                      Clear
+                    </Button>
                   </div>
-                  <Badge variant="secondary">{klaviyoConnections.length}</Badge>
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-4 pt-2">
-                {klaviyoConnections.map((conn) => (
-                  <Card key={conn.id}>
-                    <CardContent className="px-5 py-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-2">
-                                <BrandIcon
-                                accountName={conn.account_name}
-                                storeUrl={conn.store_url}
-                                className="h-6 w-6 account-favicon"
-                              />
-                              <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
-                              </div>
-                              
-                              <span className="text-xs text-muted-foreground">
-                                Added {new Date(conn.created_at).toLocaleDateString('en-GB')}
-                              </span>
-                            </div>
-                            {getStatusBadge(conn.id)}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-4">
-                            {renderFooterStatus(conn.hasFooter)}
-                            {renderDefaultAudienceStatus(conn.hasDefaultAudience)}
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-end gap-2">
-                          {!conn.hasFooter && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => setFooterSetupConnection(conn)}
+                ) : (
+                  <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
+                    <SelectTrigger className="w-full sm:w-[260px]">
+                      <SelectValue placeholder="Sort" />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                      <SelectItem value="created_desc">Created on (newest)</SelectItem>
+                      <SelectItem value="created_asc">Created on (oldest)</SelectItem>
+                      <SelectItem value="name_asc">Account name (A-Z)</SelectItem>
+                      <SelectItem value="name_desc">Account name (Z-A)</SelectItem>
+                      <SelectItem value="owner_asc">Owner (A-Z)</SelectItem>
+                      <SelectItem value="owner_desc">Owner (Z-A)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* Data table */}
+              <div className="rounded-md border p-2">
+                <Table className="table-fixed min-w-[760px] sm:min-w-[860px] lg:min-w-[980px]">
+                  <TableHeader>
+                    {table.getHeaderGroups().map((headerGroup) => (
+                      <TableRow key={headerGroup.id}>
+                        {headerGroup.headers.map((header) => (
+                          <TableHead
+                            key={header.id}
+                            className={cn(
+                              'bg-muted/35 first:rounded-l-md last:rounded-r-md',
+                              COLUMN_WIDTH_CLASSES[header.id] ?? ''
+                            )}
+                          >
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(header.column.columnDef.header, header.getContext())}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableHeader>
+
+                  <TableBody>
+                    {table.getRowModel().rows?.length ? (
+                      table.getRowModel().rows.map((row) => (
+                        <TableRow key={row.id} className="h-[56px]">
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell
+                              key={cell.id}
+                              className={cn(COLUMN_WIDTH_CLASSES[cell.column.id] ?? '')}
                             >
-                              <Pencil className="h-4 w-4 mr-1.5" />
-                              Set up footer
-                            </Button>
-                          )}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                aria-label="Open connection actions"
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => openSettingsSheet(conn)}
-                              >
-                                <Settings className="h-4 w-4 mr-1.5" />
-                                General settings
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => setFooterPreviewConnection(conn)}
-                                disabled={!conn.hasFooter}
-                              >
-                                <Eye className="h-4 w-4 mr-1.5" />
-                                View footer
-                              </DropdownMenuItem>
-                              {conn.hasFooter && (
-                                <DropdownMenuItem
-                                  onClick={() => setFooterSetupConnection(conn)}
-                                >
-                                  <Pencil className="h-4 w-4 mr-1.5" />
-                                  Update footer
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                onClick={() => setDefaultAudienceConnection(conn)}
-                              >
-                                <Users className="h-4 w-4 mr-1.5" />
-                                {conn.hasDefaultAudience ? 'Edit default audience' : 'Set default audience'}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => confirmDelete('klaviyo', conn.id, conn.account_name || 'Unnamed account')}
-                                disabled={deletingId === conn.id}
-                                className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                              >
-                                <Trash2 className="h-4 w-4 mr-1.5" />
-                                {deletingId === conn.id ? 'Removing...' : 'Delete connection'}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </CollapsibleContent>
-            </Collapsible>
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                          No connections found.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
           )}
 
-          {/* Team shared connections (read-only) */}
-          {teamConnections.length > 0 && (
-            <Collapsible
-              open={teamConnectionsOpen}
-              onOpenChange={setTeamConnectionsOpen}
-              className="space-y-4"
-            >
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" className="w-full justify-between px-2">
-                  <div className="flex items-center gap-2">
-                    <ChevronDown
-                      className={cn(
-                        'h-4 w-4 transition-transform',
-                        teamConnectionsOpen ? 'rotate-0' : '-rotate-90'
-                      )}
-                    />
-                    <span className="text-sm font-medium text-muted-foreground">Team connections</span>
-                  </div>
-                  <Badge variant="secondary">{teamConnections.length}</Badge>
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-4 pt-2">
-                {teamConnections.map((conn) => (
-                  <Card key={conn.id} className="border-dashed">
-                    <CardContent className="px-5 py-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2">
-                              <BrandIcon
-                                accountName={conn.account_name}
-                                storeUrl={conn.store_url}
-                                className="h-6 w-6 account-favicon"
-                              />
-                              <p className="font-medium">{conn.account_name || 'Unnamed account'}</p>
-                              <Badge variant="secondary" className="text-xs">Shared</Badge>
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-4">
-                            {renderFooterStatus(conn.hasFooter)}
-                            {renderDefaultAudienceStatus(conn.hasDefaultAudience)}
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-end gap-2">
-                          {isTeamAdmin && !conn.hasFooter && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => setFooterSetupConnection(conn)}
-                            >
-                              <Pencil className="h-4 w-4 mr-1.5" />
-                              Set up footer
-                            </Button>
-                          )}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                aria-label="Open connection actions"
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {isTeamAdmin && (
-                                <DropdownMenuItem
-                                  onClick={() => openSettingsSheet(conn)}
-                                >
-                                  <Settings className="h-4 w-4 mr-1.5" />
-                                  General settings
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                onClick={() => setFooterPreviewConnection(conn)}
-                                disabled={!conn.hasFooter}
-                              >
-                                <Eye className="h-4 w-4 mr-1.5" />
-                                View footer
-                              </DropdownMenuItem>
-                              {isTeamAdmin && conn.hasFooter && (
-                                <DropdownMenuItem
-                                  onClick={() => setFooterSetupConnection(conn)}
-                                >
-                                  <Pencil className="h-4 w-4 mr-1.5" />
-                                  Update footer
-                                </DropdownMenuItem>
-                              )}
-                              {isTeamAdmin && (
-                                <DropdownMenuItem
-                                  onClick={() => confirmDelete('klaviyo', conn.id, conn.account_name || 'Unnamed account')}
-                                  disabled={deletingId === conn.id}
-                                  className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                                >
-                                  <Trash2 className="h-4 w-4 mr-1.5" />
-                                  {deletingId === conn.id ? 'Removing...' : 'Delete connection'}
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </CollapsibleContent>
-            </Collapsible>
+          {connections.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-sm text-muted-foreground">
+                No Klaviyo accounts connected. Click the button above to get started.
+              </p>
+            </div>
           )}
 
+          {/* Add connection dialog */}
           <Dialog
             open={showAddForm}
             onOpenChange={(open) => {
@@ -765,6 +994,7 @@ export function ConnectionsTabs({
                 setAccountName('')
                 setStoreUrl('')
                 setAddFormError(null)
+                setShareOnAdd(true)
               }
             }}
           >
@@ -812,6 +1042,21 @@ export function ConnectionsTabs({
                     We use this for link placeholders and your brand favicon.
                   </p>
                 </div>
+                {isTeamAdmin && (
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="share-toggle" className="text-sm font-medium">Share with team</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Make this connection available to all team members
+                      </p>
+                    </div>
+                    <Switch
+                      id="share-toggle"
+                      checked={shareOnAdd}
+                      onCheckedChange={setShareOnAdd}
+                    />
+                  </div>
+                )}
                 {addFormError && (
                   <p className="text-sm text-destructive">{addFormError}</p>
                 )}
@@ -829,6 +1074,7 @@ export function ConnectionsTabs({
                       setAccountName('')
                       setStoreUrl('')
                       setAddFormError(null)
+                      setShareOnAdd(true)
                     }}
                   >
                     Cancel
@@ -894,6 +1140,7 @@ export function ConnectionsTabs({
         </TabsContent>
       </Tabs>
 
+      {/* Settings sheet */}
       <Sheet
         open={!!settingsConnection}
         onOpenChange={(open) => {
@@ -943,6 +1190,23 @@ export function ConnectionsTabs({
                 disabled={isSavingSettings}
               />
             </div>
+
+            {settingsConnection?.isOwn && isTeamAdmin && (
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="settings-share-toggle" className="text-sm font-medium">Share with team</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Make this connection visible to team members
+                  </p>
+                </div>
+                <Switch
+                  id="settings-share-toggle"
+                  checked={settingsIsShared}
+                  onCheckedChange={setSettingsIsShared}
+                  disabled={isSavingSettings}
+                />
+              </div>
+            )}
 
             {settingsError && (
               <p className="text-sm text-destructive">{settingsError}</p>
@@ -1053,7 +1317,7 @@ export function ConnectionsTabs({
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirmation modal */}
+      {/* Single delete confirmation */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && !deletingId && setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1087,13 +1351,47 @@ export function ConnectionsTabs({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Bulk delete confirmation */}
+      <AlertDialog open={bulkDeleteConfirm} onOpenChange={(open) => !open && !isBulkDeleting && setBulkDeleteConfirm(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="h-6 w-6 text-destructive" />
+              </div>
+              <div>
+                <AlertDialogTitle>Remove {selectedConnectionIds.length} connection{selectedConnectionIds.length !== 1 ? 's' : ''}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone
+                </AlertDialogDescription>
+              </div>
+            </div>
+          </AlertDialogHeader>
+
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to remove {selectedConnectionIds.length} connection{selectedConnectionIds.length !== 1 ? 's' : ''}? You will need to reconnect these accounts to use them again.
+          </p>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={isBulkDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isBulkDeleting ? 'Removing...' : 'Remove'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Upgrade prompt modal */}
       <UpgradePrompt
         open={showUpgradePrompt}
         onOpenChange={setShowUpgradePrompt}
         currentTier={currentTier as SubscriptionTier | null}
         currentLimit={connectionLimit}
-        currentCount={connectionCount}
+        currentCount={ownConnectionCount}
       />
     </div>
   )

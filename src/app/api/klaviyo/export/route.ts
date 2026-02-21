@@ -81,7 +81,17 @@ export async function POST(request: NextRequest) {
     // Step 1: Upload images to Klaviyo and get hosted URLs
     const uploadedFrames = []
     for (const frame of frames) {
-      if (!frame.image_url) continue
+      const sourceImageUrl = normalizeImageUrl(frame.image_url)
+      const existingKlaviyoImageUrl = normalizeImageUrl(frame.klaviyo_image_url)
+      const fallbackImageUrl = existingKlaviyoImageUrl || sourceImageUrl
+      if (!fallbackImageUrl) continue
+      if (existingKlaviyoImageUrl) {
+        uploadedFrames.push({
+          ...frame,
+          klaviyo_image_url: existingKlaviyoImageUrl,
+        })
+        continue
+      }
 
       try {
         const imageResponse = await fetch('https://a.klaviyo.com/api/images', {
@@ -97,7 +107,7 @@ export async function POST(request: NextRequest) {
               type: 'image',
               attributes: {
                 name: frame.name,
-                import_from_url: frame.image_url,
+                import_from_url: sourceImageUrl,
                 hidden: false,
               },
             },
@@ -110,11 +120,11 @@ export async function POST(request: NextRequest) {
           // Continue with original URL if upload fails
           uploadedFrames.push({
             ...frame,
-            klaviyo_image_url: frame.image_url,
+            klaviyo_image_url: fallbackImageUrl,
           })
         } else {
           const imageData = await imageResponse.json()
-          const klaviyoImageUrl = imageData.data?.attributes?.image_url || frame.image_url
+          const klaviyoImageUrl = normalizeImageUrl(imageData.data?.attributes?.image_url) || fallbackImageUrl
           
           uploadedFrames.push({
             ...frame,
@@ -131,7 +141,7 @@ export async function POST(request: NextRequest) {
         console.error('Image upload error:', err)
         uploadedFrames.push({
           ...frame,
-          klaviyo_image_url: frame.image_url,
+          klaviyo_image_url: fallbackImageUrl,
         })
       }
     }
@@ -202,14 +212,20 @@ function generateEmailHtml(frames: Array<{
   while (i < frames.length) {
     const current = frames[i]
     const next = frames[i + 1]
+    const currentImageUrl = normalizeImageUrl(current.klaviyo_image_url)
+    if (!currentImageUrl) {
+      i += 1
+      continue
+    }
+    const nextImageUrl = next ? normalizeImageUrl(next.klaviyo_image_url) : null
 
     const currentIsHalf = (current.width ?? 600) <= HALF_WIDTH_THRESHOLD
-    const nextIsHalf = next && (next.width ?? 600) <= HALF_WIDTH_THRESHOLD
+    const nextIsHalf = !!next && !!nextImageUrl && (next.width ?? 600) <= HALF_WIDTH_THRESHOLD
 
     if (currentIsHalf && nextIsHalf) {
       // Two-column row using nested table for reliable rendering
-      const leftImg = `<img src="${current.klaviyo_image_url}" alt="${current.name}" width="300" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
-      const rightImg = `<img src="${next.klaviyo_image_url}" alt="${next.name}" width="300" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+      const leftImg = `<img src="${currentImageUrl}" alt="${current.name}" width="300" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+      const rightImg = `<img src="${nextImageUrl}" alt="${next.name}" width="300" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
 
       const leftContent = current.link_url
         ? `<a href="${current.link_url}" target="_blank" style="display: block; text-decoration: none;">${leftImg}</a>`
@@ -235,7 +251,7 @@ function generateEmailHtml(frames: Array<{
       i += 2
     } else {
       // Single full-width frame
-      const imgTag = `<img src="${current.klaviyo_image_url}" alt="${current.name}" width="600" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
+      const imgTag = `<img src="${currentImageUrl}" alt="${current.name}" width="600" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
 
       const content = current.link_url
         ? `<a href="${current.link_url}" target="_blank" style="display: block; text-decoration: none;">${imgTag}</a>`
@@ -342,4 +358,11 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+function normalizeImageUrl(url: string | null | undefined): string | null {
+  if (typeof url !== 'string') return null
+  const normalized = url.trim()
+  if (!normalized || normalized === 'null' || normalized === 'undefined') return null
+  return normalized
 }
