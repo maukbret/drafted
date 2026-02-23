@@ -15,8 +15,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { CampaignEmailPreview } from './campaign-email-preview'
-import { Trash2 } from 'lucide-react'
+import { Copy, Globe, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Frame {
@@ -78,6 +84,66 @@ export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onC
     if (normalized !== linkUrl) {
       updateFrameLink(frameId, normalized)
     }
+  }
+
+  const isWebUrl = (url: URL) => url.protocol === 'http:' || url.protocol === 'https:'
+
+  const applyDomainToLink = (linkUrl: string, targetDomainUrl: URL): string => {
+    const normalizedLink = normalizeUrl(linkUrl)
+    if (!normalizedLink) return targetDomainUrl.toString()
+
+    try {
+      const parsed = new URL(normalizedLink)
+      if (!isWebUrl(parsed)) return normalizedLink
+
+      parsed.protocol = targetDomainUrl.protocol
+      parsed.host = targetDomainUrl.host
+      return parsed.toString()
+    } catch {
+      return targetDomainUrl.toString()
+    }
+  }
+
+  const handleApplyDomainToAll = (sourceLink: string) => {
+    const normalizedSource = normalizeUrl(sourceLink)
+    if (!normalizedSource) {
+      setError('Add a URL first, then apply its domain to all sections.')
+      return
+    }
+
+    let parsedSource: URL
+    try {
+      parsedSource = new URL(normalizedSource)
+    } catch {
+      setError('Enter a valid URL before applying its domain.')
+      return
+    }
+
+    if (!isWebUrl(parsedSource)) {
+      setError('Only http/https URLs can be used to apply a domain.')
+      return
+    }
+
+    const targetDomain = new URL(parsedSource.origin)
+    setFrames(prev =>
+      prev.map(frame => ({
+        ...frame,
+        link_url: applyDomainToLink(frame.link_url || '', targetDomain)
+      }))
+    )
+    setError(null)
+  }
+
+  const handleCopyLinkDown = (frameIndex: number) => {
+    const sourceLink = frames[frameIndex]?.link_url || ''
+    if (!sourceLink.trim()) return
+
+    setFrames(prev => prev.map((frame, index) => {
+      if (index <= frameIndex) return frame
+      if (frame.link_url && frame.link_url.trim() !== '') return frame
+      return { ...frame, link_url: sourceLink }
+    }))
+    setError(null)
   }
 
   const updateFrameName = (frameId: string, name: string) => {
@@ -167,7 +233,8 @@ export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onC
   }
 
   return (
-    <div className="flex gap-6 h-full min-h-[400px]">
+    <TooltipProvider delayDuration={150}>
+      <div className="flex gap-6 h-full min-h-[400px]">
       {/* Left: Email preview */}
       <div className="flex-1 min-w-0 border rounded-xl overflow-hidden flex flex-col">
         <div className="bg-muted px-4 py-3 border-b flex-shrink-0">
@@ -275,20 +342,62 @@ export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onC
                       </button>
                     </div>
                   </div>
-                  <Input
-                    type="text"
-                    value={frame.link_url || ''}
-                    onChange={(e) => updateFrameLink(frame.id, e.target.value)}
-                    onBlur={(e) => handleLinkBlur(frame.id, e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    placeholder={defaultLinkPlaceholder || 'google.com or https://...'}
-                    className={cn(
-                      'h-8',
-                      showValidation && missingLinkFrameIds.has(frame.id) && 'border-destructive focus-visible:ring-destructive'
-                    )}
-                    aria-invalid={showValidation && missingLinkFrameIds.has(frame.id)}
-                    aria-describedby={showValidation && missingLinkFrameIds.has(frame.id) ? `frame-link-${frame.id}-error` : undefined}
-                  />
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      value={frame.link_url || ''}
+                      onChange={(e) => updateFrameLink(frame.id, e.target.value)}
+                      onBlur={(e) => handleLinkBlur(frame.id, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      placeholder={defaultLinkPlaceholder || 'google.com or https://...'}
+                      className={cn(
+                        'h-8 pr-16',
+                        showValidation && missingLinkFrameIds.has(frame.id) && 'border-destructive focus-visible:ring-destructive'
+                      )}
+                      aria-invalid={showValidation && missingLinkFrameIds.has(frame.id)}
+                      aria-describedby={showValidation && missingLinkFrameIds.has(frame.id) ? `frame-link-${frame.id}-error` : undefined}
+                    />
+                    <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleApplyDomainToAll(frame.link_url || '')
+                            }}
+                            disabled={!frame.link_url?.trim() || saving}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                            aria-label="Apply this link domain to all sections"
+                          >
+                            <Globe className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          Apply this domain to all links
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleCopyLinkDown(index)
+                            }}
+                            disabled={!frame.link_url?.trim() || index === frames.length - 1 || saving}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                            aria-label="Copy this link to empty sections below"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          Copy to empty links below
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </div>
                   {showValidation && missingLinkFrameIds.has(frame.id) && (
                     <p
                       id={`frame-link-${frame.id}-error`}
@@ -369,6 +478,7 @@ export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onC
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+      </div>
+    </TooltipProvider>
   )
 }
