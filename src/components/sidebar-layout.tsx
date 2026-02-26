@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { UserSettingsModal } from './user-settings-modal'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/user-avatar'
-import { Mail, Image, Link2, Settings, LogOut, Users, CreditCard } from 'lucide-react'
+import { Mail, Image, Link2, Settings, LogOut, Users, CreditCard, BarChart2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface UserProfile {
@@ -14,13 +14,16 @@ interface UserProfile {
   avatar_url: string | null
 }
 
+const ANALYTICS_ALLOWED_USER_ID = '72e77673-28bc-4b99-9ce6-da239b50cd4c'
+
 interface SidebarLayoutProps {
   children: React.ReactNode
   userEmail: string
   profile: UserProfile | null
+  userId: string
 }
 
-export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutProps) {
+export function SidebarLayout({ children, userEmail, profile, userId }: SidebarLayoutProps) {
   const pathname = usePathname()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -29,6 +32,7 @@ export function SidebarLayout({ children, userEmail, profile }: SidebarLayoutPro
 
   const navItems = [
     { href: '/campaigns', label: 'Campaigns', icon: Mail },
+    ...(userId === ANALYTICS_ALLOWED_USER_ID ? [{ href: '/analytics', label: 'Analytics', icon: BarChart2 }] : []),
     { href: '/images', label: 'Upload images', icon: Image },
     { href: '/connections', label: 'Connections', icon: Link2 },
     { href: '/team', label: 'Team', icon: Users },

@@ -24,7 +24,7 @@ export default async function AppLayout({
     .single()
 
   return (
-    <SidebarLayout userEmail={user.email || ''} profile={profile}>
+    <SidebarLayout userEmail={user.email || ''} profile={profile} userId={user.id}>
       <TeamInvitationBanner userId={user.id} />
       <FooterMissingBanner userId={user.id} />
       {children}

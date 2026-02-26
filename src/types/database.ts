@@ -57,8 +57,68 @@ export interface KlaviyoConnection {
   refresh_token: string
   expires_at: string
   scope: string
+  is_shared: boolean
   created_at: string
   updated_at: string
+}
+
+export interface KlaviyoAnalyticsCache {
+  id: string
+  connection_id: string
+  cache_key: string
+  period_start: string
+  period_end: string
+  comp_period_start: string
+  comp_period_end: string
+  data: KlaviyoAnalyticsData
+  fetched_at: string
+}
+
+export interface KlaviyoAnalyticsPreferences {
+  id: string
+  user_id: string
+  connection_id: string
+  selected_list_id: string | null
+  selected_list_name: string | null
+  selected_form_id: string | null
+  selected_form_name: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface KlaviyoAnalyticsData {
+  totalRevenue: number
+  compTotalRevenue: number
+  attributedRevenue: number
+  compAttributedRevenue: number
+  campaigns: KlaviyoAnalyticsCampaign[]
+  compCampaigns: KlaviyoAnalyticsCampaign[]
+  flows: KlaviyoAnalyticsFlow[]
+  compFlows: KlaviyoAnalyticsFlow[]
+  listSubscribers: number | null
+  compListSubscribers: number | null
+  listNetNew: number | null
+  compListNetNew: number | null
+  formSubmits: number | null
+  compFormSubmits: number | null
+}
+
+export interface KlaviyoAnalyticsCampaign {
+  id: string
+  name: string
+  revenue: number
+  openRate: number
+  clickRate: number
+  deliveredCount: number
+}
+
+export interface KlaviyoAnalyticsFlow {
+  id: string
+  name: string
+  revenue: number
+  openRate: number
+  clickRate: number
+  deliveredCount: number
 }
 
 export interface KlaviyoFooter {

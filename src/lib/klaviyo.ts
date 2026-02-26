@@ -70,18 +70,8 @@ async function refreshTokenIfNeeded(
   const now = new Date()
   const timeUntilExpiry = expiresAt.getTime() - now.getTime()
 
-  console.log('[Klaviyo] Token check:', {
-    connectionId,
-    expiresAt: expiresAt.toISOString(),
-    now: now.toISOString(),
-    timeUntilExpiryMs: timeUntilExpiry,
-    timeUntilExpiryMin: Math.round(timeUntilExpiry / 60000),
-    hasRefreshToken: !!connection.refresh_token,
-  })
-
   // If token is still valid and not expiring soon, return it
   if (timeUntilExpiry > REFRESH_BUFFER_MS) {
-    console.log('[Klaviyo] Token still valid, returning existing token')
     return connection.access_token
   }
 
@@ -199,21 +189,33 @@ export async function klaviyoFetch(
     ? endpoint
     : `https://a.klaviyo.com${endpoint}`
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/json',
-      'revision': '2024-10-15',
-      ...options.headers,
-    },
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 30_000)
 
-  // If we get a 401, the token might have been revoked - don't retry automatically
-  // as the refresh already happened in getValidKlaviyoToken
-  if (response.status === 401) {
-    console.error('Klaviyo API returned 401 even after token refresh')
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+        'revision': '2024-10-15',
+        ...options.headers,
+      },
+    })
+
+    if (response.status === 401) {
+      console.error('[Klaviyo] 401 after token refresh — connection may need re-authorization')
+    }
+
+    return response
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.error('[Klaviyo] Request timed out after 30s:', endpoint)
+      return null
+    }
+    throw err
+  } finally {
+    clearTimeout(timeout)
   }
-
-  return response
 }
