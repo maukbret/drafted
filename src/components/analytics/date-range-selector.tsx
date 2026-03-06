@@ -5,7 +5,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 
-export type DatePreset = 'last-month' | 'last-30' | 'last-7' | 'custom'
+export type DatePreset = 'last-month' | 'custom'
 
 export interface DateRange {
   periodStart: string  // YYYY-MM-DD
@@ -16,7 +16,10 @@ export interface DateRange {
 }
 
 function formatDate(d: Date): string {
-  return d.toISOString().split('T')[0]
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function getCalendarMonth(monthsAgo: number): { start: Date; end: Date } {
@@ -28,14 +31,32 @@ function getCalendarMonth(monthsAgo: number): { start: Date; end: Date } {
   return { start, end }
 }
 
+function monthRangeFromIsoMonth(isoMonth: string): { start: Date; end: Date } | null {
+  if (!/^\d{4}-\d{2}$/.test(isoMonth)) return null
+  const [yearStr, monthStr] = isoMonth.split('-')
+  const year = Number(yearStr)
+  const monthIndex = Number(monthStr) - 1
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) return null
+  const start = new Date(year, monthIndex, 1)
+  const end = new Date(year, monthIndex + 1, 0)
+  return { start, end }
+}
+
+function previousIsoMonth(isoMonth: string): string {
+  const range = monthRangeFromIsoMonth(isoMonth)
+  if (!range) return ''
+  const d = new Date(range.start)
+  d.setMonth(d.getMonth() - 1)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
+}
+
 function monthLabel(d: Date): string {
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 
-export function computeDateRange(preset: DatePreset, customStart?: string, customEnd?: string): DateRange {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
+export function computeDateRange(preset: DatePreset, customMonth?: string, customCompMonth?: string): DateRange {
   if (preset === 'last-month') {
     const curr = getCalendarMonth(1)
     const comp = getCalendarMonth(2)
@@ -48,59 +69,21 @@ export function computeDateRange(preset: DatePreset, customStart?: string, custo
     }
   }
 
-  if (preset === 'last-30') {
-    const end = new Date(today)
-    end.setDate(end.getDate() - 1)
-    const start = new Date(today)
-    start.setDate(start.getDate() - 30)
-    const compEnd = new Date(start)
-    compEnd.setDate(compEnd.getDate() - 1)
-    const compStart = new Date(compEnd)
-    compStart.setDate(compStart.getDate() - 29)
-    return {
-      periodStart: formatDate(start),
-      periodEnd: formatDate(end),
-      compStart: formatDate(compStart),
-      compEnd: formatDate(compEnd),
-      label: 'Last 30 days vs prior 30 days',
+  if (customMonth) {
+    const curr = monthRangeFromIsoMonth(customMonth)
+    const compMonth = customCompMonth || previousIsoMonth(customMonth)
+    const comp = monthRangeFromIsoMonth(compMonth)
+    if (curr && comp) {
+      return {
+        periodStart: formatDate(curr.start),
+        periodEnd: formatDate(curr.end),
+        compStart: formatDate(comp.start),
+        compEnd: formatDate(comp.end),
+        label: `${monthLabel(curr.start)} vs ${monthLabel(comp.start)}`,
+      }
     }
   }
 
-  if (preset === 'last-7') {
-    const end = new Date(today)
-    end.setDate(end.getDate() - 1)
-    const start = new Date(today)
-    start.setDate(start.getDate() - 7)
-    const compEnd = new Date(start)
-    compEnd.setDate(compEnd.getDate() - 1)
-    const compStart = new Date(compEnd)
-    compStart.setDate(compStart.getDate() - 6)
-    return {
-      periodStart: formatDate(start),
-      periodEnd: formatDate(end),
-      compStart: formatDate(compStart),
-      compEnd: formatDate(compEnd),
-      label: 'Last 7 days vs prior 7 days',
-    }
-  }
-
-  // Custom
-  if (customStart && customEnd) {
-    const start = new Date(customStart)
-    const end = new Date(customEnd)
-    const durationMs = end.getTime() - start.getTime()
-    const compEnd = new Date(start.getTime() - 24 * 60 * 60 * 1000)
-    const compStart = new Date(compEnd.getTime() - durationMs)
-    return {
-      periodStart: customStart,
-      periodEnd: customEnd,
-      compStart: formatDate(compStart),
-      compEnd: formatDate(compEnd),
-      label: `${customStart} vs ${formatDate(compStart)}`,
-    }
-  }
-
-  // Fallback to last month
   return computeDateRange('last-month')
 }
 
@@ -111,21 +94,20 @@ interface DateRangeSelectorProps {
 
 export function DateRangeSelector({ value, onChange }: DateRangeSelectorProps) {
   const [preset, setPreset] = useState<DatePreset>('last-month')
-  const [customStart, setCustomStart] = useState('')
-  const [customEnd, setCustomEnd] = useState('')
+  const [customMonth, setCustomMonth] = useState('')
+  const [customCompMonth, setCustomCompMonth] = useState('')
 
   const handlePresetChange = (newPreset: string) => {
     const p = newPreset as DatePreset
     setPreset(p)
     if (p !== 'custom') {
-      onChange(computeDateRange(p))
+      onChange(computeDateRange('last-month'))
     }
   }
 
-  const handleCustomChange = (start: string, end: string) => {
-    if (start && end && start <= end) {
-      onChange(computeDateRange('custom', start, end))
-    }
+  const updateCustomRange = (month: string, compMonth: string) => {
+    if (!month) return
+    onChange(computeDateRange('custom', month, compMonth))
   }
 
   return (
@@ -133,38 +115,40 @@ export function DateRangeSelector({ value, onChange }: DateRangeSelectorProps) {
       <Tabs value={preset} onValueChange={handlePresetChange}>
         <TabsList>
           <TabsTrigger value="last-month">Last month</TabsTrigger>
-          <TabsTrigger value="last-30">Last 30 days</TabsTrigger>
-          <TabsTrigger value="last-7">Last 7 days</TabsTrigger>
-          <TabsTrigger value="custom">Custom</TabsTrigger>
+          <TabsTrigger value="custom">Custom months</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {preset === 'custom' && (
         <div className="flex items-center gap-3 mt-1">
           <div className="flex items-center gap-2">
-            <Label htmlFor="custom-start" className="text-sm text-muted-foreground whitespace-nowrap">From</Label>
+            <Label htmlFor="custom-month" className="text-sm text-muted-foreground whitespace-nowrap">Month</Label>
             <Input
-              id="custom-start"
-              type="date"
-              value={customStart}
+              id="custom-month"
+              type="month"
+              value={customMonth}
               onChange={(e) => {
-                setCustomStart(e.target.value)
-                handleCustomChange(e.target.value, customEnd)
+                const month = e.target.value
+                const nextComp = customCompMonth || previousIsoMonth(month)
+                setCustomMonth(month)
+                if (!customCompMonth && nextComp) setCustomCompMonth(nextComp)
+                updateCustomRange(month, nextComp)
               }}
-              className="w-40"
+              className="w-44"
             />
           </div>
           <div className="flex items-center gap-2">
-            <Label htmlFor="custom-end" className="text-sm text-muted-foreground whitespace-nowrap">To</Label>
+            <Label htmlFor="custom-comp-month" className="text-sm text-muted-foreground whitespace-nowrap">Compare</Label>
             <Input
-              id="custom-end"
-              type="date"
-              value={customEnd}
+              id="custom-comp-month"
+              type="month"
+              value={customCompMonth}
               onChange={(e) => {
-                setCustomEnd(e.target.value)
-                handleCustomChange(customStart, e.target.value)
+                const compMonth = e.target.value
+                setCustomCompMonth(compMonth)
+                updateCustomRange(customMonth, compMonth)
               }}
-              className="w-40"
+              className="w-44"
             />
           </div>
         </div>

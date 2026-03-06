@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useRealtimeSubscription } from '@/hooks/use-realtime-subscription'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -16,13 +16,17 @@ interface ConnectionWithoutFooter {
 }
 
 export function FooterMissingBanner({ userId }: { userId: string }) {
+  const pathname = usePathname()
   const [connections, setConnections] = useState<ConnectionWithoutFooter[]>([])
   const [isTeamAdmin, setIsTeamAdmin] = useState(false)
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
   const [footerSetupConnectionId, setFooterSetupConnectionId] = useState<string | null>(null)
   const router = useRouter()
 
+  const isAnalyticsPage = pathname?.startsWith('/analytics')
+
   const fetchStatus = useCallback(async () => {
+    if (isAnalyticsPage) return
     try {
       const response = await fetch('/api/connections/klaviyo/footer-status')
       if (response.ok) {
@@ -33,15 +37,16 @@ export function FooterMissingBanner({ userId }: { userId: string }) {
     } catch (err) {
       console.error('Failed to fetch footer status:', err)
     }
-  }, [])
+  }, [isAnalyticsPage])
 
   useEffect(() => {
+    if (isAnalyticsPage) return
     fetchStatus()
 
     const handleFooterSetup = () => fetchStatus()
     window.addEventListener('footer-setup-complete', handleFooterSetup)
     return () => window.removeEventListener('footer-setup-complete', handleFooterSetup)
-  }, [fetchStatus])
+  }, [fetchStatus, isAnalyticsPage])
 
   const footerSubscriptions = useMemo(() => [
     { table: 'klaviyo_footers', events: ['INSERT', 'UPDATE'] as const },
@@ -51,6 +56,7 @@ export function FooterMissingBanner({ userId }: { userId: string }) {
     subscriptions: footerSubscriptions,
     currentUserId: userId,
     onExternalChange: fetchStatus,
+    enabled: !isAnalyticsPage,
   })
 
   const handleDismiss = (id: string) => {

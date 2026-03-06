@@ -37,9 +37,16 @@ export async function POST(
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     }
 
-    if (campaign.status !== 'scheduled') {
+    if (campaign.status === 'sent' || campaign.status === 'cancelled') {
       return NextResponse.json(
-        { error: campaign.status === 'sent' ? 'Campaign has already been sent' : 'Campaign is not scheduled' },
+        { error: campaign.status === 'sent' ? 'Campaign has already been sent' : 'Campaign is already cancelled' },
+        { status: 400 }
+      )
+    }
+
+    if (campaign.status !== 'scheduled' && campaign.status !== 'klaviyo_draft') {
+      return NextResponse.json(
+        { error: 'Campaign cannot be edited in its current state' },
         { status: 400 }
       )
     }
@@ -48,64 +55,68 @@ export async function POST(
       return NextResponse.json({ error: 'Campaign has no Klaviyo data' }, { status: 400 })
     }
 
-    // Check current Klaviyo status before cancelling
-    const statusResponse = await klaviyoFetch(
-      supabase,
-      campaign.klaviyo_connection_id,
-      `/api/campaigns/${campaign.klaviyo_campaign_id}`
-    )
+    const isScheduled = campaign.status === 'scheduled'
 
-    if (!statusResponse?.ok) {
-      return NextResponse.json({ error: 'Failed to check campaign status in Klaviyo' }, { status: 502 })
-    }
-
-    const statusData = await statusResponse.json()
-    const klaviyoStatus = statusData.data?.attributes?.status
-
-    if (klaviyoStatus === 'Sent' || klaviyoStatus === 'sent') {
-      // Update local status to match
-      await supabase
-        .from('campaigns')
-        .update({
-          status: 'sent',
-          last_status_synced_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-
-      return NextResponse.json(
-        { error: 'Campaign has already been sent in Klaviyo' },
-        { status: 409 }
+    // Check current Klaviyo status before cancelling (only for scheduled campaigns)
+    if (isScheduled) {
+      const statusResponse = await klaviyoFetch(
+        supabase,
+        campaign.klaviyo_connection_id,
+        `/api/campaigns/${campaign.klaviyo_campaign_id}`
       )
-    }
 
-    // Cancel the send job in Klaviyo
-    // Use "revert" for edit modes (sets back to Draft so it can be re-scheduled)
-    // Use "cancel" for start_over (permanently cancels before deletion)
-    const action = mode === 'start_over' ? 'cancel' : 'revert'
-    const cancelResponse = await klaviyoFetch(
-      supabase,
-      campaign.klaviyo_connection_id,
-      `/api/campaign-send-jobs/${campaign.klaviyo_campaign_id}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/vnd.api+json' },
-        body: JSON.stringify({
-          data: {
-            type: 'campaign-send-job',
-            id: campaign.klaviyo_campaign_id,
-            attributes: { action },
-          },
-        }),
+      if (!statusResponse?.ok) {
+        return NextResponse.json({ error: 'Failed to check campaign status in Klaviyo' }, { status: 502 })
       }
-    )
 
-    if (!cancelResponse?.ok) {
-      const errorText = await cancelResponse?.text()
-      console.error('Failed to cancel Klaviyo send job:', cancelResponse?.status, errorText)
-      return NextResponse.json(
-        { error: 'Failed to cancel the scheduled send in Klaviyo' },
-        { status: 502 }
+      const statusData = await statusResponse.json()
+      const klaviyoStatus = statusData.data?.attributes?.status
+
+      if (klaviyoStatus === 'Sent' || klaviyoStatus === 'sent') {
+        // Update local status to match
+        await supabase
+          .from('campaigns')
+          .update({
+            status: 'sent',
+            last_status_synced_at: new Date().toISOString(),
+          })
+          .eq('id', id)
+
+        return NextResponse.json(
+          { error: 'Campaign has already been sent in Klaviyo' },
+          { status: 409 }
+        )
+      }
+
+      // Cancel the send job in Klaviyo
+      // Use "revert" for edit modes (sets back to Draft so it can be re-scheduled)
+      // Use "cancel" for start_over (permanently cancels before deletion)
+      const action = mode === 'start_over' ? 'cancel' : 'revert'
+      const cancelResponse = await klaviyoFetch(
+        supabase,
+        campaign.klaviyo_connection_id,
+        `/api/campaign-send-jobs/${campaign.klaviyo_campaign_id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/vnd.api+json' },
+          body: JSON.stringify({
+            data: {
+              type: 'campaign-send-job',
+              id: campaign.klaviyo_campaign_id,
+              attributes: { action },
+            },
+          }),
+        }
       )
+
+      if (!cancelResponse?.ok) {
+        const errorText = await cancelResponse?.text()
+        console.error('Failed to cancel Klaviyo send job:', cancelResponse?.status, errorText)
+        return NextResponse.json(
+          { error: 'Failed to cancel the scheduled send in Klaviyo' },
+          { status: 502 }
+        )
+      }
     }
 
     // Mode-specific updates

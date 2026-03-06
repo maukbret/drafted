@@ -226,14 +226,27 @@ function getColumns(opts: {
       accessorKey: 'name',
       enableSorting: false,
       header: () => <span>Campaign name</span>,
-      cell: ({ row }) => (
-        <Link
-          href={`/campaigns/${row.original.id}`}
-          className="block w-full truncate font-medium hover:underline"
-        >
-          {row.original.name}
-        </Link>
-      ),
+      cell: ({ row }) => {
+        const status = row.original.status
+        const isClickable = status === 'in_progress' || (status as string) === 'draft'
+
+        if (isClickable) {
+          return (
+            <Link
+              href={`/campaigns/${row.original.id}`}
+              className="block w-full truncate font-medium hover:underline"
+            >
+              {row.original.name}
+            </Link>
+          )
+        }
+
+        return (
+          <span className="block w-full truncate font-medium">
+            {row.original.name}
+          </span>
+        )
+      },
     },
     {
       id: 'created_by',
@@ -336,16 +349,7 @@ function getColumns(opts: {
                   </DropdownMenuItem>
                 )}
 
-                {!isReadOnlyPreviewStatus && !isInProgress && !isCancelled && (
-                  <DropdownMenuItem asChild>
-                    <Link href={`/campaigns/${campaign.id}`}>
-                      <Pencil className="h-4 w-4 mr-1.5" />
-                      Edit
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-
-                {isReadOnlyPreviewStatus && (
+                {(isReadOnlyPreviewStatus || isKlaviyoDraft) && (
                   <DropdownMenuItem asChild>
                     <Link href={`/campaigns/${campaign.id}`}>
                       <Mail className="h-4 w-4 mr-1.5" />
@@ -354,7 +358,7 @@ function getColumns(opts: {
                   </DropdownMenuItem>
                 )}
 
-                {isScheduled && campaign.is_own !== false && (
+                {(isScheduled || isKlaviyoDraft) && campaign.is_own !== false && (
                   <DropdownMenuItem onClick={() => opts.onRequestEdit(campaign)}>
                     <Pencil className="h-4 w-4 mr-1.5" />
                     Edit
@@ -644,6 +648,7 @@ export function CampaignList({ campaigns, currentUserId }: CampaignListProps) {
         <EditScheduledCampaignDialog
           campaignId={editModalCampaign.id}
           campaignName={editModalCampaign.name}
+          campaignStatus={editModalCampaign.status === 'klaviyo_draft' ? 'klaviyo_draft' : 'scheduled'}
           open={!!editModalCampaign}
           onOpenChange={(open) => !open && setEditModalCampaign(null)}
         />

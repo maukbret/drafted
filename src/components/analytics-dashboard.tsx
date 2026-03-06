@@ -1,10 +1,17 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
+import { AlertCircle, Clock, Loader2, History, Check, ChevronsUpDown } from 'lucide-react'
+import { startKlaviyoOAuth } from '@/lib/oauth'
+import { DateRangeSelector, DateRange, computeDateRange } from '@/components/analytics/date-range-selector'
+import { RevenueCards } from '@/components/analytics/revenue-cards'
+import { TopCampaigns } from '@/components/analytics/top-campaigns'
+import { TopFlows } from '@/components/analytics/top-flows'
+import { ListGrowth } from '@/components/analytics/list-growth'
+import { HistoricalDownloadDialog } from '@/components/analytics/historical-download-dialog'
 import {
   Command,
   CommandEmpty,
@@ -18,27 +25,25 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { Check, ChevronsUpDown, RefreshCw, AlertCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { startKlaviyoOAuth } from '@/lib/oauth'
-import { DateRangeSelector, DateRange, computeDateRange } from '@/components/analytics/date-range-selector'
-import { RevenueCards } from '@/components/analytics/revenue-cards'
-import { TopCampaigns } from '@/components/analytics/top-campaigns'
-import { TopFlows } from '@/components/analytics/top-flows'
-import { ListGrowth } from '@/components/analytics/list-growth'
 import { KlaviyoAnalyticsData } from '@/types/database'
+import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 interface Connection {
   id: string
-  account_name: string
+  account_name: string | null
   store_url: string | null
   scope: string
+  owner_name?: string
+  analytics_synced_through?: string | null
 }
 
 interface AnalyticsDashboardProps {
   connections: Connection[]
   userId: string
 }
+
+const SYNC_STEPS = ['daily-metrics', 'campaigns', 'flows'] as const
 
 function timeAgo(isoString: string): string {
   const diff = Date.now() - new Date(isoString).getTime()
@@ -50,21 +55,143 @@ function timeAgo(isoString: string): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
+/** Returns YYYY-MM-01 for N months ago */
+function monthsAgo(n: number): string {
+  const d = new Date()
+  d.setDate(1)
+  d.setMonth(d.getMonth() - n)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  return `${y}-${m}-01`
+}
+
+function currentMonth(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  return `${y}-${m}-01`
+}
+
+interface AnalyticsAccountSelectorProps {
+  connections: Connection[]
+  selectedConnectionId: string
+  onSelect: (connectionId: string) => void
+  disabled?: boolean
+}
+
+const AnalyticsAccountSelector = memo(function AnalyticsAccountSelector({
+  connections,
+  selectedConnectionId,
+  onSelect,
+  disabled,
+}: AnalyticsAccountSelectorProps) {
+  const [connectionOpen, setConnectionOpen] = useState(false)
+  const ownConnections = connections.filter((c) => !c.owner_name)
+  const teamConnections = connections.filter((c) => !!c.owner_name)
+  const selectedConnection = connections.find((c) => c.id === selectedConnectionId)
+  const selectedLabel = selectedConnection
+    ? `${selectedConnection.account_name || 'Unnamed account'}${selectedConnection.owner_name ? ` (${selectedConnection.owner_name})` : ''}`
+    : 'Select a Klaviyo account'
+
+  return (
+    <Popover open={connectionOpen} onOpenChange={setConnectionOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          id="analytics-klaviyo-account"
+          variant="outline"
+          role="combobox"
+          aria-expanded={connectionOpen}
+          disabled={disabled}
+          className="min-w-[220px] justify-between font-normal"
+        >
+          <span className="truncate">{selectedLabel}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+        <Command>
+          <CommandInput placeholder="Search accounts..." />
+          <CommandList>
+            <CommandEmpty>No account found.</CommandEmpty>
+            {ownConnections.length > 0 && (
+              <CommandGroup heading={teamConnections.length > 0 ? 'Your accounts' : undefined}>
+                {ownConnections.map((conn) => (
+                  <CommandItem
+                    key={conn.id}
+                    value={conn.account_name || 'Unnamed account'}
+                    onSelect={() => {
+                      onSelect(conn.id)
+                      setConnectionOpen(false)
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        'mr-2 h-4 w-4',
+                        selectedConnectionId === conn.id ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    {conn.account_name || 'Unnamed account'}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {teamConnections.length > 0 && (
+              <CommandGroup heading="Team accounts">
+                {teamConnections.map((conn) => (
+                  <CommandItem
+                    key={conn.id}
+                    value={`${conn.account_name || 'Unnamed account'} ${conn.owner_name || ''}`}
+                    onSelect={() => {
+                      onSelect(conn.id)
+                      setConnectionOpen(false)
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        'mr-2 h-4 w-4',
+                        selectedConnectionId === conn.id ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    <span>{conn.account_name || 'Unnamed account'}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      ({conn.owner_name || 'Team'})
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+})
+
 export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardProps) {
-  const router = useRouter()
   const searchParams = useSearchParams()
 
-  const defaultConnectionId = searchParams.get('connectionId') || connections[0]?.id || ''
+  const queryConnectionId = searchParams.get('connectionId')
+  const defaultConnectionId = queryConnectionId && connections.some((c) => c.id === queryConnectionId)
+    ? queryConnectionId
+    : (connections[0]?.id || '')
 
   const [connectionId, setConnectionId] = useState(defaultConnectionId)
-  const [connectionOpen, setConnectionOpen] = useState(false)
   const [dateRange, setDateRange] = useState<DateRange>(computeDateRange('last-month'))
   const [data, setData] = useState<KlaviyoAnalyticsData | null>(null)
-  const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
   const [requiresReconnect, setRequiresReconnect] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false)
+
+  // Onboarding sync state
+  const [syncing, setSyncing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState<string | null>(null)
+  const [syncedMonths, setSyncedMonths] = useState(0)
+  const [totalSyncMonths, setTotalSyncMonths] = useState(0)
+
+  const fetchAbortRef = useRef<AbortController | null>(null)
+  const fetchSeqRef = useRef(0)
+  const onboardingStartedRef = useRef(false)
 
   // Preferences
   const [selectedListId, setSelectedListId] = useState<string | null>(null)
@@ -73,13 +200,16 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
   const [selectedFormName, setSelectedFormName] = useState<string | null>(null)
 
   const selectedConnection = connections.find((c) => c.id === connectionId)
+  const needsOnboarding = selectedConnection && !selectedConnection.analytics_synced_through
 
   // Load preferences when connection changes
   useEffect(() => {
     if (!connectionId) return
-    fetch(`/api/klaviyo/analytics/preferences?connectionId=${connectionId}`)
+    const controller = new AbortController()
+    fetch(`/api/klaviyo/analytics/preferences?connectionId=${connectionId}`, { signal: controller.signal })
       .then((r) => r.json())
       .then((d) => {
+        if (controller.signal.aborted) return
         if (d.preferences) {
           setSelectedListId(d.preferences.selected_list_id)
           setSelectedListName(d.preferences.selected_list_name)
@@ -93,10 +223,16 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
         }
       })
       .catch(() => {})
+    return () => controller.abort()
   }, [connectionId])
 
-  const fetchData = useCallback(async (currentConnectionId: string, range: DateRange) => {
+  const fetchDashboardData = useCallback(async (currentConnectionId: string, range: DateRange) => {
     if (!currentConnectionId) return
+    const requestSeq = ++fetchSeqRef.current
+    if (fetchAbortRef.current) fetchAbortRef.current.abort()
+    const controller = new AbortController()
+    fetchAbortRef.current = controller
+
     setLoading(true)
     setError(null)
     setRequiresReconnect(false)
@@ -109,8 +245,9 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
         compStart: range.compStart,
         compEnd: range.compEnd,
       })
-      const res = await fetch(`/api/klaviyo/analytics/overview?${params}`)
+      const res = await fetch(`/api/klaviyo/analytics/dashboard?${params}`, { signal: controller.signal })
       const json = await res.json()
+      if (controller.signal.aborted || requestSeq !== fetchSeqRef.current) return
 
       if (json.requiresReconnect) {
         setRequiresReconnect(true)
@@ -124,67 +261,135 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
       }
 
       setData(json.data)
-      setFetchedAt(json.fetched_at)
-    } catch {
+    } catch (err) {
+      if ((err as any)?.name === 'AbortError') return
       setError('Failed to load analytics')
     } finally {
-      setLoading(false)
+      if (requestSeq === fetchSeqRef.current) setLoading(false)
     }
   }, [])
 
-  // Fetch on mount and when connection/date changes
-  useEffect(() => {
-    fetchData(connectionId, dateRange)
-  }, [connectionId, dateRange, fetchData])
-
-  // Sync connectionId to URL
-  useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString())
-    if (connectionId) {
-      params.set('connectionId', connectionId)
-    } else {
-      params.delete('connectionId')
-    }
-    router.replace(`?${params.toString()}`, { scroll: false })
-  }, [connectionId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleRefresh = async () => {
-    if (!connectionId || refreshing || loading) return
-    setRefreshing(true)
-    setError(null)
+  // Run onboarding sync when needed
+  const runOnboardingSync = useCallback(async (targetConnectionId: string) => {
+    setSyncing(true)
+    setSyncProgress('Preparing analytics data...')
+    setSyncedMonths(0)
+    const months = [currentMonth(), monthsAgo(1), monthsAgo(2)]
+    setTotalSyncMonths(months.length)
 
     try {
-      const res = await fetch('/api/klaviyo/analytics/refresh', {
+      // Create all sync jobs first
+      await fetch('/api/klaviyo/analytics/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          connectionId,
-          periodStart: dateRange.periodStart,
-          periodEnd: dateRange.periodEnd,
-          compStart: dateRange.compStart,
-          compEnd: dateRange.compEnd,
+          connectionId: targetConnectionId,
+          months,
+          triggeredBy: 'onboarding',
         }),
       })
-      const json = await res.json()
 
-      if (json.requiresReconnect) {
-        setRequiresReconnect(true)
-        return
+      // Execute each step sequentially with delays to avoid Klaviyo rate limits
+      // (campaign-values-reports and flow-values-reports share ~1 req/sec limit)
+      for (let mi = 0; mi < months.length; mi++) {
+        const month = months[mi]
+        const monthLabel = new Date(`${month}T00:00:00Z`).toLocaleDateString('en-US', {
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'UTC',
+        })
+
+        for (let si = 0; si < SYNC_STEPS.length; si++) {
+          const step = SYNC_STEPS[si]
+          setSyncProgress(`Syncing ${monthLabel} (${step.replace('-', ' ')})...`)
+
+          // Delay between steps to respect Klaviyo reporting rate limits
+          if (mi > 0 || si > 0) {
+            await new Promise((r) => setTimeout(r, 2000))
+          }
+
+          const res = await fetch('/api/klaviyo/analytics/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              connectionId: targetConnectionId,
+              month,
+              step,
+              triggeredBy: 'onboarding',
+            }),
+          })
+
+          if (!res.ok) {
+            const json = await res.json().catch(() => ({}))
+            console.error(`[Onboarding] Sync step failed: ${month} ${step}`, json.error)
+            // Continue with next step even if one fails
+          }
+        }
+
+        setSyncedMonths(mi + 1)
       }
 
-      if (!res.ok || json.error) {
-        setError(json.error || 'Failed to refresh analytics')
-        return
+      // Update the connection's synced_through in local state
+      const conn = connections.find((c) => c.id === targetConnectionId)
+      if (conn) {
+        conn.analytics_synced_through = months[months.length - 1]
       }
 
-      setData(json.data)
-      setFetchedAt(json.fetched_at)
-    } catch {
-      setError('Failed to refresh analytics')
+      toast.success('Analytics data synced successfully')
+    } catch (err) {
+      console.error('[Onboarding] Sync error:', err)
+      toast.error('Failed to sync analytics data. Please try again.')
     } finally {
-      setRefreshing(false)
+      setSyncing(false)
+      setSyncProgress(null)
     }
-  }
+  }, [connections])
+
+  // Fetch data on mount and when connection/date changes (if already synced)
+  useEffect(() => {
+    if (!connectionId) return
+
+    const conn = connections.find((c) => c.id === connectionId)
+    if (!conn?.analytics_synced_through) return // Don't fetch if not synced yet
+
+    fetchDashboardData(connectionId, dateRange)
+  }, [connectionId, dateRange, fetchDashboardData, connections])
+
+  // Auto-trigger onboarding sync (ref guard prevents StrictMode double-fire)
+  useEffect(() => {
+    if (!connectionId || syncing || onboardingStartedRef.current) return
+
+    const conn = connections.find((c) => c.id === connectionId)
+    if (conn && !conn.analytics_synced_through) {
+      onboardingStartedRef.current = true
+      runOnboardingSync(connectionId).then(() => {
+        onboardingStartedRef.current = false
+        fetchDashboardData(connectionId, dateRange)
+      }).catch(() => {
+        onboardingStartedRef.current = false
+      })
+    }
+  // Only run on connection change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionId])
+
+  // If URL has an invalid connectionId, normalize to a valid one
+  useEffect(() => {
+    if (!queryConnectionId) return
+    if (connections.some((c) => c.id === queryConnectionId)) return
+    if (connections[0]?.id) setConnectionId(connections[0].id)
+  }, [queryConnectionId, connections])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (fetchAbortRef.current) fetchAbortRef.current.abort()
+    }
+  }, [])
+
+  const handleSelectConnection = useCallback((nextConnectionId: string) => {
+    setConnectionId(nextConnectionId)
+  }, [])
 
   const handlePreferencesChange = async (prefs: {
     selectedListId: string | null
@@ -197,7 +402,6 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
     setSelectedFormId(prefs.selectedFormId)
     setSelectedFormName(prefs.selectedFormName)
 
-    // Save preferences silently — use the Refresh button to fetch updated list metrics
     await fetch('/api/klaviyo/analytics/preferences', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -236,58 +440,65 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
 
       {/* Controls row */}
       <div className="flex flex-wrap items-start gap-4">
-        {/* Account switcher */}
-        <Popover open={connectionOpen} onOpenChange={setConnectionOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" role="combobox" aria-expanded={connectionOpen} className="justify-between min-w-[200px] font-normal">
-              {selectedConnection?.account_name || 'Select account'}
-              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-            <Command>
-              <CommandInput placeholder="Search accounts..." />
-              <CommandList>
-                <CommandEmpty>No account found.</CommandEmpty>
-                <CommandGroup>
-                  {connections.map((conn) => (
-                    <CommandItem
-                      key={conn.id}
-                      value={conn.account_name}
-                      onSelect={() => {
-                        setConnectionId(conn.id)
-                        setConnectionOpen(false)
-                      }}
-                    >
-                      <Check className={cn('mr-2 h-4 w-4', connectionId === conn.id ? 'opacity-100' : 'opacity-0')} />
-                      {conn.account_name}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
+        <AnalyticsAccountSelector
+          connections={connections}
+          selectedConnectionId={connectionId}
+          onSelect={handleSelectConnection}
+          disabled={loading || syncing}
+        />
 
-        {/* Date range selector */}
         <DateRangeSelector value={dateRange} onChange={setDateRange} />
 
-        {/* Refresh + last updated */}
         <div className="ml-auto flex items-center gap-3">
-          {fetchedAt && (
-            <span className="text-xs text-muted-foreground">Updated {timeAgo(fetchedAt)}</span>
+          {selectedConnection?.analytics_synced_through && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              Synced through {new Date(`${selectedConnection.analytics_synced_through}T00:00:00Z`).toLocaleDateString('en-US', {
+                month: 'short',
+                year: 'numeric',
+                timeZone: 'UTC',
+              })}
+            </span>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing || loading || !connectionId}
+          <button
+            type="button"
+            onClick={() => setHistoryDialogOpen(true)}
+            disabled={syncing || !selectedConnection?.analytics_synced_through}
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw className={cn('h-4 w-4 mr-1', refreshing && 'animate-spin')} />
-            {refreshing ? 'Refreshing...' : 'Refresh'}
-          </Button>
+            <History className="h-4 w-4" />
+            History
+          </button>
         </div>
       </div>
+
+      {/* Onboarding sync progress */}
+      {syncing && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="flex flex-col items-center py-10 gap-4">
+            <Loader2 className="h-10 w-10 text-blue-500 animate-spin" />
+            <div className="text-center">
+              <h3 className="font-semibold">Preparing your analytics data</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                {syncProgress || 'Syncing...'}
+              </p>
+              {totalSyncMonths > 0 && (
+                <div className="mt-3 w-64 mx-auto">
+                  <div className="h-2 bg-blue-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                      style={{ width: `${(syncedMonths / totalSyncMonths) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {syncedMonths} of {totalSyncMonths} months
+                  </p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Reconnect required state */}
       {requiresReconnect && selectedConnection && (
@@ -302,7 +513,7 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
             </div>
             <Button onClick={() => {
               const err = startKlaviyoOAuth(
-                selectedConnection.account_name,
+                selectedConnection.account_name || 'Klaviyo account',
                 selectedConnection.store_url || ''
               )
               if (err) console.error(err)
@@ -321,9 +532,8 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
       )}
 
       {/* Analytics content */}
-      {!requiresReconnect && (
+      {!requiresReconnect && !syncing && (
         <div className="space-y-4">
-          {/* Revenue cards */}
           <RevenueCards
             totalRevenue={data?.totalRevenue ?? 0}
             compTotalRevenue={data?.compTotalRevenue ?? 0}
@@ -332,7 +542,6 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
             loading={loading}
           />
 
-          {/* Top campaigns + flows */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <TopCampaigns
               campaigns={data?.campaigns ?? []}
@@ -348,7 +557,6 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
             />
           </div>
 
-          {/* List & form growth */}
           <ListGrowth
             connectionId={connectionId}
             listNetNew={data?.listNetNew ?? null}
@@ -363,6 +571,15 @@ export function AnalyticsDashboard({ connections, userId }: AnalyticsDashboardPr
             loading={loading}
           />
         </div>
+      )}
+
+      {/* Historical download dialog */}
+      {connectionId && (
+        <HistoricalDownloadDialog
+          connectionId={connectionId}
+          open={historyDialogOpen}
+          onOpenChange={setHistoryDialogOpen}
+        />
       )}
     </div>
   )

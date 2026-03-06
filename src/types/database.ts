@@ -58,20 +58,9 @@ export interface KlaviyoConnection {
   expires_at: string
   scope: string
   is_shared: boolean
+  analytics_synced_through: string | null
   created_at: string
   updated_at: string
-}
-
-export interface KlaviyoAnalyticsCache {
-  id: string
-  connection_id: string
-  cache_key: string
-  period_start: string
-  period_end: string
-  comp_period_start: string
-  comp_period_end: string
-  data: KlaviyoAnalyticsData
-  fetched_at: string
 }
 
 export interface KlaviyoAnalyticsPreferences {
@@ -224,6 +213,57 @@ export interface TeamInvitation {
   invited_by: string | null
   status: 'pending' | 'accepted' | 'declined' | 'expired'
   expires_at: string
+  created_at: string
+}
+
+export interface AnalyticsDailyMetric {
+  id: string
+  connection_id: string
+  date: string
+  total_revenue: number
+  attributed_revenue: number
+  subscribers: number
+  unsubscribes: number
+}
+
+export interface AnalyticsMonthlyCampaign {
+  id: string
+  connection_id: string
+  month: string
+  campaign_id: string
+  campaign_name: string
+  revenue: number
+  open_rate: number
+  click_rate: number
+  delivered_count: number
+}
+
+export interface AnalyticsMonthlyFlow {
+  id: string
+  connection_id: string
+  month: string
+  flow_id: string
+  flow_name: string
+  revenue: number
+  open_rate: number
+  click_rate: number
+  delivered_count: number
+}
+
+export type AnalyticsSyncStep = 'daily-metrics' | 'campaigns' | 'flows'
+export type AnalyticsSyncStatus = 'pending' | 'running' | 'completed' | 'failed'
+export type AnalyticsSyncTrigger = 'cron' | 'onboarding' | 'manual'
+
+export interface AnalyticsSyncJob {
+  id: string
+  connection_id: string
+  month: string
+  step: AnalyticsSyncStep
+  status: AnalyticsSyncStatus
+  triggered_by: AnalyticsSyncTrigger
+  error_message: string | null
+  started_at: string | null
+  completed_at: string | null
   created_at: string
 }
 

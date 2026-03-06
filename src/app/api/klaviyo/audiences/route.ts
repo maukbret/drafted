@@ -6,6 +6,12 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const connectionId = searchParams.get('connectionId')
+    const listsOnly = searchParams.get('listsOnly') === '1'
+    const limitParam = searchParams.get('limit')
+    const requestedLimit = limitParam ? Number(limitParam) : null
+    const itemLimit = requestedLimit && Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.floor(requestedLimit), 5000)
+      : null
 
     if (!connectionId) {
       return NextResponse.json({ error: 'Connection ID is required' }, { status: 400 })
@@ -90,7 +96,15 @@ export async function GET(request: NextRequest) {
           throw new Error(`Klaviyo API error ${response.status} for ${baseUrl}`)
         }
         const data = await response.json()
-        items.push(...(data.data || []))
+        const pageItems = data.data || []
+        const remaining = itemLimit ? Math.max(0, itemLimit - items.length) : pageItems.length
+        if (remaining <= 0) {
+          break
+        }
+        items.push(...pageItems.slice(0, remaining))
+        if (itemLimit && items.length >= itemLimit) {
+          break
+        }
         nextUrl = data.links?.next || null
         pageCount += 1
       }
@@ -102,11 +116,12 @@ export async function GET(request: NextRequest) {
       return items
     }
 
-    // Fetch all lists and segments in parallel (pagination-aware)
-    const [listsData, segmentsData] = await Promise.all([
-      fetchAllPages('https://a.klaviyo.com/api/lists'),
-      fetchAllPages('https://a.klaviyo.com/api/segments'),
-    ])
+    // Fetch lists only when requested (analytics list-growth selector does not use segments).
+    const listsDataPromise = fetchAllPages('https://a.klaviyo.com/api/lists')
+    const segmentsDataPromise = listsOnly
+      ? Promise.resolve([])
+      : fetchAllPages('https://a.klaviyo.com/api/segments')
+    const [listsData, segmentsData] = await Promise.all([listsDataPromise, segmentsDataPromise])
 
     // Transform to common format
     const lists = (listsData || []).map((list: any) => ({

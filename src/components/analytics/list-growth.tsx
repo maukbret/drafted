@@ -3,21 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import { Check, ChevronsUpDown, TrendingUp, TrendingDown } from 'lucide-react'
+import { TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Audience {
@@ -30,6 +16,10 @@ interface Form {
   id: string
   name: string
 }
+
+const MAX_SELECTOR_ITEMS = 300
+const MAX_FETCHED_LISTS = 1000
+const MAX_STORED_FORMS = 1000
 
 function GrowthBadge({ current, comparison }: { current: number; comparison: number }) {
   if (comparison === 0) {
@@ -85,22 +75,25 @@ export function ListGrowth({
 }: ListGrowthProps) {
   const [lists, setLists] = useState<Audience[]>([])
   const [forms, setForms] = useState<Form[]>([])
-  const [listOpen, setListOpen] = useState(false)
-  const [formOpen, setFormOpen] = useState(false)
   const [loadingSelectors, setLoadingSelectors] = useState(false)
 
   useEffect(() => {
     if (!connectionId) return
     setLoadingSelectors(true)
     Promise.all([
-      fetch(`/api/klaviyo/audiences?connectionId=${connectionId}`).then(r => r.json()),
+      fetch(`/api/klaviyo/audiences?connectionId=${connectionId}&listsOnly=1&limit=${MAX_FETCHED_LISTS}`).then(r => r.json()),
       fetch(`/api/klaviyo/analytics/forms?connectionId=${connectionId}`).then(r => r.json()),
     ]).then(([audiencesData, formsData]) => {
       const listsOnly = (audiencesData.audiences || []).filter((a: Audience) => a.type === 'list')
       setLists(listsOnly)
-      setForms(formsData.forms || [])
+      setForms((formsData.forms || []).slice(0, MAX_STORED_FORMS))
     }).catch(() => {}).finally(() => setLoadingSelectors(false))
   }, [connectionId])
+
+  const visibleLists = lists.slice(0, MAX_SELECTOR_ITEMS)
+  const visibleForms = forms.slice(0, MAX_SELECTOR_ITEMS)
+  const listsTruncated = lists.length > MAX_SELECTOR_ITEMS
+  const formsTruncated = forms.length > MAX_SELECTOR_ITEMS
 
   return (
     <Card className={cn(loading && 'opacity-50 pointer-events-none')}>
@@ -111,54 +104,31 @@ export function ListGrowth({
         {/* List selector */}
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">List</p>
-          <Popover open={listOpen} onOpenChange={setListOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={listOpen}
-                className="w-full justify-between font-normal"
-                disabled={loadingSelectors}
-              >
-                {selectedListName || 'Select a list...'}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-              <Command>
-                <CommandInput placeholder="Search lists..." />
-                <CommandList>
-                  <CommandEmpty>No lists found.</CommandEmpty>
-                  <CommandGroup>
-                    {selectedListId && (
-                      <CommandItem
-                        value="__none__"
-                        onSelect={() => {
-                          onPreferencesChange({ selectedListId: null, selectedListName: null, selectedFormId, selectedFormName })
-                          setListOpen(false)
-                        }}
-                      >
-                        <span className="text-muted-foreground">Clear selection</span>
-                      </CommandItem>
-                    )}
-                    {lists.map((list) => (
-                      <CommandItem
-                        key={list.id}
-                        value={list.name}
-                        onSelect={() => {
-                          onPreferencesChange({ selectedListId: list.id, selectedListName: list.name, selectedFormId, selectedFormName })
-                          setListOpen(false)
-                        }}
-                      >
-                        <Check className={cn('mr-2 h-4 w-4', selectedListId === list.id ? 'opacity-100' : 'opacity-0')} />
-                        {list.name}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+          <select
+            value={selectedListId || ''}
+            onChange={(e) => {
+              const nextId = e.target.value || null
+              const nextName = nextId ? (visibleLists.find((l) => l.id === nextId)?.name || null) : null
+              onPreferencesChange({
+                selectedListId: nextId,
+                selectedListName: nextName,
+                selectedFormId,
+                selectedFormName,
+              })
+            }}
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            disabled={loadingSelectors}
+          >
+            <option value="">Select a list...</option>
+            {visibleLists.map((list) => (
+              <option key={list.id} value={list.id}>{list.name}</option>
+            ))}
+          </select>
+          {listsTruncated && (
+            <p className="text-xs text-muted-foreground">
+              Showing first {MAX_SELECTOR_ITEMS} lists
+            </p>
+          )}
 
           {selectedListId && (
             <div className="grid grid-cols-2 gap-3 mt-2">
@@ -186,54 +156,31 @@ export function ListGrowth({
         {/* Form selector */}
         <div className="space-y-2 pt-2 border-t">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Signup form</p>
-          <Popover open={formOpen} onOpenChange={setFormOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={formOpen}
-                className="w-full justify-between font-normal"
-                disabled={loadingSelectors}
-              >
-                {selectedFormName || 'Select a form...'}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-              <Command>
-                <CommandInput placeholder="Search forms..." />
-                <CommandList>
-                  <CommandEmpty>No forms found.</CommandEmpty>
-                  <CommandGroup>
-                    {selectedFormId && (
-                      <CommandItem
-                        value="__none__"
-                        onSelect={() => {
-                          onPreferencesChange({ selectedListId, selectedListName, selectedFormId: null, selectedFormName: null })
-                          setFormOpen(false)
-                        }}
-                      >
-                        <span className="text-muted-foreground">Clear selection</span>
-                      </CommandItem>
-                    )}
-                    {forms.map((form) => (
-                      <CommandItem
-                        key={form.id}
-                        value={form.name}
-                        onSelect={() => {
-                          onPreferencesChange({ selectedListId, selectedListName, selectedFormId: form.id, selectedFormName: form.name })
-                          setFormOpen(false)
-                        }}
-                      >
-                        <Check className={cn('mr-2 h-4 w-4', selectedFormId === form.id ? 'opacity-100' : 'opacity-0')} />
-                        {form.name}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+          <select
+            value={selectedFormId || ''}
+            onChange={(e) => {
+              const nextId = e.target.value || null
+              const nextName = nextId ? (visibleForms.find((f) => f.id === nextId)?.name || null) : null
+              onPreferencesChange({
+                selectedListId,
+                selectedListName,
+                selectedFormId: nextId,
+                selectedFormName: nextName,
+              })
+            }}
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            disabled={loadingSelectors}
+          >
+            <option value="">Select a form...</option>
+            {visibleForms.map((form) => (
+              <option key={form.id} value={form.id}>{form.name}</option>
+            ))}
+          </select>
+          {formsTruncated && (
+            <p className="text-xs text-muted-foreground">
+              Showing first {MAX_SELECTOR_ITEMS} forms
+            </p>
+          )}
 
           {selectedFormId && (
             <div className="grid grid-cols-2 gap-3 mt-2">

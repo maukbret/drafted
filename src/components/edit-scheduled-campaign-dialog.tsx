@@ -20,6 +20,7 @@ type EditMode = 'edit_details' | 'edit_design' | 'start_over'
 interface EditScheduledCampaignDialogProps {
   campaignId: string
   campaignName: string
+  campaignStatus?: 'scheduled' | 'klaviyo_draft'
   open?: boolean
   onOpenChange?: (open: boolean) => void
   trigger?: React.ReactNode
@@ -50,10 +51,12 @@ const OPTIONS = [
 export function EditScheduledCampaignDialog({
   campaignId,
   campaignName,
+  campaignStatus = 'scheduled',
   open,
   onOpenChange,
   trigger,
 }: EditScheduledCampaignDialogProps) {
+  const isScheduled = campaignStatus === 'scheduled'
   const [selected, setSelected] = React.useState<EditMode>('edit_details')
   const [showConfirm, setShowConfirm] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
@@ -139,16 +142,18 @@ export function EditScheduledCampaignDialog({
           onClick={() => submit('start_over')}
           disabled={isSubmitting}
         >
-          {isSubmitting ? 'Cancelling...' : 'Start over'}
+          {isSubmitting ? 'Processing...' : 'Start over'}
         </Button>
       </DialogFooter>
     </>
   ) : (
     <>
       <DialogHeader>
-        <DialogTitle>Edit scheduled campaign</DialogTitle>
+        <DialogTitle>{isScheduled ? 'Edit scheduled campaign' : 'Edit campaign'}</DialogTitle>
         <DialogDescription>
-          This will cancel the scheduled send. Choose how you&apos;d like to continue.
+          {isScheduled
+            ? 'This will cancel the scheduled send. Choose how you\u2019d like to continue.'
+            : 'Choose how you\u2019d like to edit this campaign.'}
         </DialogDescription>
       </DialogHeader>
 
@@ -205,7 +210,7 @@ export function EditScheduledCampaignDialog({
           disabled={isSubmitting}
           variant={selected === 'start_over' ? 'destructive' : 'default'}
         >
-          {isSubmitting ? 'Cancelling...' : 'Continue'}
+          {isSubmitting ? 'Processing...' : 'Continue'}
         </Button>
       </DialogFooter>
     </>
@@ -224,9 +229,11 @@ export function EditScheduledCampaignDialog({
 export function EditScheduledCampaignButton({
   campaignId,
   campaignName,
+  campaignStatus = 'scheduled',
 }: {
   campaignId: string
   campaignName: string
+  campaignStatus?: 'scheduled' | 'klaviyo_draft'
 }) {
   const [open, setOpen] = React.useState(false)
 
@@ -234,6 +241,7 @@ export function EditScheduledCampaignButton({
     <EditScheduledCampaignDialog
       campaignId={campaignId}
       campaignName={campaignName}
+      campaignStatus={campaignStatus}
       open={open}
       onOpenChange={setOpen}
       trigger={

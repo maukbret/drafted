@@ -97,8 +97,8 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     projects: project,
   }
 
-  // If campaign is already sent, scheduled, or cancelled, show a read-only view
-  if (campaign.status === 'sent' || campaign.status === 'scheduled' || campaign.status === 'cancelled') {
+  // If campaign is already sent, scheduled, klaviyo_draft, or cancelled, show a read-only view
+  if (campaign.status === 'sent' || campaign.status === 'scheduled' || campaign.status === 'klaviyo_draft' || campaign.status === 'cancelled') {
     // Get frames for email preview
     const frames = project?.frames
       ?.sort((a: any, b: any) => a.display_order - b.display_order)
@@ -106,7 +106,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
 
     // Get audience info
     const includedAudiences = campaign.included_audiences || []
-    const shouldUseKlaviyoSchedule = campaign.status === 'scheduled' || campaign.status === 'sent'
+    const shouldUseKlaviyoSchedule = (campaign.status === 'scheduled' || campaign.status === 'sent') && campaign.klaviyo_campaign_id
     let scheduledAtSource: string | null = campaign.scheduled_at
 
     if (shouldUseKlaviyoSchedule && campaign.klaviyo_campaign_id) {
@@ -178,15 +178,18 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
                 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100'
                 : campaign.status === 'scheduled'
                   ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-yellow-100'
-                  : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 hover:bg-orange-100'
+                  : campaign.status === 'klaviyo_draft'
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100'
+                    : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 hover:bg-orange-100'
             }
           >
-            {campaign.status === 'sent' ? 'Sent' : campaign.status === 'scheduled' ? 'Scheduled' : 'Cancelled'}
+            {campaign.status === 'sent' ? 'Sent' : campaign.status === 'scheduled' ? 'Scheduled' : campaign.status === 'klaviyo_draft' ? 'Saved to Klaviyo' : 'Cancelled'}
           </Badge>
-          {campaign.status === 'scheduled' && canEdit && (
+          {(campaign.status === 'scheduled' || campaign.status === 'klaviyo_draft') && canEdit && (
             <EditScheduledCampaignButton
               campaignId={campaign.id}
               campaignName={campaign.name}
+              campaignStatus={campaign.status as 'scheduled' | 'klaviyo_draft'}
             />
           )}
         </div>

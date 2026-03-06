@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -21,11 +22,11 @@ import { TrendingUp, TrendingDown } from 'lucide-react'
 import { KlaviyoAnalyticsCampaign } from '@/types/database'
 
 function fmtCurrency(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
 }
 
 function fmtPct(n: number) {
-  return `${(n * 100).toFixed(1)}%`
+  return `${(n * 100).toFixed(2)}%`
 }
 
 function changePct(curr: number, comp: number): number | null {
@@ -34,6 +35,9 @@ function changePct(curr: number, comp: number): number | null {
 }
 
 function ChangeBadge({ curr, comp }: { curr: number; comp: number }) {
+  if (comp === 0 && curr > 0) {
+    return <span className="text-xs font-medium text-green-600">New</span>
+  }
   const pct = changePct(curr, comp)
   if (pct === null) return null
   const pos = pct >= 0
@@ -54,27 +58,29 @@ interface TopCampaignsProps {
 }
 
 export function TopCampaigns({ campaigns, compCampaigns, periodLabel, loading }: TopCampaignsProps) {
-  const top5 = campaigns.slice(0, 5).map((c, i) => ({ ...c, rank: i + 1 }))
+  const top5 = useMemo(
+    () => campaigns.slice(0, 5).map((c, i) => ({ ...c, rank: i + 1 })),
+    [campaigns]
+  )
 
-  // Aggregate stats
-  const totalDelivered = campaigns.reduce((s, c) => s + c.deliveredCount, 0)
-  const compTotalDelivered = compCampaigns.reduce((s, c) => s + c.deliveredCount, 0)
+  const aggregateRate = useMemo(
+    () => (items: KlaviyoAnalyticsCampaign[], key: 'openRate' | 'clickRate') => {
+      const totalDelivered = items.reduce((s, c) => s + c.deliveredCount, 0)
+      if (totalDelivered > 0) {
+        return items.reduce((s, c) => s + c[key] * c.deliveredCount, 0) / totalDelivered
+      }
+      if (items.length === 0) return 0
+      return items.reduce((s, c) => s + c[key], 0) / items.length
+    },
+    []
+  )
 
-  const aggOpenRate = totalDelivered > 0
-    ? campaigns.reduce((s, c) => s + c.openRate * c.deliveredCount, 0) / totalDelivered
-    : 0
-  const compAggOpenRate = compTotalDelivered > 0
-    ? compCampaigns.reduce((s, c) => s + c.openRate * c.deliveredCount, 0) / compTotalDelivered
-    : 0
+  const aggOpenRate = useMemo(() => aggregateRate(campaigns, 'openRate'), [campaigns, aggregateRate])
+  const compAggOpenRate = useMemo(() => aggregateRate(compCampaigns, 'openRate'), [compCampaigns, aggregateRate])
+  const aggClickRate = useMemo(() => aggregateRate(campaigns, 'clickRate'), [campaigns, aggregateRate])
+  const compAggClickRate = useMemo(() => aggregateRate(compCampaigns, 'clickRate'), [compCampaigns, aggregateRate])
 
-  const aggClickRate = totalDelivered > 0
-    ? campaigns.reduce((s, c) => s + c.clickRate * c.deliveredCount, 0) / totalDelivered
-    : 0
-  const compAggClickRate = compTotalDelivered > 0
-    ? compCampaigns.reduce((s, c) => s + c.clickRate * c.deliveredCount, 0) / compTotalDelivered
-    : 0
-
-  const columns = [
+  const columns = useMemo(() => [
     columnHelper.accessor('rank', {
       header: '#',
       cell: (info) => <span className="text-muted-foreground">{info.getValue()}</span>,
@@ -96,7 +102,8 @@ export function TopCampaigns({ campaigns, compCampaigns, periodLabel, loading }:
       header: 'Click rate',
       cell: (info) => fmtPct(info.getValue()),
     }),
-  ]
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [])
 
   const table = useReactTable({
     data: top5,

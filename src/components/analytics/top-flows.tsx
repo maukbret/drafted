@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -19,11 +20,11 @@ import {
 import { KlaviyoAnalyticsFlow } from '@/types/database'
 
 function fmtCurrency(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
 }
 
 function fmtPct(n: number) {
-  return `${(n * 100).toFixed(1)}%`
+  return `${(n * 100).toFixed(2)}%`
 }
 
 function changePct(curr: number, comp: number): number | null {
@@ -32,6 +33,9 @@ function changePct(curr: number, comp: number): number | null {
 }
 
 function ChangeBadge({ curr, comp }: { curr: number; comp: number }) {
+  if (comp === 0 && curr > 0) {
+    return <span className="text-xs font-medium text-green-600">New</span>
+  }
   const pct = changePct(curr, comp)
   if (pct === null) return null
   const pos = pct >= 0
@@ -52,26 +56,29 @@ interface TopFlowsProps {
 }
 
 export function TopFlows({ flows, compFlows, periodLabel, loading }: TopFlowsProps) {
-  const top5 = flows.slice(0, 5).map((f, i) => ({ ...f, rank: i + 1 }))
+  const top5 = useMemo(
+    () => flows.slice(0, 5).map((f, i) => ({ ...f, rank: i + 1 })),
+    [flows]
+  )
 
-  const totalDelivered = flows.reduce((s, f) => s + f.deliveredCount, 0)
-  const compTotalDelivered = compFlows.reduce((s, f) => s + f.deliveredCount, 0)
+  const aggregateRate = useMemo(
+    () => (items: KlaviyoAnalyticsFlow[], key: 'openRate' | 'clickRate') => {
+      const totalDelivered = items.reduce((s, f) => s + f.deliveredCount, 0)
+      if (totalDelivered > 0) {
+        return items.reduce((s, f) => s + f[key] * f.deliveredCount, 0) / totalDelivered
+      }
+      if (items.length === 0) return 0
+      return items.reduce((s, f) => s + f[key], 0) / items.length
+    },
+    []
+  )
 
-  const aggOpenRate = totalDelivered > 0
-    ? flows.reduce((s, f) => s + f.openRate * f.deliveredCount, 0) / totalDelivered
-    : 0
-  const compAggOpenRate = compTotalDelivered > 0
-    ? compFlows.reduce((s, f) => s + f.openRate * f.deliveredCount, 0) / compTotalDelivered
-    : 0
+  const aggOpenRate = useMemo(() => aggregateRate(flows, 'openRate'), [flows, aggregateRate])
+  const compAggOpenRate = useMemo(() => aggregateRate(compFlows, 'openRate'), [compFlows, aggregateRate])
+  const aggClickRate = useMemo(() => aggregateRate(flows, 'clickRate'), [flows, aggregateRate])
+  const compAggClickRate = useMemo(() => aggregateRate(compFlows, 'clickRate'), [compFlows, aggregateRate])
 
-  const aggClickRate = totalDelivered > 0
-    ? flows.reduce((s, f) => s + f.clickRate * f.deliveredCount, 0) / totalDelivered
-    : 0
-  const compAggClickRate = compTotalDelivered > 0
-    ? compFlows.reduce((s, f) => s + f.clickRate * f.deliveredCount, 0) / compTotalDelivered
-    : 0
-
-  const columns = [
+  const columns = useMemo(() => [
     columnHelper.accessor('rank', {
       header: '#',
       cell: (info) => <span className="text-muted-foreground">{info.getValue()}</span>,
@@ -93,7 +100,8 @@ export function TopFlows({ flows, compFlows, periodLabel, loading }: TopFlowsPro
       header: 'Click rate',
       cell: (info) => fmtPct(info.getValue()),
     }),
-  ]
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [])
 
   const table = useReactTable({
     data: top5,
