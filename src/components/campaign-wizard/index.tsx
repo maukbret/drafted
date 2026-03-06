@@ -133,6 +133,7 @@ export function CampaignWizard({
         campaignId={campaign.id}
         step={step}
         isActive={campaign.status === 'in_progress' || (campaign.status as string) === 'concept'}
+        campaignStatus={campaign.status}
         getConceptUpdates={() => conceptUpdates}
       />
       <div className="flex items-center justify-between mb-8 flex-shrink-0">
@@ -198,6 +199,7 @@ export function CampaignWizard({
             initialExcludedAudiences={campaign.excluded_audiences as KlaviyoAudience[] || []}
             initialScheduledAt={campaign.scheduled_at || null}
             initialUseRecipientTimezone={campaign.send_in_recipient_timezone || false}
+            initialUtmSettings={campaign.utm_settings}
             isUpdate={!!(campaign.klaviyo_template_id && campaign.klaviyo_campaign_id)}
             onConceptDraftChange={setConceptUpdates}
             onComplete={handleStep3Complete}

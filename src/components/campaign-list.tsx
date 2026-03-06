@@ -7,6 +7,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import {
   flexRender,
   getCoreRowModel,
+  getPaginationRowModel,
   useReactTable,
 } from '@tanstack/react-table'
 
@@ -56,8 +57,9 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { EditScheduledCampaignDialog } from '@/components/edit-scheduled-campaign-dialog'
-import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, Search } from 'lucide-react'
+import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, Search, EyeOff, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 interface CampaignWithConnection extends Campaign {
   klaviyo_connections?: {
@@ -73,10 +75,11 @@ interface CampaignWithConnection extends Campaign {
 interface CampaignListProps {
   campaigns: CampaignWithConnection[]
   currentUserId?: string
+  isTeamAdmin?: boolean
 }
 
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline'
-type StatusFilter = 'all' | 'scheduled' | 'sent'
+type StatusFilter = 'active' | 'scheduled' | 'sent' | 'all'
 type SortOption =
   | 'created_desc'
   | 'created_asc'
@@ -201,7 +204,9 @@ function getCreatorDisplayName(campaign: CampaignWithConnection, currentUserId?:
 function getColumns(opts: {
   onRequestDelete: (campaign: CampaignWithConnection) => void
   onRequestEdit: (campaign: CampaignWithConnection) => void
+  onRequestHide: (campaign: CampaignWithConnection) => void
   currentUserId?: string
+  isTeamAdmin?: boolean
 }): ColumnDef<CampaignWithConnection>[] {
   return [
     {
@@ -378,6 +383,13 @@ function getColumns(opts: {
                   </DropdownMenuItem>
                 )}
 
+                {(campaign.is_own !== false || opts.isTeamAdmin) && (
+                  <DropdownMenuItem onClick={() => opts.onRequestHide(campaign)}>
+                    <EyeOff className="h-4 w-4 mr-1.5" />
+                    {campaign.is_hidden ? 'Unhide' : 'Hide'}
+                  </DropdownMenuItem>
+                )}
+
                 <DropdownMenuItem
                   onClick={() => opts.onRequestDelete(campaign)}
                   className="text-destructive focus:text-destructive focus:bg-destructive/10"
@@ -394,6 +406,8 @@ function getColumns(opts: {
   ]
 }
 
+const PAGE_SIZE = 20
+
 function DataTable({
   columns,
   data,
@@ -405,81 +419,163 @@ function DataTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: {
+      pagination: { pageSize: PAGE_SIZE },
+    },
   })
 
-  return (
-    <TooltipProvider>
-      <Table className="table-fixed min-w-[760px] sm:min-w-[860px] lg:min-w-[980px]">
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <TableHead
-                  key={header.id}
-                  className={cn(
-                    'bg-muted/35 first:rounded-l-md last:rounded-r-md',
-                    COLUMN_WIDTH_CLASSES[header.id] ?? ''
-                  )}
-                >
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(header.column.columnDef.header, header.getContext())}
-                </TableHead>
-              ))}
-            </TableRow>
-          ))}
-        </TableHeader>
+  const pageCount = table.getPageCount()
 
-        <TableBody>
-          {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id} className="h-[56px]">
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell
-                    key={cell.id}
-                    className={cn(COLUMN_WIDTH_CLASSES[cell.column.id] ?? '')}
+  return (
+    <>
+      <TooltipProvider>
+        <Table className="table-fixed min-w-[760px] sm:min-w-[860px] lg:min-w-[980px]">
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <TableHead
+                    key={header.id}
+                    className={cn(
+                      'bg-muted/35 first:rounded-l-md last:rounded-r-md',
+                      COLUMN_WIDTH_CLASSES[header.id] ?? ''
+                    )}
                   >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(header.column.columnDef.header, header.getContext())}
+                  </TableHead>
                 ))}
               </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
-                No results.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </TooltipProvider>
+            ))}
+          </TableHeader>
+
+          <TableBody>
+            {table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id} className={cn("h-[56px]", row.original.is_hidden && "opacity-50")}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell
+                      key={cell.id}
+                      className={cn(COLUMN_WIDTH_CLASSES[cell.column.id] ?? '')}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                  No results.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TooltipProvider>
+
+      {pageCount > 1 && (
+        <div className="flex items-center justify-between pt-2 pl-2 pr-2 pb-1">
+          <p className="text-sm text-muted-foreground">
+            Page {table.getState().pagination.pageIndex + 1} of {pageCount}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
-export function CampaignList({ campaigns, currentUserId }: CampaignListProps) {
+export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: CampaignListProps) {
   const [deleteModalCampaign, setDeleteModalCampaign] = React.useState<CampaignWithConnection | null>(null)
   const [editModalCampaign, setEditModalCampaign] = React.useState<CampaignWithConnection | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all')
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('active')
   const [sortOption, setSortOption] = React.useState<SortOption>('created_desc')
+  const [showHidden, setShowHidden] = React.useState(false)
   const router = useRouter()
+
+  const handleHide = React.useCallback(async (campaign: CampaignWithConnection) => {
+    const newHidden = !campaign.is_hidden
+    try {
+      const response = await fetch(`/api/campaigns/${campaign.id}/hide`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_hidden: newHidden }),
+      })
+
+      if (!response.ok) throw new Error('Failed to update')
+
+      if (newHidden) {
+        toast(`${campaign.name} has been hidden`, {
+          action: {
+            label: 'Undo',
+            onClick: async () => {
+              await fetch(`/api/campaigns/${campaign.id}/hide`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_hidden: false }),
+              })
+              router.refresh()
+            },
+          },
+          classNames: {
+            actionButton: '!bg-transparent !text-foreground !p-0 !h-auto !font-normal !underline !shadow-none',
+          },
+        })
+      }
+
+      router.refresh()
+    } catch {
+      toast.error('Failed to update campaign')
+    }
+  }, [router])
 
   const columns = React.useMemo(
     () =>
       getColumns({
         onRequestDelete: (c) => setDeleteModalCampaign(c),
         onRequestEdit: (c) => setEditModalCampaign(c),
+        onRequestHide: (c) => handleHide(c),
         currentUserId,
+        isTeamAdmin,
       }),
-    [currentUserId]
+    [currentUserId, isTeamAdmin, handleHide]
+  )
+
+  const hasHiddenCampaigns = React.useMemo(
+    () => campaigns.some((c) => c.is_hidden),
+    [campaigns]
   )
 
   const filteredCampaigns = React.useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase()
 
     const filtered = campaigns.filter((campaign) => {
+      if (!showHidden && campaign.is_hidden) return false
+      if (statusFilter === 'active' && campaign.status === 'sent') return false
       if (statusFilter === 'scheduled' && campaign.status !== 'scheduled') return false
       if (statusFilter === 'sent' && campaign.status !== 'sent') return false
 
@@ -517,15 +613,17 @@ export function CampaignList({ campaigns, currentUserId }: CampaignListProps) {
     }
 
     return sorted
-  }, [campaigns, searchQuery, statusFilter, sortOption])
+  }, [campaigns, searchQuery, statusFilter, sortOption, showHidden])
 
   const statusCounts = React.useMemo(() => {
+    const visible = showHidden ? campaigns : campaigns.filter((c) => !c.is_hidden)
     return {
-      all: campaigns.length,
-      scheduled: campaigns.filter((campaign) => campaign.status === 'scheduled').length,
-      sent: campaigns.filter((campaign) => campaign.status === 'sent').length,
+      active: visible.filter((campaign) => campaign.status !== 'sent').length,
+      scheduled: visible.filter((campaign) => campaign.status === 'scheduled').length,
+      sent: visible.filter((campaign) => campaign.status === 'sent').length,
+      all: visible.length,
     }
-  }, [campaigns])
+  }, [campaigns, showHidden])
 
   const handleDelete = React.useCallback(async () => {
     if (!deleteModalCampaign) return
@@ -567,9 +665,10 @@ export function CampaignList({ campaigns, currentUserId }: CampaignListProps) {
       <div className="space-y-4">
         <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
           <TabsList>
-            <TabsTrigger value="all">All ({statusCounts.all})</TabsTrigger>
+            <TabsTrigger value="active">Active ({statusCounts.active})</TabsTrigger>
             <TabsTrigger value="scheduled">Scheduled ({statusCounts.scheduled})</TabsTrigger>
             <TabsTrigger value="sent">Sent ({statusCounts.sent})</TabsTrigger>
+            <TabsTrigger value="all">All ({statusCounts.all})</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -585,19 +684,41 @@ export function CampaignList({ campaigns, currentUserId }: CampaignListProps) {
               />
             </div>
 
-            <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
-              <SelectTrigger className="w-full sm:w-[260px]">
-                <SelectValue placeholder="Sort" />
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectItem value="created_desc">Created on (newest)</SelectItem>
-                <SelectItem value="created_asc">Created on (oldest)</SelectItem>
-                <SelectItem value="updated_desc">Last updated (newest)</SelectItem>
-                <SelectItem value="updated_asc">Last updated (oldest)</SelectItem>
-                <SelectItem value="name_asc">Campaign name (A-Z)</SelectItem>
-                <SelectItem value="name_desc">Campaign name (Z-A)</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-3">
+              {hasHiddenCampaigns && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setShowHidden((v) => !v)}
+                        className={cn("h-9 w-9", showHidden && "bg-accent")}
+                      >
+                        {showHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {showHidden ? 'Hide hidden campaigns' : 'Show hidden campaigns'}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+
+              <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
+                <SelectTrigger className="w-full sm:w-[260px]">
+                  <SelectValue placeholder="Sort" />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectItem value="created_desc">Created on (newest)</SelectItem>
+                  <SelectItem value="created_asc">Created on (oldest)</SelectItem>
+                  <SelectItem value="updated_desc">Last updated (newest)</SelectItem>
+                  <SelectItem value="updated_asc">Last updated (oldest)</SelectItem>
+                  <SelectItem value="name_asc">Campaign name (A-Z)</SelectItem>
+                  <SelectItem value="name_desc">Campaign name (Z-A)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="rounded-md border p-2">

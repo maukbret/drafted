@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, ChevronsUpDown, Eye, HelpCircle } from 'lucide-react'
+import { Check, ChevronDown, ChevronsUpDown, Eye, HelpCircle } from 'lucide-react'
 import { AudienceSelector } from '../audience-selector'
 import { CampaignPreviewSheet } from './campaign-preview-sheet'
 import { startCampaignExport } from '@/lib/campaign-export'
@@ -30,6 +30,11 @@ import {
 } from '@/components/ui/popover'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 
 interface Step3SettingsProps {
@@ -43,6 +48,14 @@ interface Step3SettingsProps {
   initialExcludedAudiences: KlaviyoAudience[]
   initialScheduledAt: string | null
   initialUseRecipientTimezone: boolean
+  initialUtmSettings?: {
+    enabled: boolean
+    source: string
+    medium: string
+    campaign: string
+    content: string
+    term: string
+  } | null
   isUpdate: boolean
   onConceptDraftChange?: (updates: Record<string, unknown>) => void
   onComplete: () => void
@@ -149,6 +162,7 @@ export function Step3Settings({
   initialExcludedAudiences,
   initialScheduledAt,
   initialUseRecipientTimezone,
+  initialUtmSettings,
   isUpdate,
   onConceptDraftChange,
   onComplete,
@@ -190,6 +204,13 @@ export function Step3Settings({
   const [previewFooterHtml, setPreviewFooterHtml] = useState<string | null>(null)
   const [previewFooterLoading, setPreviewFooterLoading] = useState(false)
   const [previewFooterError, setPreviewFooterError] = useState<string | null>(null)
+  const [utmEnabled, setUtmEnabled] = useState(initialUtmSettings?.enabled ?? false)
+  const [utmSource, setUtmSource] = useState(initialUtmSettings?.source ?? 'klaviyo')
+  const [utmMedium, setUtmMedium] = useState(initialUtmSettings?.medium ?? 'email')
+  const [utmCampaign, setUtmCampaign] = useState(initialUtmSettings?.campaign ?? '')
+  const [utmContent, setUtmContent] = useState(initialUtmSettings?.content ?? '')
+  const [utmTerm, setUtmTerm] = useState(initialUtmSettings?.term ?? '')
+  const [utmOpen, setUtmOpen] = useState(initialUtmSettings?.enabled ?? false)
 
   useEffect(() => {
     if (!onConceptDraftChange) return
@@ -340,6 +361,12 @@ export function Step3Settings({
         timezone,
         useRecipientTimezone,
         useCustomFooter,
+        utmEnabled,
+        utmSource,
+        utmMedium,
+        utmCampaign: utmCampaign || name.trim(),
+        utmContent,
+        utmTerm,
       },
       asDraft,
       isUpdate,
@@ -674,6 +701,100 @@ export function Step3Settings({
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="border-t pt-6">
+        <Collapsible open={utmOpen} onOpenChange={setUtmOpen}>
+          <CollapsibleTrigger className="flex items-center justify-between w-full group">
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-lg font-semibold">UTM tracking</h3>
+              {utmEnabled && !utmOpen && (
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">On</span>
+              )}
+            </div>
+            <ChevronDown className={cn(
+              "h-4 w-4 text-muted-foreground transition-transform",
+              utmOpen && "rotate-180"
+            )} />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-4 space-y-4">
+            <div className="flex items-start space-x-3">
+              <Checkbox
+                id="utm-enabled"
+                checked={utmEnabled}
+                onCheckedChange={(checked) => setUtmEnabled(checked as boolean)}
+                className="mt-0"
+              />
+              <div className="space-y-1 leading-none">
+                <label
+                  htmlFor="utm-enabled"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Add UTM parameters to links
+                </label>
+                <p className="text-sm text-muted-foreground">
+                  Klaviyo will automatically append UTM parameters to all links in your email
+                </p>
+              </div>
+            </div>
+
+            {utmEnabled && (
+              <div className="grid gap-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="utm-source" className="text-xs text-muted-foreground">Source</Label>
+                    <Input
+                      id="utm-source"
+                      value={utmSource}
+                      onChange={(e) => setUtmSource(e.target.value)}
+                      placeholder="e.g. klaviyo"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="utm-medium" className="text-xs text-muted-foreground">Medium</Label>
+                    <Input
+                      id="utm-medium"
+                      value={utmMedium}
+                      onChange={(e) => setUtmMedium(e.target.value)}
+                      placeholder="e.g. email"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="utm-campaign" className="text-xs text-muted-foreground">
+                    Campaign <span className="text-muted-foreground/60">(defaults to campaign name)</span>
+                  </Label>
+                  <Input
+                    id="utm-campaign"
+                    value={utmCampaign}
+                    onChange={(e) => setUtmCampaign(e.target.value)}
+                    placeholder={name || 'Campaign name'}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="utm-content" className="text-xs text-muted-foreground">Content <span className="text-muted-foreground/60">(optional)</span></Label>
+                    <Input
+                      id="utm-content"
+                      value={utmContent}
+                      onChange={(e) => setUtmContent(e.target.value)}
+                      placeholder="e.g. header-banner"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="utm-term" className="text-xs text-muted-foreground">Term <span className="text-muted-foreground/60">(optional)</span></Label>
+                    <Input
+                      id="utm-term"
+                      value={utmTerm}
+                      onChange={(e) => setUtmTerm(e.target.value)}
+                      placeholder="e.g. spring-sale"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
       </div>
 
       <div className="border-t pt-6">

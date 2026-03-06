@@ -89,6 +89,8 @@ export default async function CampaignsPage() {
     (campaign) => !(campaign.user_id !== user.id && campaign.wizard_step === 1)
   )
 
+  const isTeamAdmin = teamMembership?.role === 'admin'
+
   return (
     <div className="p-8">
       <CampaignsPageClient
@@ -96,6 +98,7 @@ export default async function CampaignsPage() {
         campaigns={visibleCampaigns}
         currentUserId={user.id}
         defaultKlaviyoConnectionId={defaultKlaviyoConnectionId}
+        isTeamAdmin={isTeamAdmin}
       />
     </div>
   )

@@ -178,6 +178,16 @@ export interface Campaign {
   slice_mode: boolean
   wizard_step: number
   figma_url: string | null
+  utm_settings: {
+    enabled: boolean
+    source: string
+    medium: string
+    campaign: string
+    content: string
+    term: string
+  } | null
+
+  is_hidden: boolean
 
   created_at: string
   updated_at: string

@@ -26,6 +26,8 @@ interface CampaignLeaveGuardProps {
   step: number
   /** Whether the campaign is still in creation mode. */
   isActive: boolean
+  /** Campaign status — used to determine if auto-save should happen instead of discard prompt. */
+  campaignStatus: string
   /** Optional callback to fetch unsaved step data for concept save. */
   getConceptUpdates?: () => Record<string, unknown> | null
 }
@@ -34,6 +36,7 @@ export function CampaignLeaveGuard({
   campaignId,
   step,
   isActive,
+  campaignStatus,
   getConceptUpdates,
 }: CampaignLeaveGuardProps) {
   const router = useRouter()
@@ -43,8 +46,12 @@ export function CampaignLeaveGuard({
   const bypassRef = React.useRef(false)
   const skipPopRef = React.useRef(false)
 
+  // Campaigns already pushed to Klaviyo should auto-save edits, never show discard option
+  const isExported = campaignStatus === 'klaviyo_draft' || campaignStatus === 'scheduled' || campaignStatus === 'sent' || campaignStatus === 'cancelled'
+
   const shouldAutoDelete = isActive && step === 1
-  const shouldPrompt = isActive && step >= 2
+  const shouldAutoSave = isExported && step >= 2
+  const shouldPrompt = isActive && step >= 2 && !isExported
 
   const navigate = React.useCallback(
     (pending: PendingNavigation) => {
@@ -69,16 +76,38 @@ export function CampaignLeaveGuard({
 
   const saveAsConcept = React.useCallback(async () => {
     const conceptUpdates = getConceptUpdates?.() || {}
+    const payload: Record<string, unknown> = { wizard_step: step, ...conceptUpdates }
+    // Only set status to in_progress for new campaigns, preserve status for exported ones
+    if (!isExported) {
+      payload.status = 'in_progress'
+    }
     await fetch(`/api/campaigns/${campaignId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'in_progress', wizard_step: step, ...conceptUpdates }),
+      body: JSON.stringify(payload),
     })
-  }, [campaignId, getConceptUpdates, step])
+  }, [campaignId, getConceptUpdates, isExported, step])
 
   const handleAttemptLeave = React.useCallback(
     async (pending: PendingNavigation) => {
-      if (!isActive || bypassRef.current) {
+      if (bypassRef.current) {
+        navigate(pending)
+        return
+      }
+
+      // Exported campaigns: silently save edits and navigate
+      if (shouldAutoSave) {
+        setIsWorking(true)
+        try {
+          await saveAsConcept()
+        } finally {
+          setIsWorking(false)
+        }
+        navigate(pending)
+        return
+      }
+
+      if (!isActive) {
         navigate(pending)
         return
       }
@@ -102,11 +131,14 @@ export function CampaignLeaveGuard({
 
       navigate(pending)
     },
-    [discardCampaign, isActive, navigate, shouldAutoDelete, shouldPrompt]
+    [discardCampaign, isActive, navigate, saveAsConcept, shouldAutoDelete, shouldAutoSave, shouldPrompt]
   )
 
+  // Guard is active for in-progress campaigns AND exported campaigns being edited
+  const guardActive = isActive || isExported
+
   React.useEffect(() => {
-    if (!isActive) return
+    if (!guardActive) return
 
     const handleDocumentClick = (event: MouseEvent) => {
       if (bypassRef.current) return
@@ -142,9 +174,8 @@ export function CampaignLeaveGuard({
         return
       }
       if (bypassRef.current) return
-      if (!isActive) return
 
-      if (shouldAutoDelete || shouldPrompt) {
+      if (shouldAutoSave || shouldAutoDelete || shouldPrompt) {
         skipPopRef.current = true
         window.history.forward()
         handleAttemptLeave({ kind: 'back' })
@@ -152,7 +183,6 @@ export function CampaignLeaveGuard({
     }
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!isActive) return
       if (shouldPrompt) {
         event.preventDefault()
         event.returnValue = ''
@@ -160,8 +190,17 @@ export function CampaignLeaveGuard({
     }
 
     const handlePageHide = () => {
-      if (!isActive || !shouldAutoDelete) return
-      fetch(`/api/campaigns/${campaignId}`, { method: 'DELETE', keepalive: true })
+      if (shouldAutoDelete) {
+        fetch(`/api/campaigns/${campaignId}`, { method: 'DELETE', keepalive: true })
+      } else if (shouldAutoSave) {
+        const conceptUpdates = getConceptUpdates?.() || {}
+        fetch(`/api/campaigns/${campaignId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wizard_step: step, ...conceptUpdates }),
+          keepalive: true,
+        })
+      }
     }
 
     document.addEventListener('click', handleDocumentClick, true)
@@ -175,7 +214,7 @@ export function CampaignLeaveGuard({
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('pagehide', handlePageHide)
     }
-  }, [campaignId, handleAttemptLeave, isActive, shouldAutoDelete, shouldPrompt])
+  }, [campaignId, getConceptUpdates, guardActive, handleAttemptLeave, shouldAutoDelete, shouldAutoSave, shouldPrompt, step])
 
   const handleSave = async () => {
     if (!pendingRef.current) return

@@ -20,11 +20,13 @@ export function CampaignsPageClient({
   campaigns,
   currentUserId,
   defaultKlaviyoConnectionId,
+  isTeamAdmin,
 }: {
   hasConnections: boolean
   campaigns: CampaignWithConnection[]
   currentUserId?: string
   defaultKlaviyoConnectionId?: string | null
+  isTeamAdmin?: boolean
 }) {
   const [isCreating, setIsCreating] = React.useState(false)
   const router = useRouter()
@@ -74,7 +76,7 @@ export function CampaignsPageClient({
         onCreateCampaign={handleCreateCampaign}
         isCreating={isCreating}
       />
-      <CampaignList campaigns={campaigns} currentUserId={currentUserId} />
+      <CampaignList campaigns={campaigns} currentUserId={currentUserId} isTeamAdmin={isTeamAdmin} />
       {isCreating && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/60">
           <div className="h-8 w-8 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />

@@ -126,6 +126,15 @@ export async function POST(
         }
 
         if (settings) {
+          const utmSettings = settings.utmEnabled ? {
+            enabled: true,
+            source: settings.utmSource || '',
+            medium: settings.utmMedium || '',
+            campaign: settings.utmCampaign || '',
+            content: settings.utmContent || '',
+            term: settings.utmTerm || '',
+          } : null
+
           const { error: updateError } = await supabase
             .from('campaigns')
             .update({
@@ -136,6 +145,7 @@ export async function POST(
               excluded_audiences: settings.excludedAudiences,
               scheduled_at,
               send_in_recipient_timezone: useRecipientTimezone,
+              utm_settings: utmSettings,
               status: 'in_progress',
             })
             .eq('id', campaignId)
@@ -446,7 +456,7 @@ export async function POST(
             const existingCampaignData = await getCampaignResponse.json()
             messageId = existingCampaignData.data?.relationships?.['campaign-messages']?.data?.[0]?.id
 
-            // Update campaign name and audiences
+            // Update campaign name, audiences, and tracking options
             const updateCampaignResponse = await fetch(`https://a.klaviyo.com/api/campaigns/${klaviyoCampaignId}`, {
               method: 'PATCH',
               headers: {
@@ -473,6 +483,20 @@ export async function POST(
                         ...(campaign.send_in_recipient_timezone ? { send_past_recipients_immediately: true } : {}),
                       },
                     } : undefined,
+                    tracking_options: {
+                      is_tracking_clicks: true,
+                      is_tracking_opens: true,
+                      is_add_utm: !!campaign.utm_settings?.enabled,
+                      utm_params: campaign.utm_settings?.enabled
+                        ? [
+                            { name: 'utm_source', value: campaign.utm_settings.source },
+                            { name: 'utm_medium', value: campaign.utm_settings.medium },
+                            { name: 'utm_campaign', value: campaign.utm_settings.campaign },
+                            { name: 'utm_content', value: campaign.utm_settings.content },
+                            { name: 'utm_term', value: campaign.utm_settings.term },
+                          ].filter((p: { name: string; value: string }) => p.value)
+                        : [],
+                    },
                   },
                 },
               }),
@@ -558,6 +582,20 @@ export async function POST(
             },
             send_options: {
               use_smart_sending: false,
+            },
+            tracking_options: {
+              is_tracking_clicks: true,
+              is_tracking_opens: true,
+              is_add_utm: !!campaign.utm_settings?.enabled,
+              utm_params: campaign.utm_settings?.enabled
+                ? [
+                    { name: 'utm_source', value: campaign.utm_settings.source },
+                    { name: 'utm_medium', value: campaign.utm_settings.medium },
+                    { name: 'utm_campaign', value: campaign.utm_settings.campaign },
+                    { name: 'utm_content', value: campaign.utm_settings.content },
+                    { name: 'utm_term', value: campaign.utm_settings.term },
+                  ].filter((p: { name: string; value: string }) => p.value)
+                : [],
             },
           }
 
