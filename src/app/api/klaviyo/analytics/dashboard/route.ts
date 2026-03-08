@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { analyticsPausedResponse, isAnalyticsPaused } from '@/lib/analytics-feature'
 import { NextRequest, NextResponse } from 'next/server'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { KlaviyoAnalyticsData } from '@/types/database'
@@ -228,6 +229,10 @@ function aggregateMonthlyFlowsById(
  */
 export async function GET(request: NextRequest) {
   try {
+    if (isAnalyticsPaused()) {
+      return NextResponse.json(analyticsPausedResponse(), { status: 503 })
+    }
+
     const { searchParams } = new URL(request.url)
     const connectionId = searchParams.get('connectionId')
     const periodStart = searchParams.get('periodStart')

@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { getValidKlaviyoToken } from '@/lib/klaviyo'
 import { normalizeFooterHtmlForExport } from '@/lib/email/footer-normalize'
+import { generateProductFeedHtml } from '@/lib/email/product-feed-html'
+import type { ProductFeedPreset, ProductFeedSettings } from '@/lib/email/product-feed-html'
 import { NextRequest } from 'next/server'
 
 // Helper to get timezone offset as a string (e.g., "+01:00" or "-05:00")
@@ -286,6 +288,55 @@ export async function POST(
           console.log('Using simple unsubscribe tag instead of custom footer')
         }
 
+        // Fetch product feed preset if campaign has product feed settings
+        let productFeedHtml = ''
+        const campaignProductFeedSettings = campaign.product_feed_settings as ProductFeedSettings | null
+        if (campaignProductFeedSettings?.feedName && klaviyoConnection.klaviyo_account_id) {
+          // First try user's own preset
+          let { data: preset } = await supabase
+            .from('product_feed_presets')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
+            .single()
+
+          // If no own preset, check for team admin preset
+          if (!preset) {
+            const { data: pfTeamMembership } = await supabase
+              .from('team_members')
+              .select('team_id')
+              .eq('user_id', user.id)
+              .single()
+
+            if (pfTeamMembership) {
+              const { data: pfAdminMembers } = await supabase
+                .from('team_members')
+                .select('user_id')
+                .eq('team_id', pfTeamMembership.team_id)
+                .eq('role', 'admin')
+
+              if (pfAdminMembers && pfAdminMembers.length > 0) {
+                const { data: teamPreset } = await supabase
+                  .from('product_feed_presets')
+                  .select('*')
+                  .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
+                  .in('user_id', pfAdminMembers.map(m => m.user_id))
+                  .single()
+
+                preset = teamPreset
+              }
+            }
+          }
+
+          if (preset) {
+            productFeedHtml = generateProductFeedHtml(
+              preset as unknown as ProductFeedPreset,
+              campaignProductFeedSettings
+            )
+            console.log('Generated product feed HTML, length:', productFeedHtml.length)
+          }
+        }
+
         // Step 2: Upload images to Klaviyo (skip if already uploaded)
         if (imagesNeedUpload) {
           send({ step: 'images', status: 'in_progress' })
@@ -360,7 +411,7 @@ export async function POST(
         // Step 3: Create or update template in Klaviyo
         send({ step: 'template', status: 'in_progress', label: isUpdate ? 'Updating template' : 'Creating template' })
 
-        const html = generateEmailHtml(uploadedFrames, footerHtml, campaign.preview_text || '')
+        const html = generateEmailHtml(uploadedFrames, footerHtml, campaign.preview_text || '', productFeedHtml)
 
         let templateId = campaign.klaviyo_template_id
         let klaviyoCampaignId = campaign.klaviyo_campaign_id
@@ -772,7 +823,7 @@ function generateEmailHtml(frames: Array<{
   width: number | null
   klaviyo_image_url: string | null
   link_url: string | null
-}>, footerHtml: string = '', previewText: string = ''): string {
+}>, footerHtml: string = '', previewText: string = '', productFeedHtml: string = ''): string {
   // Group frames for side-by-side layout
   const rows: string[] = []
   let i = 0
@@ -835,6 +886,8 @@ function generateEmailHtml(frames: Array<{
   }
 
   const frameRows = rows.join('\n')
+
+  const productFeedSection = productFeedHtml || ''
 
   const normalizedFooter = normalizeFooterHtmlForExport(footerHtml)
   const footerSection = normalizedFooter ? `
@@ -905,6 +958,7 @@ ${previewBlock}
         <!-- Email content table (images/sections from Figma) -->
         <table class="email-container" role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; background-color: #ffffff;">
 ${frameRows}
+${productFeedSection}
 ${footerSection}
         </table>
         <!--[if mso]>

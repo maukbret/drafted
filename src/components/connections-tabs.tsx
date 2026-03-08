@@ -13,6 +13,7 @@ import {
 } from '@tanstack/react-table'
 import { FooterSetup } from './footer-setup'
 import { DefaultAudienceSetup } from './default-audience-setup'
+import { ProductFeedSetup } from './product-feed-setup'
 import { UpgradePrompt } from './upgrade-prompt'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,7 +54,7 @@ import { cn } from '@/lib/utils'
 import { normalizeStoreUrl, validateStoreUrl } from '@/lib/store-url'
 import { startFigmaOAuth as startFigmaOAuthShared, startKlaviyoOAuth as startKlaviyoOAuthShared } from '@/lib/oauth'
 import { BrandIcon } from '@/components/brand-icon'
-import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, MoreVertical, Plus, Users, Settings, Share2, Search } from 'lucide-react'
+import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, MoreVertical, Plus, Users, Settings, Share2, Search, ShoppingBag } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,6 +70,7 @@ interface KlaviyoConnection {
   klaviyo_account_id: string | null
   hasFooter: boolean
   hasDefaultAudience: boolean
+  hasProductFeedPreset: boolean
   created_at: string
   user_id: string
   is_shared: boolean
@@ -141,6 +143,7 @@ export function ConnectionsTabs({
   const [isBulkSharing, setIsBulkSharing] = useState(false)
   const [footerSetupConnection, setFooterSetupConnection] = useState<KlaviyoConnection | null>(null)
   const [defaultAudienceConnection, setDefaultAudienceConnection] = useState<KlaviyoConnection | null>(null)
+  const [productFeedConnection, setProductFeedConnection] = useState<KlaviyoConnection | null>(null)
   const [footerPreviewConnection, setFooterPreviewConnection] = useState<KlaviyoConnection | null>(null)
   const [footerPreviewHtml, setFooterPreviewHtml] = useState<string | null>(null)
   const [footerPreviewSourceUrl, setFooterPreviewSourceUrl] = useState<string | null>(null)
@@ -168,6 +171,7 @@ export function ConnectionsTabs({
     { table: 'klaviyo_connections', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
     { table: 'klaviyo_footers', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
     { table: 'klaviyo_default_audiences', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
+    { table: 'product_feed_presets', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
   ], [])
 
   useRealtimeSubscription({
@@ -674,6 +678,12 @@ export function ConnectionsTabs({
                   <DropdownMenuItem onClick={() => setDefaultAudienceConnection(conn)}>
                     <Users className="h-4 w-4 mr-1.5" />
                     {conn.hasDefaultAudience ? 'Edit default audience' : 'Set default audience'}
+                  </DropdownMenuItem>
+                )}
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => setProductFeedConnection(conn)}>
+                    <ShoppingBag className="h-4 w-4 mr-1.5" />
+                    {conn.hasProductFeedPreset ? 'Edit product feed style' : 'Set up product feed'}
                   </DropdownMenuItem>
                 )}
                 {conn.isOwn && isTeamAdmin && (
@@ -1264,6 +1274,20 @@ export function ConnectionsTabs({
           }}
           onCancel={() => {
             setDefaultAudienceConnection(null)
+          }}
+        />
+      )}
+
+      {productFeedConnection && (
+        <ProductFeedSetup
+          connectionId={productFeedConnection.id}
+          hasPreset={productFeedConnection.hasProductFeedPreset}
+          onComplete={() => {
+            setProductFeedConnection(null)
+            router.refresh()
+          }}
+          onCancel={() => {
+            setProductFeedConnection(null)
           }}
         />
       )}

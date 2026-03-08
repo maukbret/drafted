@@ -1,8 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
+import { analyticsPausedResponse, isAnalyticsPaused } from '@/lib/analytics-feature'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   try {
+    if (isAnalyticsPaused()) {
+      return NextResponse.json(analyticsPausedResponse(), { status: 503 })
+    }
+
     const { searchParams } = new URL(request.url)
     const connectionId = searchParams.get('connectionId')
 
@@ -33,6 +38,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    if (isAnalyticsPaused()) {
+      return NextResponse.json(analyticsPausedResponse(), { status: 503 })
+    }
+
     const body = await request.json()
     const { connectionId, selectedListId, selectedListName, selectedFormId, selectedFormName } = body
 

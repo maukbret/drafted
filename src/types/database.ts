@@ -120,6 +120,21 @@ export interface KlaviyoFooter {
   updated_at: string
 }
 
+export interface ProductFeedPreset {
+  id: string
+  user_id: string
+  klaviyo_account_id: string
+  layout: '1-column' | '2-column' | '3-column'
+  button_color: string
+  button_text_color: string
+  button_text: string
+  show_price: boolean
+  show_title: boolean
+  image_ratio: 'square' | 'original'
+  created_at: string
+  updated_at: string
+}
+
 export interface KlaviyoDefaultAudience {
   id: string
   user_id: string
@@ -188,6 +203,10 @@ export interface Campaign {
   } | null
 
   is_hidden: boolean
+  product_feed_settings: {
+    feedName: string
+    productCount: number
+  } | null
 
   created_at: string
   updated_at: string

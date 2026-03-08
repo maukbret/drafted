@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { analyticsPausedResponse, isAnalyticsPaused } from '@/lib/analytics-feature'
 import {
   syncStep,
   createSyncJobs,
@@ -22,6 +23,16 @@ export async function GET(request: NextRequest) {
 
     if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (isAnalyticsPaused()) {
+      return NextResponse.json({
+        ...analyticsPausedResponse(),
+        message: 'Analytics cron sync skipped because analytics is paused',
+        processed: 0,
+        errors: 0,
+        connections: 0,
+      })
     }
 
     const service = createServiceClient()

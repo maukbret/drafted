@@ -3,7 +3,16 @@
 import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +31,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { CampaignEmailPreview } from './campaign-email-preview'
-import { Copy, Globe, Trash2 } from 'lucide-react'
+import { Copy, Globe, ShoppingBag, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Frame {
@@ -38,10 +47,17 @@ interface Frame {
 // Half-width threshold: 50% of 600px email width
 const HALF_WIDTH_THRESHOLD = 300
 
+interface ProductFeedSettings {
+  feedName: string
+  productCount: number
+}
+
 interface Step2EditorProps {
   frames: Frame[]
   defaultLinkPlaceholder?: string
-  onComplete: (frames: Frame[]) => void
+  hasProductFeedPreset?: boolean
+  initialProductFeedSettings?: ProductFeedSettings | null
+  onComplete: (frames: Frame[], productFeedSettings?: ProductFeedSettings | null) => void
   onBack: () => void
 }
 
@@ -53,7 +69,7 @@ function normalizeUrl(url: string): string {
   return `https://${trimmed}`
 }
 
-export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onComplete, onBack }: Step2EditorProps) {
+export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, hasProductFeedPreset, initialProductFeedSettings, onComplete, onBack }: Step2EditorProps) {
   const [frames, setFrames] = useState(initialFrames)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -62,6 +78,9 @@ export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onC
   const [deleteModalFrame, setDeleteModalFrame] = useState<Frame | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showValidation, setShowValidation] = useState(false)
+  const [useProductFeed, setUseProductFeed] = useState(!!initialProductFeedSettings)
+  const [feedName, setFeedName] = useState(initialProductFeedSettings?.feedName || '')
+  const [productCount, setProductCount] = useState(String(initialProductFeedSettings?.productCount || 3))
 
   const missingLinkFrames = useMemo(
     () => frames.filter(frame => !frame.link_url || frame.link_url.trim() === ''),
@@ -224,7 +243,10 @@ export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onC
         throw new Error('Failed to save links')
       }
 
-      onComplete(normalizedFrames)
+      const pfSettings = useProductFeed && feedName.trim()
+        ? { feedName: feedName.trim(), productCount: parseInt(productCount, 10) || 3 }
+        : null
+      onComplete(normalizedFrames, pfSettings)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
@@ -411,6 +433,49 @@ export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onC
             </div>
           </ScrollArea>
         </div>
+
+        {/* Product Feed (optional) */}
+        {hasProductFeedPreset && (
+          <div className="border rounded-lg p-3 mt-4">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="use-product-feed"
+                checked={useProductFeed}
+                onCheckedChange={(checked) => setUseProductFeed(checked as boolean)}
+              />
+              <label htmlFor="use-product-feed" className="flex items-center gap-1.5 text-sm font-medium cursor-pointer">
+                <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+                Add product feed
+              </label>
+            </div>
+            {useProductFeed && (
+              <div className="mt-3 space-y-3 pl-6">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Feed name (as shown in Klaviyo)</Label>
+                  <Input
+                    placeholder="e.g. New Arrivals"
+                    value={feedName}
+                    onChange={e => setFeedName(e.target.value)}
+                    className="h-8"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Number of products</Label>
+                  <Select value={productCount} onValueChange={setProductCount}>
+                    <SelectTrigger className="h-8 w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 9 }, (_, i) => i + 1).map(n => (
+                        <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Actions */}
         <div className="mt-4 space-y-3">

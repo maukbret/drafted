@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { isAnalyticsPaused } from '@/lib/analytics-feature'
 import { redirect } from 'next/navigation'
 import { AnalyticsDashboard } from '@/components/analytics-dashboard'
 
@@ -7,6 +8,19 @@ export default async function AnalyticsPage() {
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/login')
+
+  if (isAnalyticsPaused()) {
+    return (
+      <div className="p-8">
+        <div className="max-w-2xl rounded-lg border border-amber-200 bg-amber-50 p-6">
+          <h1 className="text-2xl font-bold text-amber-900">Analytics is paused</h1>
+          <p className="mt-2 text-sm text-amber-800">
+            Klaviyo analytics sync and dashboard data loading are temporarily disabled to reduce Supabase usage.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   // Get user's team membership + role
   const { data: teamMembership } = await supabase

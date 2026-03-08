@@ -29,6 +29,11 @@ interface Frame {
   display_order: number
 }
 
+interface ProductFeedSettings {
+  feedName: string
+  productCount: number
+}
+
 interface CampaignWizardProps {
   campaign: Campaign & {
     klaviyo_connections?: { account_name: string | null; store_url?: string | null } | null
@@ -40,6 +45,7 @@ interface CampaignWizardProps {
   teamConnections?: KlaviyoConnection[]
   hasFigmaConnection: boolean
   campaignName: string
+  hasProductFeedPreset?: boolean
 }
 
 const STEPS = [
@@ -54,6 +60,7 @@ export function CampaignWizard({
   teamConnections = [],
   hasFigmaConnection,
   campaignName,
+  hasProductFeedPreset = false,
 }: CampaignWizardProps) {
   const router = useRouter()
   const [campaign, setCampaign] = useState(initialCampaign)
@@ -68,6 +75,9 @@ export function CampaignWizard({
     initialCampaign.slice_mode && (initialCampaign.wizard_step || 1) > 2
   )
   const [conceptUpdates, setConceptUpdates] = useState<Record<string, unknown> | null>(null)
+  const [productFeedSettings, setProductFeedSettings] = useState<ProductFeedSettings | null>(
+    (initialCampaign as any).product_feed_settings || null
+  )
 
   // Update wizard step in database when it changes
   useEffect(() => {
@@ -103,8 +113,17 @@ export function CampaignWizard({
     setStep(2)
   }
 
-  const handleStep2Complete = (updatedFrames: Frame[]) => {
+  const handleStep2Complete = (updatedFrames: Frame[], updatedProductFeedSettings?: ProductFeedSettings | null) => {
     setFrames(updatedFrames)
+    if (updatedProductFeedSettings !== undefined) {
+      setProductFeedSettings(updatedProductFeedSettings)
+      // Save product feed settings to campaign
+      fetch(`/api/campaigns/${campaign.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_feed_settings: updatedProductFeedSettings }),
+      })
+    }
     if (sliceMode) setSlicesFinalized(true)
     setStep(3)
   }
@@ -182,6 +201,8 @@ export function CampaignWizard({
           <Step2Editor
             frames={frames}
             defaultLinkPlaceholder={selectedAccount?.store_url || ''}
+            hasProductFeedPreset={hasProductFeedPreset}
+            initialProductFeedSettings={productFeedSettings}
             onComplete={handleStep2Complete}
             onBack={goBack}
           />

@@ -85,6 +85,7 @@ export async function PATCH(
       'klaviyo_campaign_id',
       'klaviyo_template_id',
       'slice_mode',
+      'product_feed_settings',
     ]
 
     const filteredUpdates: Record<string, any> = {}

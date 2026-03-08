@@ -25,7 +25,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
   // Fetch the campaign first
   const { data: campaign, error } = await supabase
     .from('campaigns')
-    .select('id, user_id, klaviyo_connection_id, klaviyo_account_id, project_id, name, subject_line, preview_text, included_audiences, excluded_audiences, klaviyo_campaign_id, klaviyo_template_id, status, scheduled_at, send_in_recipient_timezone, wizard_step, figma_url, slice_mode, utm_settings, is_hidden, created_at, updated_at')
+    .select('id, user_id, klaviyo_connection_id, klaviyo_account_id, project_id, name, subject_line, preview_text, included_audiences, excluded_audiences, klaviyo_campaign_id, klaviyo_template_id, status, scheduled_at, send_in_recipient_timezone, wizard_step, figma_url, slice_mode, utm_settings, is_hidden, product_feed_settings, created_at, updated_at')
     .eq('id', id)
     .single()
 
@@ -333,6 +333,28 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     }
   }
 
+  // Check if product feed preset exists for this campaign's connection
+  let hasProductFeedPreset = false
+  if (campaign.klaviyo_connection_id) {
+    const { data: pfConnection } = await supabase
+      .from('klaviyo_connections')
+      .select('klaviyo_account_id, user_id')
+      .eq('id', campaign.klaviyo_connection_id)
+      .single()
+
+    if (pfConnection?.klaviyo_account_id) {
+      // Check user's own preset first
+      const { data: ownPreset } = await supabase
+        .from('product_feed_presets')
+        .select('id')
+        .eq('user_id', pfConnection.user_id)
+        .eq('klaviyo_account_id', pfConnection.klaviyo_account_id)
+        .maybeSingle()
+
+      hasProductFeedPreset = !!ownPreset
+    }
+  }
+
   // Check if Figma is connected
   const { data: figmaConnection } = await supabase
     .from('figma_connections')
@@ -358,6 +380,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
         teamConnections={teamConnections}
         hasFigmaConnection={!!figmaConnection}
         campaignName={campaign.name === 'Untitled Campaign' ? 'New Campaign' : campaign.name}
+        hasProductFeedPreset={hasProductFeedPreset}
       />
     </div>
   )

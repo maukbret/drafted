@@ -69,6 +69,11 @@ export default async function ConnectionsPage() {
     .from('klaviyo_footers')
     .select('klaviyo_account_id, user_id')
 
+  // Get product feed presets visible to this user
+  const { data: productFeedPresets } = await supabase
+    .from('product_feed_presets')
+    .select('user_id, klaviyo_account_id')
+
   // Get default audiences visible to this user
   const { data: defaultAudiences } = await supabase
     .from('klaviyo_default_audiences')
@@ -83,6 +88,10 @@ export default async function ConnectionsPage() {
     (defaultAudiences || []).map(a => `${a.user_id}:${a.klaviyo_account_id}`)
   )
 
+  const accountsWithProductFeedPresets = new Set(
+    (productFeedPresets || []).map(p => `${p.user_id}:${p.klaviyo_account_id}`)
+  )
+
   // Map connections with computed fields
   const connections = (allConnections || []).map(conn => {
     const isOwn = conn.user_id === user.id
@@ -93,6 +102,7 @@ export default async function ConnectionsPage() {
       ownerName: isOwn ? 'You' : (ownerNameMap[conn.user_id] || 'Team member'),
       hasFooter: conn.klaviyo_account_id ? accountsWithFooters.has(lookupKey) : false,
       hasDefaultAudience: conn.klaviyo_account_id ? accountsWithDefaultAudiences.has(lookupKey) : false,
+      hasProductFeedPreset: conn.klaviyo_account_id ? accountsWithProductFeedPresets.has(lookupKey) : false,
     }
   })
 
