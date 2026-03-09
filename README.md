@@ -44,6 +44,39 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+## Feature flags (private rollouts)
+
+Use these env vars to ship code without showing it to everyone yet:
+
+```bash
+FEATURE_ANALYTICS_ENABLED=false
+FEATURE_ANALYTICS_ALLOWED_USER_IDS=your-user-uuid,another-user-uuid
+
+FEATURE_PRODUCT_FEED_ENABLED=false
+FEATURE_PRODUCT_FEED_ALLOWED_USER_IDS=your-user-uuid,another-user-uuid
+```
+
+Rules:
+- If `FEATURE_*_ENABLED=true`, that feature is visible to all users.
+- If `FEATURE_*_ENABLED=false` (or unset), only users in `FEATURE_*_ALLOWED_USER_IDS` can see it.
+- `FEATURE_*_ALLOWED_USER_IDS` is a comma-separated list of Supabase `auth.users.id` UUIDs.
+- If `FEATURE_*_ALLOWED_USER_IDS` is not set at all, it falls back to the legacy owner allowlist in code.
+
+How to update access:
+1. Local: edit `.env.local`, then restart `npm run dev`.
+2. Production (Vercel): update project environment variables, then redeploy.
+3. Add/remove a user by editing the UUID list for that feature.
+
+How to find user IDs:
+- Supabase dashboard: Authentication -> Users -> copy `id`.
+- Or SQL:
+
+```sql
+select id, email
+from auth.users
+order by created_at desc;
+```
+
 ## Project structure
 
 ```

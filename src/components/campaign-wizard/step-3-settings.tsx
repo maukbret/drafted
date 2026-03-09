@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Check, ChevronDown, ChevronsUpDown, Eye, HelpCircle } from 'lucide-react'
 import { AudienceSelector } from '../audience-selector'
 import { CampaignPreviewSheet } from './campaign-preview-sheet'
+import type { ProductFeedPreviewData } from './campaign-email-preview'
 import { startCampaignExport } from '@/lib/campaign-export'
 import { KlaviyoAudience } from '@/types/database'
 import { Button } from '@/components/ui/button'
@@ -56,6 +57,7 @@ interface Step3SettingsProps {
     content: string
     term: string
   } | null
+  initialProductFeedSettings?: { feedName: string; productCount: number } | null
   isUpdate: boolean
   onConceptDraftChange?: (updates: Record<string, unknown>) => void
   onComplete: () => void
@@ -163,6 +165,7 @@ export function Step3Settings({
   initialScheduledAt,
   initialUseRecipientTimezone,
   initialUtmSettings,
+  initialProductFeedSettings,
   isUpdate,
   onConceptDraftChange,
   onComplete,
@@ -211,6 +214,7 @@ export function Step3Settings({
   const [utmContent, setUtmContent] = useState(initialUtmSettings?.content ?? '')
   const [utmTerm, setUtmTerm] = useState(initialUtmSettings?.term ?? '')
   const [utmOpen, setUtmOpen] = useState(initialUtmSettings?.enabled ?? false)
+  const [productFeedPreview, setProductFeedPreview] = useState<ProductFeedPreviewData | null>(null)
 
   useEffect(() => {
     if (!onConceptDraftChange) return
@@ -314,6 +318,45 @@ export function Step3Settings({
       isActive = false
     }
   }, [connectionId, isPreviewOpen, useCustomFooter])
+
+  useEffect(() => {
+    if (!isPreviewOpen || !initialProductFeedSettings?.feedName || !connectionId) {
+      return
+    }
+
+    let isActive = true
+
+    const fetchProductFeedPreset = async () => {
+      try {
+        const response = await fetch(`/api/klaviyo/product-feed-preset?connectionId=${connectionId}`)
+        const data = await response.json()
+
+        if (!isActive) return
+
+        if (data.preset) {
+          setProductFeedPreview({
+            layout: data.preset.layout,
+            buttonColor: data.preset.button_color,
+            buttonTextColor: data.preset.button_text_color,
+            buttonText: data.preset.button_text,
+            showPrice: data.preset.show_price,
+            showTitle: data.preset.show_title,
+            imageRatio: data.preset.image_ratio,
+            productCount: initialProductFeedSettings.productCount,
+            feedName: initialProductFeedSettings.feedName,
+          })
+        }
+      } catch {
+        if (isActive) setProductFeedPreview(null)
+      }
+    }
+
+    fetchProductFeedPreset()
+
+    return () => {
+      isActive = false
+    }
+  }, [connectionId, isPreviewOpen, initialProductFeedSettings])
 
   const validateForm = () => {
     if (!name.trim()) {
@@ -869,6 +912,7 @@ export function Step3Settings({
         footerHtml={previewFooterHtml}
         footerLoading={previewFooterLoading}
         footerError={previewFooterError}
+        productFeedPreview={productFeedPreview}
       />
     </div>
   )

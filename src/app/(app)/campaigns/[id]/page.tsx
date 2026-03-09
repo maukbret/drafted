@@ -7,6 +7,7 @@ import { EditScheduledCampaignButton } from '@/components/edit-scheduled-campaig
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChevronLeft } from 'lucide-react'
+import { canAccessProductFeed } from '@/lib/feature-access'
 
 interface CampaignPageProps {
   params: Promise<{ id: string }>
@@ -333,28 +334,6 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     }
   }
 
-  // Check if product feed preset exists for this campaign's connection
-  let hasProductFeedPreset = false
-  if (campaign.klaviyo_connection_id) {
-    const { data: pfConnection } = await supabase
-      .from('klaviyo_connections')
-      .select('klaviyo_account_id, user_id')
-      .eq('id', campaign.klaviyo_connection_id)
-      .single()
-
-    if (pfConnection?.klaviyo_account_id) {
-      // Check user's own preset first
-      const { data: ownPreset } = await supabase
-        .from('product_feed_presets')
-        .select('id')
-        .eq('user_id', pfConnection.user_id)
-        .eq('klaviyo_account_id', pfConnection.klaviyo_account_id)
-        .maybeSingle()
-
-      hasProductFeedPreset = !!ownPreset
-    }
-  }
-
   // Check if Figma is connected
   const { data: figmaConnection } = await supabase
     .from('figma_connections')
@@ -379,8 +358,8 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
         klaviyoConnections={klaviyoConnections || []}
         teamConnections={teamConnections}
         hasFigmaConnection={!!figmaConnection}
+        canUseProductFeed={canAccessProductFeed(user.id)}
         campaignName={campaign.name === 'Untitled Campaign' ? 'New Campaign' : campaign.name}
-        hasProductFeedPreset={hasProductFeedPreset}
       />
     </div>
   )

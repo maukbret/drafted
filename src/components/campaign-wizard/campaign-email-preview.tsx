@@ -12,9 +12,22 @@ export interface CampaignPreviewFrame {
   link_url: string | null
 }
 
+export interface ProductFeedPreviewData {
+  layout: '1-column' | '2-column' | '3-column'
+  buttonColor: string
+  buttonTextColor: string
+  buttonText: string
+  showPrice: boolean
+  showTitle: boolean
+  imageRatio: 'square' | 'original'
+  productCount: number
+  feedName: string
+}
+
 interface CampaignEmailPreviewProps {
   frames: CampaignPreviewFrame[]
   footerHtml?: string | null
+  productFeedPreview?: ProductFeedPreviewData | null
   activeFrameId?: string | null
   onFrameSelect?: (frameId: string) => void
   showLinkBadges?: boolean
@@ -46,9 +59,68 @@ function groupFramesForLayout(frames: CampaignPreviewFrame[]): (CampaignPreviewF
   return result
 }
 
+const MOCK_PRODUCTS = [
+  { title: 'Classic T-Shirt', price: '$29.99', image: '' },
+  { title: 'Denim Jacket', price: '$89.00', image: '' },
+  { title: 'Canvas Sneakers', price: '$65.00', image: '' },
+  { title: 'Leather Belt', price: '$45.00', image: '' },
+  { title: 'Wool Beanie', price: '$24.99', image: '' },
+  { title: 'Cotton Hoodie', price: '$55.00', image: '' },
+  { title: 'Linen Shorts', price: '$42.00', image: '' },
+  { title: 'Silk Scarf', price: '$35.00', image: '' },
+  { title: 'Sport Watch', price: '$120.00', image: '' },
+]
+
+function ProductFeedMockPreview({ data }: { data: ProductFeedPreviewData }) {
+  const cols = data.layout === '1-column' ? 1 : data.layout === '2-column' ? 2 : 3
+  const products = MOCK_PRODUCTS.slice(0, data.productCount)
+
+  return (
+    <div className="py-4 px-2">
+      <div
+        className="grid gap-2 mx-auto"
+        style={{
+          gridTemplateColumns: `repeat(${cols}, 1fr)`,
+          maxWidth: '100%',
+        }}
+      >
+        {products.map((product, i) => (
+          <div key={i} className="flex flex-col items-center text-center">
+            <div
+              className="w-full bg-gray-100 rounded"
+              style={{
+                aspectRatio: data.imageRatio === 'square' ? '1' : '3/4',
+              }}
+            />
+            {data.showTitle && (
+              <p className="text-[11px] font-semibold mt-1.5 text-gray-800 leading-tight">{product.title}</p>
+            )}
+            {data.showPrice && (
+              <p className="text-[10px] text-gray-500 mt-0.5">{product.price}</p>
+            )}
+            <span
+              className="mt-1.5 mb-1 text-[10px] font-semibold px-3 py-1 rounded inline-block"
+              style={{
+                backgroundColor: data.buttonColor,
+                color: data.buttonTextColor,
+              }}
+            >
+              {data.buttonText}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[9px] text-center text-muted-foreground mt-2">
+        Product feed: {data.feedName} ({data.productCount} product{data.productCount !== 1 ? 's' : ''})
+      </p>
+    </div>
+  )
+}
+
 export function CampaignEmailPreview({
   frames,
   footerHtml,
+  productFeedPreview,
   activeFrameId,
   onFrameSelect,
   showLinkBadges = false,
@@ -147,6 +219,9 @@ export function CampaignEmailPreview({
           </div>
         )
       })}
+      {productFeedPreview && (
+        <ProductFeedMockPreview data={productFeedPreview} />
+      )}
       {sanitizedFooterHtml && (
         <div
           className="[&_img]:max-w-full [&_img]:h-auto"

@@ -2,12 +2,14 @@ import { createClient } from '@/lib/supabase/server'
 import { isAnalyticsPaused } from '@/lib/analytics-feature'
 import { redirect } from 'next/navigation'
 import { AnalyticsDashboard } from '@/components/analytics-dashboard'
+import { canAccessAnalytics } from '@/lib/feature-access'
 
 export default async function AnalyticsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/login')
+  if (!canAccessAnalytics(user.id)) redirect('/campaigns')
 
   if (isAnalyticsPaused()) {
     return (

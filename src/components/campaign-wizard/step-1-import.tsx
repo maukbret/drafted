@@ -325,25 +325,7 @@ export function Step1Import({
         </p>
       </div>
 
-      <div className="flex items-start space-x-3">
-        <Checkbox
-          id="designed-with-sections"
-          checked={designedWithSections}
-          onCheckedChange={(checked) => setDesignedWithSections(checked === true)}
-          disabled={loading}
-        />
-        <div className="grid gap-1.5 leading-none">
-          <Label
-            htmlFor="designed-with-sections"
-            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-          >
-            I designed my email with sections
-          </Label>
-          <p className="text-xs text-muted-foreground">
-            Check this if you&apos;ve set up separate frames/slices in your Figma design. Leave unchecked to slice your email in the next step.
-          </p>
-        </div>
-      </div>
+      {/* Slice mode is always enabled — checkbox hidden but logic preserved */}
 
       {error && (
         <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
