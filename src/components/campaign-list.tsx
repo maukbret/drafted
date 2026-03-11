@@ -57,7 +57,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { EditScheduledCampaignDialog } from '@/components/edit-scheduled-campaign-dialog'
-import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, Search, EyeOff, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
+import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, Search, EyeOff, Eye, ChevronLeft, ChevronRight, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -205,6 +205,7 @@ function getColumns(opts: {
   onRequestDelete: (campaign: CampaignWithConnection) => void
   onRequestEdit: (campaign: CampaignWithConnection) => void
   onRequestHide: (campaign: CampaignWithConnection) => void
+  onRequestUnschedule: (campaign: CampaignWithConnection) => void
   currentUserId?: string
   isTeamAdmin?: boolean
 }): ColumnDef<CampaignWithConnection>[] {
@@ -370,6 +371,13 @@ function getColumns(opts: {
                   </DropdownMenuItem>
                 )}
 
+                {isScheduled && campaign.is_own !== false && (
+                  <DropdownMenuItem onClick={() => opts.onRequestUnschedule(campaign)}>
+                    <Clock className="h-4 w-4 mr-1.5" />
+                    Unschedule
+                  </DropdownMenuItem>
+                )}
+
                 {isKlaviyoDraft && (
                   <DropdownMenuItem asChild>
                     <a
@@ -510,7 +518,9 @@ function DataTable({
 export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: CampaignListProps) {
   const [deleteModalCampaign, setDeleteModalCampaign] = React.useState<CampaignWithConnection | null>(null)
   const [editModalCampaign, setEditModalCampaign] = React.useState<CampaignWithConnection | null>(null)
+  const [unscheduleModalCampaign, setUnscheduleModalCampaign] = React.useState<CampaignWithConnection | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
+  const [isUnscheduling, setIsUnscheduling] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('active')
   const [sortOption, setSortOption] = React.useState<SortOption>('created_desc')
@@ -559,6 +569,7 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
         onRequestDelete: (c) => setDeleteModalCampaign(c),
         onRequestEdit: (c) => setEditModalCampaign(c),
         onRequestHide: (c) => handleHide(c),
+        onRequestUnschedule: (c) => setUnscheduleModalCampaign(c),
         currentUserId,
         isTeamAdmin,
       }),
@@ -645,6 +656,31 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
       setIsDeleting(false)
     }
   }, [deleteModalCampaign, router])
+
+  const handleUnschedule = React.useCallback(async () => {
+    if (!unscheduleModalCampaign) return
+
+    setIsUnscheduling(true)
+
+    try {
+      const response = await fetch(`/api/campaigns/${unscheduleModalCampaign.id}/unschedule`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to unschedule')
+      }
+
+      setUnscheduleModalCampaign(null)
+      toast('Campaign unscheduled')
+      router.refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to unschedule campaign')
+    } finally {
+      setIsUnscheduling(false)
+    }
+  }, [unscheduleModalCampaign, router])
 
   if (campaigns.length === 0) {
     return (
@@ -760,6 +796,43 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!unscheduleModalCampaign}
+        onOpenChange={(open) => !open && !isUnscheduling && setUnscheduleModalCampaign(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                <Clock className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div>
+                <AlertDialogTitle>Unschedule campaign</AlertDialogTitle>
+                <AlertDialogDescription>This will revert the campaign to draft status</AlertDialogDescription>
+              </div>
+            </div>
+          </AlertDialogHeader>
+
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to unschedule{' '}
+            <span className="font-medium text-foreground">
+              &quot;{unscheduleModalCampaign?.name}&quot;
+            </span>
+            ? The campaign will be saved as a draft in Klaviyo and can be rescheduled later.
+          </p>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isUnscheduling}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleUnschedule}
+              disabled={isUnscheduling}
+            >
+              {isUnscheduling ? 'Unscheduling...' : 'Unschedule'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
