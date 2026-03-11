@@ -1,9 +1,24 @@
 import { createClient } from '@/lib/supabase/server'
-import { createServiceClient } from '@/lib/supabase/service'
-import { analyticsPausedResponse, isAnalyticsPaused } from '@/lib/analytics-feature'
+import { AnalyticsFetchError, discoverMetricIds, fetchPeriodData } from '@/lib/klaviyo-analytics'
 import { NextRequest, NextResponse } from 'next/server'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { KlaviyoAnalyticsData } from '@/types/database'
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const MAX_RANGE_DAYS = 93
+const MIN_REQUEST_INTERVAL_MS = 2000
+const RATE_WINDOW_MS = 60_000
+const MAX_REQUESTS_PER_WINDOW = 20
+const TOP_N_DEFAULT = 5
+const TOP_N_MAX = 10
+
+type ThrottleState = {
+  windowStart: number
+  count: number
+  lastRequestAt: number
+}
+
+const throttleByUserConnection = new Map<string, ThrottleState>()
 
 async function verifyAnalyticsAccess(
   supabase: SupabaseClient,
@@ -51,197 +66,125 @@ async function verifyAnalyticsAccess(
   return { hasAccess: false, scope: null }
 }
 
-function toNumber(value: unknown): number {
-  const n = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(n) ? n : 0
+function parseDateInput(raw: string | null): Date | null {
+  if (!raw || !DATE_RE.test(raw)) return null
+  const parsed = new Date(`${raw}T00:00:00Z`)
+  if (Number.isNaN(parsed.getTime())) return null
+
+  const yyyy = parsed.getUTCFullYear()
+  const mm = String(parsed.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(parsed.getUTCDate()).padStart(2, '0')
+
+  if (`${yyyy}-${mm}-${dd}` !== raw) return null
+  return parsed
 }
 
-function sumRevenue(rows: Array<{ revenue: unknown }> | null | undefined): number {
-  return (rows || []).reduce((sum, row) => sum + toNumber(row.revenue), 0)
+function daySpanInclusive(start: Date, end: Date): number {
+  const msPerDay = 86_400_000
+  return Math.floor((end.getTime() - start.getTime()) / msPerDay) + 1
 }
 
-function monthStartFromDate(date: string): string {
-  return `${date.slice(0, 7)}-01`
+function parseTopN(raw: string | null): number {
+  if (!raw) return TOP_N_DEFAULT
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return TOP_N_DEFAULT
+  return Math.max(1, Math.min(TOP_N_MAX, Math.floor(parsed)))
 }
 
-function monthEndFromDate(date: string): string {
-  const d = new Date(`${date.slice(0, 7)}-01T00:00:00Z`)
-  const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0))
-  const y = end.getUTCFullYear()
-  const m = String(end.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(end.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+function parseBooleanFlag(raw: string | null): boolean {
+  if (!raw) return false
+  return raw === '1' || raw.toLowerCase() === 'true'
 }
 
-function aggregateMonthlyCampaignsById(
-  rows: Array<{
-    campaign_id: string
-    campaign_name: string
-    revenue: unknown
-    open_rate: unknown
-    click_rate: unknown
-    delivered_count: unknown
-  }> | null | undefined
-) {
-  const byId = new Map<string, {
-    id: string
-    name: string
-    revenue: number
-    deliveredCount: number
-    openWeighted: number
-    clickWeighted: number
-    openUnweighted: number
-    clickUnweighted: number
-    unweightedCount: number
-  }>()
+function hasScope(scope: string | null, target: string): boolean {
+  if (!scope) return false
+  const decodedScope = decodeURIComponent(scope.replace(/\+/g, ' '))
+  const granted = decodedScope
+    .split(/[,\s]+/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+  return granted.includes(target)
+}
 
-  for (const row of rows || []) {
-    const id = row.campaign_id
-    if (!id) continue
-    const revenue = toNumber(row.revenue)
-    const delivered = toNumber(row.delivered_count)
-    const openRate = toNumber(row.open_rate)
-    const clickRate = toNumber(row.click_rate)
+function enforceRequestThrottle(key: string): { allowed: true } | { allowed: false; retryAfterSeconds: number } {
+  const now = Date.now()
+  const existing = throttleByUserConnection.get(key)
 
-    const current = byId.get(id) || {
-      id,
-      name: row.campaign_name || 'Unknown',
-      revenue: 0,
-      deliveredCount: 0,
-      openWeighted: 0,
-      clickWeighted: 0,
-      openUnweighted: 0,
-      clickUnweighted: 0,
-      unweightedCount: 0,
-    }
-
-    current.revenue += revenue
-    current.deliveredCount += delivered
-    if (delivered > 0) {
-      current.openWeighted += openRate * delivered
-      current.clickWeighted += clickRate * delivered
-    } else {
-      current.openUnweighted += openRate
-      current.clickUnweighted += clickRate
-      current.unweightedCount += 1
-    }
-    if (current.name === 'Unknown' && row.campaign_name) current.name = row.campaign_name
-
-    byId.set(id, current)
+  if (!existing) {
+    throttleByUserConnection.set(key, { windowStart: now, count: 1, lastRequestAt: now })
+    return { allowed: true }
   }
 
-  return Array.from(byId.values())
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      revenue: c.revenue,
-      openRate: c.deliveredCount > 0
-        ? c.openWeighted / c.deliveredCount
-        : (c.unweightedCount > 0 ? c.openUnweighted / c.unweightedCount : 0),
-      clickRate: c.deliveredCount > 0
-        ? c.clickWeighted / c.deliveredCount
-        : (c.unweightedCount > 0 ? c.clickUnweighted / c.unweightedCount : 0),
-      deliveredCount: c.deliveredCount,
-    }))
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 25)
-}
-
-function aggregateMonthlyFlowsById(
-  rows: Array<{
-    flow_id: string
-    flow_name: string
-    revenue: unknown
-    open_rate: unknown
-    click_rate: unknown
-    delivered_count: unknown
-  }> | null | undefined
-) {
-  const byId = new Map<string, {
-    id: string
-    name: string
-    revenue: number
-    deliveredCount: number
-    openWeighted: number
-    clickWeighted: number
-    openUnweighted: number
-    clickUnweighted: number
-    unweightedCount: number
-  }>()
-
-  for (const row of rows || []) {
-    const id = row.flow_id
-    if (!id) continue
-    const revenue = toNumber(row.revenue)
-    const delivered = toNumber(row.delivered_count)
-    const openRate = toNumber(row.open_rate)
-    const clickRate = toNumber(row.click_rate)
-
-    const current = byId.get(id) || {
-      id,
-      name: row.flow_name || 'Unknown',
-      revenue: 0,
-      deliveredCount: 0,
-      openWeighted: 0,
-      clickWeighted: 0,
-      openUnweighted: 0,
-      clickUnweighted: 0,
-      unweightedCount: 0,
+  const sinceLast = now - existing.lastRequestAt
+  if (sinceLast < MIN_REQUEST_INTERVAL_MS) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.ceil((MIN_REQUEST_INTERVAL_MS - sinceLast) / 1000),
     }
-
-    current.revenue += revenue
-    current.deliveredCount += delivered
-    if (delivered > 0) {
-      current.openWeighted += openRate * delivered
-      current.clickWeighted += clickRate * delivered
-    } else {
-      current.openUnweighted += openRate
-      current.clickUnweighted += clickRate
-      current.unweightedCount += 1
-    }
-    if (current.name === 'Unknown' && row.flow_name) current.name = row.flow_name
-
-    byId.set(id, current)
   }
 
-  return Array.from(byId.values())
-    .map((f) => ({
-      id: f.id,
-      name: f.name,
-      revenue: f.revenue,
-      openRate: f.deliveredCount > 0
-        ? f.openWeighted / f.deliveredCount
-        : (f.unweightedCount > 0 ? f.openUnweighted / f.unweightedCount : 0),
-      clickRate: f.deliveredCount > 0
-        ? f.clickWeighted / f.deliveredCount
-        : (f.unweightedCount > 0 ? f.clickUnweighted / f.unweightedCount : 0),
-      deliveredCount: f.deliveredCount,
-    }))
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 25)
+  if (now - existing.windowStart > RATE_WINDOW_MS) {
+    throttleByUserConnection.set(key, { windowStart: now, count: 1, lastRequestAt: now })
+    return { allowed: true }
+  }
+
+  if (existing.count >= MAX_REQUESTS_PER_WINDOW) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.ceil((RATE_WINDOW_MS - (now - existing.windowStart)) / 1000),
+    }
+  }
+
+  existing.count += 1
+  existing.lastRequestAt = now
+  throttleByUserConnection.set(key, existing)
+  return { allowed: true }
 }
 
 /**
  * GET /api/klaviyo/analytics/dashboard
- * Reads from normalized analytics tables — no Klaviyo API calls
+ * Live-only analytics endpoint (no analytics data persisted in Supabase)
  *
- * Params: connectionId, periodStart, periodEnd, compStart, compEnd
+ * Params: connectionId, periodStart, periodEnd, compStart, compEnd, topN?
  */
 export async function GET(request: NextRequest) {
   try {
-    if (isAnalyticsPaused()) {
-      return NextResponse.json(analyticsPausedResponse(), { status: 503 })
-    }
-
     const { searchParams } = new URL(request.url)
     const connectionId = searchParams.get('connectionId')
     const periodStart = searchParams.get('periodStart')
     const periodEnd = searchParams.get('periodEnd')
     const compStart = searchParams.get('compStart')
     const compEnd = searchParams.get('compEnd')
+    const topN = parseTopN(searchParams.get('topN'))
+    const includeListGrowth = parseBooleanFlag(searchParams.get('includeListGrowth'))
 
     if (!connectionId || !periodStart || !periodEnd || !compStart || !compEnd) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
+    }
+
+    const periodStartDate = parseDateInput(periodStart)
+    const periodEndDate = parseDateInput(periodEnd)
+    const compStartDate = parseDateInput(compStart)
+    const compEndDate = parseDateInput(compEnd)
+
+    if (!periodStartDate || !periodEndDate || !compStartDate || !compEndDate) {
+      return NextResponse.json({ error: 'Invalid date format. Use YYYY-MM-DD.' }, { status: 400 })
+    }
+
+    if (periodStartDate > periodEndDate || compStartDate > compEndDate) {
+      return NextResponse.json({ error: 'Invalid date range' }, { status: 400 })
+    }
+
+    if (daySpanInclusive(periodStartDate, periodEndDate) > MAX_RANGE_DAYS) {
+      return NextResponse.json({
+        error: `Date range too large. Maximum ${MAX_RANGE_DAYS} days allowed in live mode.`,
+      }, { status: 400 })
+    }
+
+    if (daySpanInclusive(compStartDate, compEndDate) > MAX_RANGE_DAYS) {
+      return NextResponse.json({
+        error: `Comparison range too large. Maximum ${MAX_RANGE_DAYS} days allowed in live mode.`,
+      }, { status: 400 })
     }
 
     const supabase = await createClient()
@@ -256,157 +199,114 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
-    if (!scope?.includes('metrics:read')) {
+    const hasMetricsRead = hasScope(scope, 'metrics:read')
+    const hasSegmentsRead = hasScope(scope, 'segments:read')
+    const hasSegmentsWrite = hasScope(scope, 'segments:write')
+
+    if (!hasMetricsRead) {
       return NextResponse.json({ requiresReconnect: true })
     }
 
-    const service = createServiceClient()
-
-    // Normalize both selections to full calendar-month ranges.
-    const currentRangeStart = monthStartFromDate(periodStart)
-    const currentRangeEnd = monthEndFromDate(periodEnd)
-    const compRangeStart = monthStartFromDate(compStart)
-    const compRangeEnd = monthEndFromDate(compEnd)
-
-    // Fetch daily metrics for current normalized range
-    const { data: currentDailyMetrics } = await service
-      .from('analytics_daily_metrics')
-      .select('total_revenue, subscribers, unsubscribes')
-      .eq('connection_id', connectionId)
-      .gte('date', currentRangeStart)
-      .lte('date', currentRangeEnd)
-
-    // Fetch daily metrics for comparison normalized range
-    const { data: compDailyMetrics } = await service
-      .from('analytics_daily_metrics')
-      .select('total_revenue, subscribers, unsubscribes')
-      .eq('connection_id', connectionId)
-      .gte('date', compRangeStart)
-      .lte('date', compRangeEnd)
-
-    // Aggregate daily metrics
-    const currentTotalRevenue = (currentDailyMetrics || []).reduce((s, r) => s + toNumber(r.total_revenue), 0)
-    const currentSubscribers = (currentDailyMetrics || []).reduce((s, r) => s + toNumber(r.subscribers), 0)
-    const currentUnsubscribes = (currentDailyMetrics || []).reduce((s, r) => s + toNumber(r.unsubscribes), 0)
-
-    const compTotalRevenue = (compDailyMetrics || []).reduce((s, r) => s + toNumber(r.total_revenue), 0)
-    const compSubscribers = (compDailyMetrics || []).reduce((s, r) => s + toNumber(r.subscribers), 0)
-    const compUnsubscribes = (compDailyMetrics || []).reduce((s, r) => s + toNumber(r.unsubscribes), 0)
-
-    // Determine months that overlap with each period for campaign/flow data
-    const currentMonthStart = currentRangeStart.slice(0, 7) + '-01'
-    const currentMonthEnd = currentRangeEnd.slice(0, 7) + '-01'
-    const compMonthStart = compRangeStart.slice(0, 7) + '-01'
-    const compMonthEnd = compRangeEnd.slice(0, 7) + '-01'
-
-    // Fetch monthly campaigns snapshot rows for both ranges.
-    const { data: currentMonthlyCampaigns } = await service
-      .from('analytics_monthly_campaigns')
-      .select('campaign_id, campaign_name, revenue, open_rate, click_rate, delivered_count')
-      .eq('connection_id', connectionId)
-      .gte('month', currentMonthStart)
-      .lte('month', currentMonthEnd)
-      .order('revenue', { ascending: false })
-
-    const { data: compMonthlyCampaigns } = await service
-      .from('analytics_monthly_campaigns')
-      .select('campaign_id, campaign_name, revenue, open_rate, click_rate, delivered_count')
-      .eq('connection_id', connectionId)
-      .gte('month', compMonthStart)
-      .lte('month', compMonthEnd)
-      .order('revenue', { ascending: false })
-
-    // Fetch monthly flows snapshot rows for both ranges.
-    const { data: currentMonthlyFlows } = await service
-      .from('analytics_monthly_flows')
-      .select('flow_id, flow_name, revenue, open_rate, click_rate, delivered_count')
-      .eq('connection_id', connectionId)
-      .gte('month', currentMonthStart)
-      .lte('month', currentMonthEnd)
-      .order('revenue', { ascending: false })
-
-    const { data: compMonthlyFlows } = await service
-      .from('analytics_monthly_flows')
-      .select('flow_id, flow_name, revenue, open_rate, click_rate, delivered_count')
-      .eq('connection_id', connectionId)
-      .gte('month', compMonthStart)
-      .lte('month', compMonthEnd)
-      .order('revenue', { ascending: false })
-
-    // Fetch unbounded monthly revenue rows so attributed revenue math is not affected
-    // by top-25 table limits.
-    const { data: currentCampaignRevenueRows } = await service
-      .from('analytics_monthly_campaigns')
-      .select('revenue')
-      .eq('connection_id', connectionId)
-      .gte('month', currentMonthStart)
-      .lte('month', currentMonthEnd)
-
-    const { data: currentFlowRevenueRows } = await service
-      .from('analytics_monthly_flows')
-      .select('revenue')
-      .eq('connection_id', connectionId)
-      .gte('month', currentMonthStart)
-      .lte('month', currentMonthEnd)
-
-    const { data: compCampaignRevenueRows } = await service
-      .from('analytics_monthly_campaigns')
-      .select('revenue')
-      .eq('connection_id', connectionId)
-      .gte('month', compMonthStart)
-      .lte('month', compMonthEnd)
-
-    const { data: compFlowRevenueRows } = await service
-      .from('analytics_monthly_flows')
-      .select('revenue')
-      .eq('connection_id', connectionId)
-      .gte('month', compMonthStart)
-      .lte('month', compMonthEnd)
-
-    // Attributed revenue for reporting is sourced from monthly campaign + flow snapshots.
-    const currentAttributedRevenueMonthly = sumRevenue(currentCampaignRevenueRows) + sumRevenue(currentFlowRevenueRows)
-    const compAttributedRevenueMonthly = sumRevenue(compCampaignRevenueRows) + sumRevenue(compFlowRevenueRows)
-
-    const currentAttributedRevenue = currentAttributedRevenueMonthly
-    const compAttributedRevenue = compAttributedRevenueMonthly
-
-    const currentFlowsAgg = aggregateMonthlyFlowsById(currentMonthlyFlows)
-    const compFlowsAgg = aggregateMonthlyFlowsById(compMonthlyFlows)
-
-    const currentCampaignsAgg = aggregateMonthlyCampaignsById(currentMonthlyCampaigns)
-    const compCampaignsAgg = aggregateMonthlyCampaignsById(compMonthlyCampaigns)
-
-    // Map to the existing KlaviyoAnalyticsData shape so sub-components work unchanged
-    const data: KlaviyoAnalyticsData = {
-      totalRevenue: currentTotalRevenue,
-      compTotalRevenue: compTotalRevenue,
-      attributedRevenue: currentAttributedRevenue,
-      compAttributedRevenue: compAttributedRevenue,
-      campaigns: currentCampaignsAgg,
-      compCampaigns: compCampaignsAgg,
-      flows: currentFlowsAgg,
-      compFlows: compFlowsAgg,
-      listSubscribers: currentSubscribers || null,
-      compListSubscribers: compSubscribers || null,
-      listNetNew: currentSubscribers - currentUnsubscribes || null,
-      compListNetNew: compSubscribers - compUnsubscribes || null,
-      formSubmits: null,
-      compFormSubmits: null,
+    if (includeListGrowth && !hasSegmentsRead) {
+      return NextResponse.json(
+        {
+          error: 'This Klaviyo connection is missing segment permissions required for list growth reports. Delete and reconnect this account from Connections.',
+          errorCode: 'managed_segment_scope_required',
+          actionUrl: '/connections',
+          requiresReconnect: true,
+          missingScopes: ['segments:read'],
+        },
+        { status: 403 }
+      )
     }
 
-    // Include sync status
-    const { data: connection } = await service
-      .from('klaviyo_connections')
-      .select('analytics_synced_through')
-      .eq('id', connectionId)
-      .single()
+    const throttleKey = `${user.id}:${connectionId}`
+    const throttleResult = enforceRequestThrottle(throttleKey)
+    if (!throttleResult.allowed) {
+      return NextResponse.json(
+        {
+          error: 'Too many requests. Please wait before refreshing again.',
+          retryAfterSeconds: throttleResult.retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(throttleResult.retryAfterSeconds) },
+        }
+      )
+    }
+
+    const metricIds = await discoverMetricIds(supabase, connectionId)
+    if (!metricIds.placedOrderMetricId) {
+      return NextResponse.json({
+        error: 'Could not find Klaviyo Placed Order metric for this account.',
+      }, { status: 422 })
+    }
+
+    const current = await fetchPeriodData(
+      supabase,
+      connectionId,
+      periodStart,
+      periodEnd,
+      metricIds,
+      {
+        includeListGrowth,
+        includeActiveProfiles: includeListGrowth,
+        allowSegmentsRead: hasSegmentsRead,
+        allowSegmentsWrite: hasSegmentsWrite,
+      }
+    )
+
+    const comparison = await fetchPeriodData(
+      supabase,
+      connectionId,
+      compStart,
+      compEnd,
+      metricIds
+    )
+
+    const data: KlaviyoAnalyticsData = {
+      totalRevenue: current.totalRevenue,
+      compTotalRevenue: comparison.totalRevenue,
+      attributedRevenue: current.attributedRevenue,
+      compAttributedRevenue: comparison.attributedRevenue,
+      campaigns: current.campaigns.slice(0, topN),
+      compCampaigns: comparison.campaigns.slice(0, topN),
+      flows: current.flows.slice(0, topN),
+      compFlows: comparison.flows.slice(0, topN),
+      ...(includeListGrowth
+        ? {
+            activeProfiles: current.activeProfiles,
+            newSubscribers: current.newSubscribers,
+            unsubscribers: current.unsubscribers,
+            netGrowth: current.netGrowth,
+            netGrowthPercent: current.netGrowthPercent,
+          }
+        : {}),
+    }
+
+    const missingScopes = includeListGrowth && !hasSegmentsWrite ? ['segments:write'] : []
 
     return NextResponse.json({
       data,
-      syncedThrough: connection?.analytics_synced_through || null,
+      fetchedAt: new Date().toISOString(),
+      source: 'live',
+      ...(missingScopes.length > 0 ? { missingScopes } : {}),
     })
   } catch (err) {
-    console.error('[Analytics Dashboard] Error:', err)
+    if (err instanceof AnalyticsFetchError) {
+      const status = err.code === 'managed_segment_scope_required' ? 403 : 422
+      return NextResponse.json(
+        {
+          error: err.message,
+          errorCode: err.code,
+          actionUrl: err.actionUrl || '/connections',
+          requiresReconnect: err.code === 'managed_segment_scope_required',
+        },
+        { status }
+      )
+    }
+
+    console.error('[Analytics Dashboard] Live fetch error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

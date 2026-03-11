@@ -61,7 +61,7 @@ export function startKlaviyoOAuth(accountName: string, storeUrl: string, isShare
       response_type: 'code',
       client_id: process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID!,
       redirect_uri: process.env.NEXT_PUBLIC_KLAVIYO_REDIRECT_URI!,
-      scope: 'accounts:read images:write templates:read templates:write lists:read segments:read campaigns:write campaigns:read flows:read metrics:read forms:read web-feeds:read',
+      scope: 'accounts:read profiles:read images:write templates:read templates:write lists:read segments:read segments:write campaigns:write campaigns:read flows:read metrics:read forms:read web-feeds:read',
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
       state,

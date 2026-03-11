@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { UserSettingsModal } from './user-settings-modal'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/user-avatar'
-import { Mail, Image, Link2, Settings, LogOut, Users, CreditCard, BarChart2 } from 'lucide-react'
+import { Mail, Image, Link2, Settings, LogOut, Users, CreditCard, BarChart2, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface UserProfile {
@@ -19,9 +19,16 @@ interface SidebarLayoutProps {
   userEmail: string
   profile: UserProfile | null
   canAccessAnalytics: boolean
+  canAccessReports: boolean
 }
 
-export function SidebarLayout({ children, userEmail, profile, canAccessAnalytics }: SidebarLayoutProps) {
+export function SidebarLayout({
+  children,
+  userEmail,
+  profile,
+  canAccessAnalytics,
+  canAccessReports,
+}: SidebarLayoutProps) {
   const pathname = usePathname()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -31,6 +38,7 @@ export function SidebarLayout({ children, userEmail, profile, canAccessAnalytics
   const navItems = [
     { href: '/campaigns', label: 'Campaigns', icon: Mail },
     ...(canAccessAnalytics ? [{ href: '/analytics', label: 'Analytics', icon: BarChart2 }] : []),
+    ...(canAccessReports ? [{ href: '/reports', label: 'Reports', icon: FileText }] : []),
     { href: '/images', label: 'Upload images', icon: Image },
     { href: '/connections', label: 'Connections', icon: Link2 },
     { href: '/team', label: 'Team', icon: Users },

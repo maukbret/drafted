@@ -58,19 +58,6 @@ export interface KlaviyoConnection {
   expires_at: string
   scope: string
   is_shared: boolean
-  analytics_synced_through: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface KlaviyoAnalyticsPreferences {
-  id: string
-  user_id: string
-  connection_id: string
-  selected_list_id: string | null
-  selected_list_name: string | null
-  selected_form_id: string | null
-  selected_form_name: string | null
   created_at: string
   updated_at: string
 }
@@ -84,12 +71,11 @@ export interface KlaviyoAnalyticsData {
   compCampaigns: KlaviyoAnalyticsCampaign[]
   flows: KlaviyoAnalyticsFlow[]
   compFlows: KlaviyoAnalyticsFlow[]
-  listSubscribers: number | null
-  compListSubscribers: number | null
-  listNetNew: number | null
-  compListNetNew: number | null
-  formSubmits: number | null
-  compFormSubmits: number | null
+  activeProfiles?: number | null
+  newSubscribers?: number | null
+  unsubscribers?: number | null
+  netGrowth?: number | null
+  netGrowthPercent?: number | null
 }
 
 export interface KlaviyoAnalyticsCampaign {
@@ -245,57 +231,6 @@ export interface TeamInvitation {
   created_at: string
 }
 
-export interface AnalyticsDailyMetric {
-  id: string
-  connection_id: string
-  date: string
-  total_revenue: number
-  attributed_revenue: number
-  subscribers: number
-  unsubscribes: number
-}
-
-export interface AnalyticsMonthlyCampaign {
-  id: string
-  connection_id: string
-  month: string
-  campaign_id: string
-  campaign_name: string
-  revenue: number
-  open_rate: number
-  click_rate: number
-  delivered_count: number
-}
-
-export interface AnalyticsMonthlyFlow {
-  id: string
-  connection_id: string
-  month: string
-  flow_id: string
-  flow_name: string
-  revenue: number
-  open_rate: number
-  click_rate: number
-  delivered_count: number
-}
-
-export type AnalyticsSyncStep = 'daily-metrics' | 'campaigns' | 'flows'
-export type AnalyticsSyncStatus = 'pending' | 'running' | 'completed' | 'failed'
-export type AnalyticsSyncTrigger = 'cron' | 'onboarding' | 'manual'
-
-export interface AnalyticsSyncJob {
-  id: string
-  connection_id: string
-  month: string
-  step: AnalyticsSyncStep
-  status: AnalyticsSyncStatus
-  triggered_by: AnalyticsSyncTrigger
-  error_message: string | null
-  started_at: string | null
-  completed_at: string | null
-  created_at: string
-}
-
 export interface TeamMemberWithProfile extends TeamMember {
   profiles?: {
     full_name: string | null
@@ -306,4 +241,30 @@ export interface TeamMemberWithProfile extends TeamMember {
 
 export interface TeamWithMembers extends Team {
   team_members?: TeamMemberWithProfile[]
+}
+
+export interface AnalyticsReport {
+  id: string
+  user_id: string
+  connection_id: string | null
+  title: string
+  account_label: string
+  period_start: string | null
+  period_end: string | null
+  compare_start: string | null
+  compare_end: string | null
+  period_month: string
+  compare_month: string
+  include_list_growth: boolean
+  add_summary: boolean
+  include_action_items: boolean
+  status: 'ready'
+  analytics_data: KlaviyoAnalyticsData
+  fetched_at: string
+  created_at: string
+  ai_status?: 'idle' | 'generating' | 'ready' | 'failed'
+  ai_insights?: Record<string, unknown> | null
+  ai_model?: string | null
+  ai_generated_at?: string | null
+  ai_error?: string | null
 }

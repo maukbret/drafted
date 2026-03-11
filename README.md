@@ -52,6 +52,9 @@ Use these env vars to ship code without showing it to everyone yet:
 FEATURE_ANALYTICS_ENABLED=false
 FEATURE_ANALYTICS_ALLOWED_USER_IDS=your-user-uuid,another-user-uuid
 
+FEATURE_REPORTS_ENABLED=false
+FEATURE_REPORTS_ALLOWED_USER_IDS=your-user-uuid,another-user-uuid
+
 FEATURE_PRODUCT_FEED_ENABLED=false
 FEATURE_PRODUCT_FEED_ALLOWED_USER_IDS=your-user-uuid,another-user-uuid
 ```
