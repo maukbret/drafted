@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { formatRangeLabel, resolveRangeWithMonthFallback } from '@/lib/report-dates'
-import { generateReportInsights } from '@/lib/ai/gemini'
+import { generateReportInsights } from '@/lib/ai'
 import {
   isMissingReportInsightsColumnsError,
   normalizeReportInsights,
@@ -25,6 +25,7 @@ interface ReportRow {
   account_label: string
   user_id: string
   include_list_growth: boolean
+  language?: string | null
   period_start?: string | null
   period_end?: string | null
   compare_start?: string | null
@@ -74,19 +75,19 @@ async function loadReportForInsights(
 ): Promise<{ row: ReportRow; supportsAiColumns: boolean } | { error: unknown }> {
   const variants: Array<{ fields: string; supportsAiColumns: boolean }> = [
     {
-      fields: 'id, user_id, title, account_label, include_list_growth, period_start, period_end, compare_start, compare_end, period_month, compare_month, analytics_data, ai_status, ai_insights, ai_model, ai_generated_at, ai_error',
+      fields: 'id, user_id, title, account_label, include_list_growth, language, period_start, period_end, compare_start, compare_end, period_month, compare_month, analytics_data, ai_status, ai_insights, ai_model, ai_generated_at, ai_error',
       supportsAiColumns: true,
     },
     {
-      fields: 'id, user_id, title, account_label, include_list_growth, period_start, period_end, compare_start, compare_end, period_month, compare_month, analytics_data',
+      fields: 'id, user_id, title, account_label, include_list_growth, language, period_start, period_end, compare_start, compare_end, period_month, compare_month, analytics_data',
       supportsAiColumns: false,
     },
     {
-      fields: 'id, user_id, title, account_label, include_list_growth, period_month, compare_month, analytics_data, ai_status, ai_insights, ai_model, ai_generated_at, ai_error',
+      fields: 'id, user_id, title, account_label, include_list_growth, language, period_month, compare_month, analytics_data, ai_status, ai_insights, ai_model, ai_generated_at, ai_error',
       supportsAiColumns: true,
     },
     {
-      fields: 'id, user_id, title, account_label, include_list_growth, period_month, compare_month, analytics_data',
+      fields: 'id, user_id, title, account_label, include_list_growth, language, period_month, compare_month, analytics_data',
       supportsAiColumns: false,
     },
   ]
@@ -196,7 +197,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         accountLabel: row.account_label,
         periodLabel: formatRangeLabel(periodRange.start, periodRange.end),
         compareLabel: formatRangeLabel(compareRange.start, compareRange.end),
+        periodStart: periodRange.start,
+        periodEnd: periodRange.end,
+        compareStart: compareRange.start,
+        compareEnd: compareRange.end,
         includeListGrowth: row.include_list_growth,
+        language: row.language || 'en',
         analytics: row.analytics_data,
       })
       insights = result.insights

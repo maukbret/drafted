@@ -8,6 +8,7 @@ import {
   createColumnHelper,
 } from '@tanstack/react-table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -17,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { TrendingUp, TrendingDown } from 'lucide-react'
 import { KlaviyoAnalyticsFlow } from '@/types/database'
 
 function fmtCurrency(n: number) {
@@ -34,15 +36,25 @@ function changePct(curr: number, comp: number): number | null {
 
 function ChangeBadge({ curr, comp }: { curr: number; comp: number }) {
   if (comp === 0 && curr > 0) {
-    return <span className="text-xs font-medium text-green-600">New</span>
+    return <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">New</Badge>
   }
   const pct = changePct(curr, comp)
   if (pct === null) return null
   const pos = pct >= 0
   return (
-    <span className={`text-xs font-medium ${pos ? 'text-green-600' : 'text-red-600'}`}>
+    <Badge
+      variant="outline"
+      className={pos
+        ? 'text-green-600 border-green-200 bg-green-50'
+        : 'text-red-600 border-red-200 bg-red-50'
+      }
+    >
+      {pos
+        ? <TrendingUp className="h-3 w-3 mr-1" />
+        : <TrendingDown className="h-3 w-3 mr-1" />
+      }
       {pos ? '+' : ''}{pct.toFixed(1)}%
-    </span>
+    </Badge>
   )
 }
 
@@ -57,7 +69,19 @@ interface TopFlowsProps {
 
 export function TopFlows({ flows, compFlows, periodLabel, loading }: TopFlowsProps) {
   const top5 = useMemo(
-    () => flows.slice(0, 5).map((f, i) => ({ ...f, rank: i + 1 })),
+    () => {
+      const real = flows.slice(0, 5).map((f, i) => ({ ...f, rank: i + 1, _empty: false as const }))
+      const placeholders = Array.from({ length: 5 - real.length }, (_, i) => ({
+        name: '',
+        revenue: 0,
+        openRate: 0,
+        clickRate: 0,
+        deliveredCount: 0,
+        rank: real.length + i + 1,
+        _empty: true as const,
+      }))
+      return [...real, ...placeholders]
+    },
     [flows]
   )
 
@@ -104,7 +128,7 @@ export function TopFlows({ flows, compFlows, periodLabel, loading }: TopFlowsPro
   ], [])
 
   const table = useReactTable({
-    data: top5,
+    data: top5 as (KlaviyoAnalyticsFlow & { rank: number })[],
     columns,
     getCoreRowModel: getCoreRowModel(),
   })
@@ -135,10 +159,7 @@ export function TopFlows({ flows, compFlows, periodLabel, loading }: TopFlowsPro
         </div>
       </CardHeader>
       <CardContent>
-        {flows.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">No flow data for this period</p>
-        ) : (
-          <>
+        <>
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -152,15 +173,18 @@ export function TopFlows({ flows, compFlows, periodLabel, loading }: TopFlowsPro
                 ))}
               </TableHeader>
               <TableBody>
-                {table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="text-sm py-2">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
+                {table.getRowModel().rows.map((row) => {
+                  const isEmpty = (row.original as any)._empty
+                  return (
+                    <TableRow key={row.id} className={isEmpty ? 'pointer-events-none' : ''}>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="text-sm py-2">
+                          {isEmpty ? (cell.column.id === 'rank' ? <span className="text-muted-foreground">{row.original.rank}</span> : '\u00A0') : flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
 
@@ -178,7 +202,6 @@ export function TopFlows({ flows, compFlows, periodLabel, loading }: TopFlowsPro
               </div>
             </div>
           </>
-        )}
       </CardContent>
     </Card>
   )

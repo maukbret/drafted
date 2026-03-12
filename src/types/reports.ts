@@ -14,6 +14,7 @@ export interface SavedReportListItem {
   includeListGrowth: boolean
   addSummary: boolean
   includeActionItems: boolean
+  language: string
   createdAt: string
   status: ReportStatus
 }

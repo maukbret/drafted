@@ -18,6 +18,7 @@ interface AnalyticsReportRow {
   include_list_growth: boolean
   add_summary: boolean
   include_action_items: boolean
+  language?: string | null
   created_at: string
   status: string
 }
@@ -78,7 +79,7 @@ export default async function ReportsPage() {
 
   const reportsWithRange = await supabase
     .from('analytics_reports')
-    .select('id, title, account_label, period_start, period_end, compare_start, compare_end, period_month, compare_month, include_list_growth, add_summary, include_action_items, created_at, status')
+    .select('id, title, account_label, period_start, period_end, compare_start, compare_end, period_month, compare_month, include_list_growth, add_summary, include_action_items, language, created_at, status')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(100)
@@ -90,7 +91,7 @@ export default async function ReportsPage() {
     console.warn('[Reports] analytics_reports range columns missing. Falling back to month-only query.')
     const fallbackReports = await supabase
       .from('analytics_reports')
-      .select('id, title, account_label, period_month, compare_month, include_list_growth, add_summary, include_action_items, created_at, status')
+      .select('id, title, account_label, period_month, compare_month, include_list_growth, add_summary, include_action_items, language, created_at, status')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100)
@@ -119,6 +120,7 @@ export default async function ReportsPage() {
       includeListGrowth: row.include_list_growth,
       addSummary: row.add_summary,
       includeActionItems: row.include_action_items,
+      language: row.language || 'en',
       createdAt: row.created_at,
       status: row.status === 'ready' ? 'ready' : 'ready',
     }]

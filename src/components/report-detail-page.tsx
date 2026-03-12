@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { Check, ChevronLeft, Loader2, Pencil, Sparkles, X } from 'lucide-react'
+import { Check, ChevronLeft, Download, Loader2, Pencil, Sparkles, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,7 +12,9 @@ import { TopCampaigns } from '@/components/analytics/top-campaigns'
 import { TopFlows } from '@/components/analytics/top-flows'
 import { SavedReportDetail } from '@/types/reports'
 import { formatRangeLabel } from '@/lib/report-dates'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ReportInsightSection, ReportInsights } from '@/lib/report-insights'
+import { generateReportPdf } from '@/lib/report-pdf'
 
 interface ReportDetailPageProps {
   report: SavedReportDetail
@@ -53,9 +55,12 @@ interface GenerateInsightsApiResponse {
 interface InsightCardProps {
   title: string
   section: ReportInsightSection | null
+  sectionKey: string
+  excludedActionItems: Set<string>
+  onToggleActionItem: (key: string) => void
 }
 
-function InsightCard({ title, section }: InsightCardProps) {
+function InsightCard({ title, section, sectionKey, excludedActionItems, onToggleActionItem }: InsightCardProps) {
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -80,10 +85,27 @@ function InsightCard({ title, section }: InsightCardProps) {
         {section && section.actionItems.length > 0 && (
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Action items</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-              {section.actionItems.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
+            <ul className="mt-2 space-y-2 pl-1 text-sm">
+              {section.actionItems.map((item, index) => {
+                const itemKey = `${sectionKey}-${index}`
+                const isExcluded = excludedActionItems.has(itemKey)
+                return (
+                  <li key={itemKey} className="flex items-start gap-2">
+                    <Checkbox
+                      id={itemKey}
+                      checked={!isExcluded}
+                      onCheckedChange={() => onToggleActionItem(itemKey)}
+                      className="mt-0.5 shrink-0"
+                    />
+                    <label
+                      htmlFor={itemKey}
+                      className={`cursor-pointer leading-snug transition-opacity ${isExcluded ? 'opacity-50 line-through' : ''}`}
+                    >
+                      {item}
+                    </label>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}
@@ -105,11 +127,25 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
   const [aiError, setAiError] = useState<string | null>(report.aiError)
   const [insightsWarning, setInsightsWarning] = useState<string | null>(null)
   const [isGeneratingInsights, setIsGeneratingInsights] = useState(false)
+  const [excludedActionItems, setExcludedActionItems] = useState<Set<string>>(new Set())
+
+  const toggleActionItem = (key: string) => {
+    setExcludedActionItems((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
 
   const optionLabels = [
     report.includeListGrowth ? 'List growth' : null,
     report.addSummary ? 'Summary' : null,
     report.includeActionItems ? 'Actionable to-do' : null,
+    report.language === 'nl' ? '🇳🇱 Nederlands' : '🇺🇸 English',
   ].filter(Boolean) as string[]
 
   const hasGrowthMetrics = (
@@ -161,6 +197,18 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
     } finally {
       setIsGeneratingInsights(false)
     }
+  }
+
+  const exportPdf = () => {
+    generateReportPdf({
+      report: { ...report, title },
+      insights,
+      periodLabel,
+      compareLabel,
+      excludedActionItems,
+      showListGrowthSection,
+      hasGrowthMetrics,
+    })
   }
 
   const saveTitle = async () => {
@@ -339,6 +387,15 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
                 </>
               )}
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={exportPdf}
+            >
+              <Download className="h-4 w-4 buttonIcon" />
+              Export PDF
+            </Button>
             {aiStatus === 'ready' && aiGeneratedAt && (
               <span className="text-xs text-muted-foreground">
                 Updated {new Date(aiGeneratedAt).toLocaleString('en-US', {
@@ -371,8 +428,11 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
         compAttributedRevenue={report.analytics.compAttributedRevenue}
       />
       <InsightCard
-        title="AI insights: Revenue overview"
+        title="Insights: Revenue overview"
         section={insights?.overview || null}
+        sectionKey="overview"
+        excludedActionItems={excludedActionItems}
+        onToggleActionItem={toggleActionItem}
       />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -383,8 +443,11 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
             periodLabel={`${periodLabel} vs ${compareLabel}`}
           />
           <InsightCard
-            title="AI insights: Campaign performance"
+            title="Insights: Campaign performance"
             section={insights?.campaigns || null}
+            sectionKey="campaigns"
+            excludedActionItems={excludedActionItems}
+            onToggleActionItem={toggleActionItem}
           />
         </div>
         <div className="space-y-4">
@@ -394,8 +457,11 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
             periodLabel={`${periodLabel} vs ${compareLabel}`}
           />
           <InsightCard
-            title="AI insights: Flow performance"
+            title="Insights: Flow performance"
             section={insights?.flows || null}
+            sectionKey="flows"
+            excludedActionItems={excludedActionItems}
+            onToggleActionItem={toggleActionItem}
           />
         </div>
       </div>
@@ -445,8 +511,11 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
             </Card>
           )}
           <InsightCard
-            title="AI insights: List growth"
+            title="Insights: List growth"
             section={insights?.listGrowth || null}
+            sectionKey="listGrowth"
+            excludedActionItems={excludedActionItems}
+            onToggleActionItem={toggleActionItem}
           />
         </div>
       )}

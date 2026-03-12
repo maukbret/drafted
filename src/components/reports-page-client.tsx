@@ -20,6 +20,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Command,
   CommandEmpty,
   CommandGroup,
@@ -204,6 +211,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
   const [includeListGrowth, setIncludeListGrowth] = useState(true)
   const [addSummary, setAddSummary] = useState(true)
   const [includeActionItems, setIncludeActionItems] = useState(true)
+  const [language, setLanguage] = useState('en')
   const [formError, setFormError] = useState<string | null>(null)
   const [generationError, setGenerationError] = useState<GenerationErrorState | null>(null)
 
@@ -247,6 +255,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
     setIncludeListGrowth(true)
     setAddSummary(true)
     setIncludeActionItems(true)
+    setLanguage('en')
     setFormError(null)
   }, [connections, defaultCompareRange, defaultPeriodRange])
 
@@ -389,6 +398,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
           includeListGrowth,
           addSummary,
           includeActionItems,
+          language,
           fetchedAt: analyticsResponse.fetchedAt,
           analyticsData: analyticsResponse.data,
         }),
@@ -427,6 +437,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
     connections,
     includeActionItems,
     includeListGrowth,
+    language,
     periodRange,
     resetModalForm,
     router,
@@ -614,6 +625,29 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
                   placeholder="Pick the comparison range"
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Report language</Label>
+              <Select value={language} onValueChange={setLanguage}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="text-base leading-none">🇺🇸</span>
+                      English (US)
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="nl">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="text-base leading-none">🇳🇱</span>
+                      Nederlands
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-3 rounded-md border p-4">

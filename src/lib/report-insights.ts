@@ -78,7 +78,7 @@ export function isReportAiStatus(value: unknown): value is ReportAIStatus {
   return value === 'idle' || value === 'generating' || value === 'ready' || value === 'failed'
 }
 
-export function parseGeminiInsightsText(text: string): ReportInsights {
+export function parseInsightsText(text: string): ReportInsights {
   const trimmed = text.trim()
   const maybeFenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
   const jsonText = maybeFenced ? maybeFenced[1] : trimmed
@@ -87,7 +87,7 @@ export function parseGeminiInsightsText(text: string): ReportInsights {
   const normalized = normalizeReportInsights(parsed)
 
   if (!normalized) {
-    throw new Error('Gemini response did not match expected insights format.')
+    throw new Error('AI response did not match expected insights format.')
   }
 
   return normalized

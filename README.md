@@ -22,6 +22,7 @@ You'll need:
 - **Supabase**: Project URL and keys from your Supabase dashboard (Settings > API)
 - **Klaviyo**: Client ID and secret from https://www.klaviyo.com/manage-apps
 - **Figma**: Personal access token from https://www.figma.com/developers/api#access-tokens
+- **Anthropic**: `ANTHROPIC_API_KEY` from https://console.anthropic.com/ (optional override: `ANTHROPIC_MODEL`, default is `claude-sonnet-4-20250514`)
 
 ### 3. Set up the database
 

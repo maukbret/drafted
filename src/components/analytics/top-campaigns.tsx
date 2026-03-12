@@ -36,15 +36,25 @@ function changePct(curr: number, comp: number): number | null {
 
 function ChangeBadge({ curr, comp }: { curr: number; comp: number }) {
   if (comp === 0 && curr > 0) {
-    return <span className="text-xs font-medium text-green-600">New</span>
+    return <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">New</Badge>
   }
   const pct = changePct(curr, comp)
   if (pct === null) return null
   const pos = pct >= 0
   return (
-    <span className={`text-xs font-medium ${pos ? 'text-green-600' : 'text-red-600'}`}>
+    <Badge
+      variant="outline"
+      className={pos
+        ? 'text-green-600 border-green-200 bg-green-50'
+        : 'text-red-600 border-red-200 bg-red-50'
+      }
+    >
+      {pos
+        ? <TrendingUp className="h-3 w-3 mr-1" />
+        : <TrendingDown className="h-3 w-3 mr-1" />
+      }
       {pos ? '+' : ''}{pct.toFixed(1)}%
-    </span>
+    </Badge>
   )
 }
 
@@ -59,7 +69,19 @@ interface TopCampaignsProps {
 
 export function TopCampaigns({ campaigns, compCampaigns, periodLabel, loading }: TopCampaignsProps) {
   const top5 = useMemo(
-    () => campaigns.slice(0, 5).map((c, i) => ({ ...c, rank: i + 1 })),
+    () => {
+      const real = campaigns.slice(0, 5).map((c, i) => ({ ...c, rank: i + 1, _empty: false as const }))
+      const placeholders = Array.from({ length: 5 - real.length }, (_, i) => ({
+        name: '',
+        revenue: 0,
+        openRate: 0,
+        clickRate: 0,
+        deliveredCount: 0,
+        rank: real.length + i + 1,
+        _empty: true as const,
+      }))
+      return [...real, ...placeholders]
+    },
     [campaigns]
   )
 
@@ -106,7 +128,7 @@ export function TopCampaigns({ campaigns, compCampaigns, periodLabel, loading }:
   ], [])
 
   const table = useReactTable({
-    data: top5,
+    data: top5 as (KlaviyoAnalyticsCampaign & { rank: number })[],
     columns,
     getCoreRowModel: getCoreRowModel(),
   })
@@ -137,10 +159,7 @@ export function TopCampaigns({ campaigns, compCampaigns, periodLabel, loading }:
         </div>
       </CardHeader>
       <CardContent>
-        {campaigns.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">No campaign data for this period</p>
-        ) : (
-          <>
+        <>
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -154,15 +173,18 @@ export function TopCampaigns({ campaigns, compCampaigns, periodLabel, loading }:
                 ))}
               </TableHeader>
               <TableBody>
-                {table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="text-sm py-2">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
+                {table.getRowModel().rows.map((row) => {
+                  const isEmpty = (row.original as any)._empty
+                  return (
+                    <TableRow key={row.id} className={isEmpty ? 'pointer-events-none' : ''}>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="text-sm py-2">
+                          {isEmpty ? (cell.column.id === 'rank' ? <span className="text-muted-foreground">{row.original.rank}</span> : '\u00A0') : flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
 
@@ -180,7 +202,6 @@ export function TopCampaigns({ campaigns, compCampaigns, periodLabel, loading }:
               </div>
             </div>
           </>
-        )}
       </CardContent>
     </Card>
   )
