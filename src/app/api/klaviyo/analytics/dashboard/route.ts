@@ -277,10 +277,7 @@ export async function GET(request: NextRequest) {
       accountOverview = await fetchAccountOverview(
         supabase,
         connectionId,
-        metricIds.placedOrderMetricId,
-        metricIds.openedEmailMetricId,
-        metricIds.clickedEmailMetricId,
-        metricIds.receivedEmailMetricId
+        metricIds.placedOrderMetricId
       )
       console.log('[Analytics Dashboard] Account overview result:', accountOverview ? {
         months: accountOverview.months.length,

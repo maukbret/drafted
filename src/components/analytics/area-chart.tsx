@@ -44,6 +44,10 @@ export function AreaChart({ data, datasets, xDataKey, yAxisFormatter, tooltipFor
           tickLine={false}
           axisLine={false}
           tickMargin={8}
+          interval={0}
+          minTickGap={0}
+          tick={{ fontSize: 11 }}
+          height={36}
         />
         {yAxisFormatter && (
           <YAxis
