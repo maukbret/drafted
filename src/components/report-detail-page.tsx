@@ -2,11 +2,20 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { Check, ChevronLeft, Download, Loader2, Pencil, Sparkles, X } from 'lucide-react'
+import { Check, ChevronLeft, Download, Info, Loader2, MoreVertical, Pencil, Sparkles, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { RevenueCards } from '@/components/analytics/revenue-cards'
 import { TopCampaigns } from '@/components/analytics/top-campaigns'
 import { TopFlows } from '@/components/analytics/top-flows'
@@ -15,6 +24,7 @@ import { formatRangeLabel } from '@/lib/report-dates'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ReportInsightSection, ReportInsights } from '@/lib/report-insights'
 import { generateReportPdf } from '@/lib/report-pdf'
+import { AccountOverviewCharts } from '@/components/analytics/account-overview-charts'
 
 interface ReportDetailPageProps {
   report: SavedReportDetail
@@ -35,6 +45,22 @@ function formatSignedPercent(value: number | null | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
   const sign = value >= 0 ? '+' : ''
   return `${sign}${value.toFixed(2)}%`
+}
+
+function NetGrowthValue({ value }: { value: number | null | undefined }) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return <p className="mt-1 text-lg font-semibold">—</p>
+  }
+  const isPositive = value >= 0
+  const Icon = isPositive ? TrendingUp : TrendingDown
+  const color = isPositive ? 'text-emerald-600' : 'text-red-600'
+  const sign = isPositive ? '+' : ''
+  return (
+    <p className={`mt-1 flex items-center gap-1.5 text-lg font-semibold ${color}`}>
+      <Icon className="h-4 w-4" />
+      {sign}{value.toFixed(2)}%
+    </p>
+  )
 }
 
 interface UpdateTitleApiResponse {
@@ -128,6 +154,7 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
   const [insightsWarning, setInsightsWarning] = useState<string | null>(null)
   const [isGeneratingInsights, setIsGeneratingInsights] = useState(false)
   const [excludedActionItems, setExcludedActionItems] = useState<Set<string>>(new Set())
+  const [insightsOpen, setInsightsOpen] = useState(!!report.aiInsights)
 
   const toggleActionItem = (key: string) => {
     setExcludedActionItems((prev) => {
@@ -145,6 +172,7 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
     report.includeListGrowth ? 'List growth' : null,
     report.addSummary ? 'Summary' : null,
     report.includeActionItems ? 'Actionable to-do' : null,
+    report.includeAccountOverview ? 'Account overview' : null,
     report.language === 'nl' ? '🇳🇱 Nederlands' : '🇺🇸 English',
   ].filter(Boolean) as string[]
 
@@ -190,6 +218,7 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
       setAiGeneratedAt(json.generatedAt || new Date().toISOString())
       setAiError(null)
       setInsightsWarning(json.warning || null)
+      setInsightsOpen(true)
     } catch (error) {
       const message = (error as Error)?.message || 'Failed to generate insights.'
       setAiStatus('failed')
@@ -340,135 +369,126 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
             {report.accountLabel} · {periodLabel} vs {compareLabel}
           </p>
         </div>
-      </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Report settings</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {optionLabels.length > 0 ? (
-              optionLabels.map((label) => (
-                <Badge key={label} variant="outline">
-                  {label}
-                </Badge>
-              ))
-            ) : (
-              <span className="text-sm text-muted-foreground">Base metrics only</span>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Generated {new Date(report.createdAt).toLocaleString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </p>
-          <div className="flex flex-wrap items-center gap-2 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void generateInsights()}
-              disabled={isGeneratingInsights || aiStatus === 'generating'}
-            >
-              {isGeneratingInsights || aiStatus === 'generating' ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin buttonIcon" />
-                  Generating insights
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4 buttonIcon" />
-                  {insights ? 'Regenerate insights' : 'Generate insights'}
-                </>
-              )}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={exportPdf}
-            >
-              <Download className="h-4 w-4 buttonIcon" />
-              Export PDF
-            </Button>
-            {aiStatus === 'ready' && aiGeneratedAt && (
-              <span className="text-xs text-muted-foreground">
-                Updated {new Date(aiGeneratedAt).toLocaleString('en-US', {
-                  month: 'short',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-                {aiModel ? ` · ${aiModel}` : ''}
-              </span>
-            )}
-          </div>
-          {aiError && (
-            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {aiError}
-            </p>
-          )}
-          {insightsWarning && (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              {insightsWarning}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+        <div className="flex items-center gap-1">
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button type="button" variant="ghost" size="icon">
+                  <Info className="h-4 w-4 text-muted-foreground" />
+                  <span className="sr-only">Report info</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent
+                side="bottom"
+                align="end"
+                className="max-w-xs space-y-2 rounded-lg border bg-popover p-3 text-popover-foreground shadow-md"
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  {optionLabels.length > 0 ? (
+                    optionLabels.map((label) => (
+                      <Badge key={label} variant="outline" className="text-[11px]">
+                        {label}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Base metrics only</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Created {new Date(report.createdAt).toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </p>
+                {aiStatus === 'ready' && aiGeneratedAt && (
+                  <p className="text-xs text-muted-foreground">
+                    Insights updated {new Date(aiGeneratedAt).toLocaleString('en-US', {
+                      month: 'short',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
-      <RevenueCards
-        totalRevenue={report.analytics.totalRevenue}
-        compTotalRevenue={report.analytics.compTotalRevenue}
-        attributedRevenue={report.analytics.attributedRevenue}
-        compAttributedRevenue={report.analytics.compAttributedRevenue}
-      />
-      <InsightCard
-        title="Insights: Revenue overview"
-        section={insights?.overview || null}
-        sectionKey="overview"
-        excludedActionItems={excludedActionItems}
-        onToggleActionItem={toggleActionItem}
-      />
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <div className="space-y-4">
-          <TopCampaigns
-            campaigns={report.analytics.campaigns}
-            compCampaigns={report.analytics.compCampaigns}
-            periodLabel={`${periodLabel} vs ${compareLabel}`}
-          />
-          <InsightCard
-            title="Insights: Campaign performance"
-            section={insights?.campaigns || null}
-            sectionKey="campaigns"
-            excludedActionItems={excludedActionItems}
-            onToggleActionItem={toggleActionItem}
-          />
-        </div>
-        <div className="space-y-4">
-          <TopFlows
-            flows={report.analytics.flows}
-            compFlows={report.analytics.compFlows}
-            periodLabel={`${periodLabel} vs ${compareLabel}`}
-          />
-          <InsightCard
-            title="Insights: Flow performance"
-            section={insights?.flows || null}
-            sectionKey="flows"
-            excludedActionItems={excludedActionItems}
-            onToggleActionItem={toggleActionItem}
-          />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" size="icon">
+                <MoreVertical className="h-4 w-4" />
+                <span className="sr-only">Report actions</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => void generateInsights()}
+                disabled={isGeneratingInsights || aiStatus === 'generating'}
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                {insights ? 'Regenerate insights' : 'Generate insights'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportPdf}>
+                <Download className="h-4 w-4 mr-2" />
+                Export PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
-      {showListGrowthSection && (
-        <div className="space-y-4">
-          {hasGrowthMetrics ? (
+      {(isGeneratingInsights || aiStatus === 'generating') && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Generating insights...
+        </div>
+      )}
+      {aiError && (
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {aiError}
+        </p>
+      )}
+      {insightsWarning && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {insightsWarning}
+        </p>
+      )}
+
+      <Tabs defaultValue="report">
+        <TabsList>
+          <TabsTrigger value="report">Report</TabsTrigger>
+          {report.includeAccountOverview && (
+            <TabsTrigger value="overview">Account Overview</TabsTrigger>
+          )}
+        </TabsList>
+
+        <TabsContent value="report" className="space-y-6 pt-2">
+          <RevenueCards
+            totalRevenue={report.analytics.totalRevenue}
+            compTotalRevenue={report.analytics.compTotalRevenue}
+            attributedRevenue={report.analytics.attributedRevenue}
+            compAttributedRevenue={report.analytics.compAttributedRevenue}
+          />
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <TopCampaigns
+              campaigns={report.analytics.campaigns}
+              compCampaigns={report.analytics.compCampaigns}
+              periodLabel={`${periodLabel} vs ${compareLabel}`}
+            />
+            <TopFlows
+              flows={report.analytics.flows}
+              compFlows={report.analytics.compFlows}
+              periodLabel={`${periodLabel} vs ${compareLabel}`}
+            />
+          </div>
+
+          {showListGrowthSection && hasGrowthMetrics && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Audience Growth</CardTitle>
@@ -493,32 +513,89 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
                   </div>
                   <div className="rounded-md border p-3">
                     <p className="text-xs text-muted-foreground">Net growth %</p>
-                    <p className="mt-1 text-lg font-semibold">{formatSignedPercent(report.analytics.netGrowthPercent)}</p>
+                    <NetGrowthValue value={report.analytics.netGrowthPercent} />
                   </div>
                 </div>
               </CardContent>
             </Card>
-          ) : (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Audience Growth</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Audience growth metrics were not included in this report.
-                </p>
-              </CardContent>
-            </Card>
           )}
-          <InsightCard
-            title="Insights: List growth"
-            section={insights?.listGrowth || null}
-            sectionKey="listGrowth"
-            excludedActionItems={excludedActionItems}
-            onToggleActionItem={toggleActionItem}
-          />
-        </div>
-      )}
+
+          <Collapsible open={insightsOpen} onOpenChange={setInsightsOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-md border px-4 py-3 text-left text-sm font-medium hover:bg-muted/40 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  AI Insights
+                  {insights && <Badge variant="outline" className="ml-1 text-xs">Generated</Badge>}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {insightsOpen ? 'Click to collapse' : 'Click to expand'}
+                </span>
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="space-y-4 pt-4">
+                <InsightCard
+                  title="Insights: Revenue overview"
+                  section={insights?.overview || null}
+                  sectionKey="overview"
+                  excludedActionItems={excludedActionItems}
+                  onToggleActionItem={toggleActionItem}
+                />
+
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <InsightCard
+                    title="Insights: Campaign performance"
+                    section={insights?.campaigns || null}
+                    sectionKey="campaigns"
+                    excludedActionItems={excludedActionItems}
+                    onToggleActionItem={toggleActionItem}
+                  />
+                  <InsightCard
+                    title="Insights: Flow performance"
+                    section={insights?.flows || null}
+                    sectionKey="flows"
+                    excludedActionItems={excludedActionItems}
+                    onToggleActionItem={toggleActionItem}
+                  />
+                </div>
+
+                {showListGrowthSection && (
+                  <InsightCard
+                    title="Insights: List growth"
+                    section={insights?.listGrowth || null}
+                    sectionKey="listGrowth"
+                    excludedActionItems={excludedActionItems}
+                    onToggleActionItem={toggleActionItem}
+                  />
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </TabsContent>
+
+        {report.includeAccountOverview && (
+          <TabsContent value="overview" className="pt-2">
+            {report.analytics.accountOverview ? (
+              <AccountOverviewCharts data={report.analytics.accountOverview} />
+            ) : (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Account Overview</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    Account overview data was not available when this report was generated. Create a new report to include 12-month trends.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   )
 }

@@ -18,6 +18,7 @@ interface CreateReportPayload {
   includeListGrowth?: boolean
   addSummary?: boolean
   includeActionItems?: boolean
+  includeAccountOverview?: boolean
   language?: string
   fetchedAt?: string
   analyticsData?: KlaviyoAnalyticsData
@@ -36,6 +37,7 @@ interface InsertedReportRow {
   include_list_growth: boolean
   add_summary: boolean
   include_action_items: boolean
+  include_account_overview: boolean
   language: string
   created_at: string
   status: string
@@ -85,6 +87,7 @@ export async function POST(request: NextRequest) {
       includeListGrowth,
       addSummary,
       includeActionItems,
+      includeAccountOverview,
       language,
       fetchedAt,
       analyticsData,
@@ -133,12 +136,13 @@ export async function POST(request: NextRequest) {
         include_list_growth: includeListGrowth === true,
         add_summary: addSummary !== false,
         include_action_items: includeActionItems !== false,
+        include_account_overview: includeAccountOverview === true,
         language: language === 'nl' ? 'nl' : 'en',
         status: 'ready',
         analytics_data: analyticsData,
         fetched_at: fetchedAt || new Date().toISOString(),
       })
-      .select('id, title, account_label, period_start, period_end, compare_start, compare_end, period_month, compare_month, include_list_growth, add_summary, include_action_items, language, created_at, status')
+      .select('id, title, account_label, period_start, period_end, compare_start, compare_end, period_month, compare_month, include_list_growth, add_summary, include_action_items, include_account_overview, language, created_at, status')
       .single()
 
     let inserted: InsertedReportRow | null = insertedWithRange.data as InsertedReportRow | null
@@ -159,12 +163,13 @@ export async function POST(request: NextRequest) {
           include_list_growth: includeListGrowth === true,
           add_summary: addSummary !== false,
           include_action_items: includeActionItems !== false,
+          include_account_overview: includeAccountOverview === true,
           language: language === 'nl' ? 'nl' : 'en',
           status: 'ready',
           analytics_data: analyticsData,
           fetched_at: fetchedAt || new Date().toISOString(),
         })
-        .select('id, title, account_label, period_month, compare_month, include_list_growth, add_summary, include_action_items, language, created_at, status')
+        .select('id, title, account_label, period_month, compare_month, include_list_growth, add_summary, include_action_items, include_account_overview, language, created_at, status')
         .single()
 
       inserted = fallbackInsert.data as InsertedReportRow | null
@@ -201,6 +206,7 @@ export async function POST(request: NextRequest) {
       includeListGrowth: inserted.include_list_growth,
       addSummary: inserted.add_summary,
       includeActionItems: inserted.include_action_items,
+      includeAccountOverview: inserted.include_account_overview ?? false,
       language: inserted.language || 'en',
       createdAt: inserted.created_at,
       status: inserted.status === 'ready' ? 'ready' : 'ready',

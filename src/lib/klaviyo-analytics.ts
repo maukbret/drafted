@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { klaviyoFetch } from '@/lib/klaviyo'
-import { KlaviyoAnalyticsCampaign, KlaviyoAnalyticsFlow } from '@/types/database'
+import { KlaviyoAnalyticsCampaign, KlaviyoAnalyticsData, KlaviyoAnalyticsFlow } from '@/types/database'
 
 const METRIC_CACHE_TTL_MS = 15 * 60 * 1000
 const REPORTING_GAP_MS = 1200
@@ -117,6 +117,9 @@ export interface AnalyticsMetricIds {
   placedOrderMetricId: string | null
   subscribedMetricId: string | null
   unsubscribedMetricId: string | null
+  openedEmailMetricId: string | null
+  clickedEmailMetricId: string | null
+  receivedEmailMetricId: string | null
 }
 
 function findMetricsFromList(allMetrics: Array<{ id: string; name: string }>): AnalyticsMetricIds {
@@ -155,6 +158,12 @@ function findMetricsFromList(allMetrics: Array<{ id: string; name: string }>): A
       ?? findIncludes(['unsubscribed from email marketing', 'unsubscribed', 'unsubscribe'], ['sms', 'push', 'clicked'])
       ?? findExact(['Clicked email to unsubscribe'])
       ?? findIncludes(['clicked email to unsubscribe'], ['sms', 'push']),
+    openedEmailMetricId:
+      findExact(['Opened Email']) ?? findIncludes(['opened email'], ['sms', 'push']),
+    clickedEmailMetricId:
+      findExact(['Clicked Email']) ?? findIncludes(['clicked email'], ['sms', 'push', 'unsubscribe']),
+    receivedEmailMetricId:
+      findExact(['Received Email']) ?? findIncludes(['received email'], ['sms', 'push']),
   }
 }
 
@@ -211,6 +220,9 @@ export async function discoverMetricIds(
     placedOrder: metricNameById.get(metricIds.placedOrderMetricId || '') || null,
     subscribed: metricNameById.get(metricIds.subscribedMetricId || '') || null,
     unsubscribed: metricNameById.get(metricIds.unsubscribedMetricId || '') || null,
+    openedEmail: metricNameById.get(metricIds.openedEmailMetricId || '') || null,
+    clickedEmail: metricNameById.get(metricIds.clickedEmailMetricId || '') || null,
+    receivedEmail: metricNameById.get(metricIds.receivedEmailMetricId || '') || null,
   })
 
   metricCache.set(connectionId, {
@@ -1598,5 +1610,448 @@ export async function fetchPeriodData(
     unsubscribers,
     netGrowth,
     netGrowthPercent,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Account Overview — 12-month series reports (campaigns vs flows)
+// ---------------------------------------------------------------------------
+
+interface SeriesReportRow {
+  dates: string[]
+  statistics: Record<string, Array<number | null>>
+}
+
+function aggregateSeriesRows(rows: SeriesReportRow[]): {
+  months: string[]
+  revenue: number[]
+  openRate: number[]
+  clickRate: number[]
+} {
+  if (rows.length === 0) return { months: [], revenue: [], openRate: [], clickRate: [] }
+
+  // All rows share the same date buckets — use the first one
+  const months = rows[0].dates
+
+  const revenue = new Array<number>(months.length).fill(0)
+  const openRateWeightedSum = new Array<number>(months.length).fill(0)
+  const openRateWeightTotal = new Array<number>(months.length).fill(0)
+  const clickRateWeightedSum = new Array<number>(months.length).fill(0)
+  const clickRateWeightTotal = new Array<number>(months.length).fill(0)
+
+  for (const row of rows) {
+    const cv = row.statistics.conversion_value ?? []
+    const or = row.statistics.open_rate ?? []
+    const cr = row.statistics.click_rate ?? []
+
+    for (let i = 0; i < months.length; i++) {
+      const rev = cv[i] ?? 0
+      revenue[i] += rev
+
+      const weight = rev > 0 ? rev : 1
+      if (or[i] != null) {
+        openRateWeightedSum[i] += or[i]! * weight
+        openRateWeightTotal[i] += weight
+      }
+      if (cr[i] != null) {
+        clickRateWeightedSum[i] += cr[i]! * weight
+        clickRateWeightTotal[i] += weight
+      }
+    }
+  }
+
+  const openRate = months.map((_, i) =>
+    openRateWeightTotal[i] > 0 ? openRateWeightedSum[i] / openRateWeightTotal[i] : 0
+  )
+  const clickRate = months.map((_, i) =>
+    clickRateWeightTotal[i] > 0 ? clickRateWeightedSum[i] / clickRateWeightTotal[i] : 0
+  )
+
+  return { months, revenue, openRate, clickRate }
+}
+
+async function fetchFlowSeriesReport(
+  supabase: SupabaseClient,
+  connectionId: string,
+  placedOrderMetricId: string
+): Promise<SeriesReportRow[]> {
+  const body = {
+    data: {
+      type: 'flow-series-report',
+      attributes: {
+        timeframe: { key: 'last_12_months' },
+        interval: 'monthly',
+        conversion_metric_id: placedOrderMetricId,
+        statistics: ['conversion_value', 'open_rate', 'click_rate'],
+      },
+    },
+  }
+
+  const res = await klaviyoFetchWithRetry(supabase, connectionId, '/api/flow-series-reports/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  if (!res || !res.ok) {
+    const errorBody = res ? await res.text().catch(() => '') : 'null response'
+    console.error('[Analytics] flow-series-report failed:', res?.status ?? 'null', errorBody)
+    return []
+  }
+
+  const json = await res.json().catch(() => null) as {
+    data?: {
+      attributes?: {
+        dates?: string[]
+        date_times?: string[]
+        results?: Array<{
+          statistics?: Record<string, Array<number | null>>
+        }>
+      }
+    }
+  } | null
+
+  const attrs = json?.data?.attributes
+  const dates = attrs?.dates ?? attrs?.date_times
+  const results = attrs?.results
+
+  if (!dates || !Array.isArray(dates) || !results || !Array.isArray(results)) {
+    return []
+  }
+
+  return results
+    .filter((r) => r.statistics)
+    .map((r) => ({ dates, statistics: r.statistics! }))
+}
+
+/**
+ * Fetch total Klaviyo-attributed monthly placed-order revenue via metric-aggregates.
+ * Filters to only attributed orders (where $attributed_message is not empty).
+ * Campaign revenue is then derived as: attributed total - flow revenue.
+ */
+async function fetchMonthlyAttributedRevenue(
+  supabase: SupabaseClient,
+  connectionId: string,
+  placedOrderMetricId: string
+): Promise<{ months: string[]; revenue: number[] }> {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth() - 12, 1)
+  const end = new Date(now.getFullYear(), now.getMonth(), 0) // last day of previous month
+  const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01T00:00:00+00:00`
+  const endStr = dayAfter(`${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`)
+
+  const res = await klaviyoFetchWithRetry(supabase, connectionId, '/api/metric-aggregates/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      data: {
+        type: 'metric-aggregate',
+        attributes: {
+          metric_id: placedOrderMetricId,
+          measurements: ['sum_value'],
+          interval: 'month',
+          page_size: 500,
+          by: [],
+          filter: [
+            `greater-or-equal(datetime,${startStr})`,
+            `less-than(datetime,${endStr})`,
+            'not(equals($attributed_message,""))',
+          ],
+        },
+      },
+    }),
+  })
+
+  if (!res?.ok) {
+    const body = res ? await res.text().catch(() => '') : 'null response'
+    console.error('[Analytics] monthly attributed revenue failed:', res?.status ?? 'null', body)
+    return { months: [], revenue: [] }
+  }
+
+  const payload = await res.json()
+  const attrs = payload?.data?.attributes
+  const rows = resultRows(payload)
+  const dates: string[] = attrs?.dates ?? attrs?.date_times ?? []
+
+  const monthMap = new Map<string, number>()
+
+  if (rows.length === 1 && dates.length > 0) {
+    // Single-row format: one row with measurement arrays aligned to dates[]
+    const values: number[] = rows[0]?.measurements?.sum_value ?? []
+    for (let i = 0; i < dates.length; i++) {
+      const monthKey = dates[i].slice(0, 7)
+      const prev = monthMap.get(monthKey) || 0
+      monthMap.set(monthKey, prev + (typeof values[i] === 'number' ? values[i] : 0))
+    }
+  } else {
+    // Multi-row format: one row per month bucket with a datetime key
+    for (const row of rows) {
+      const dt = row?.datetime ?? row?.date
+      if (typeof dt === 'string') {
+        const monthKey = dt.slice(0, 7) // "2025-04"
+        const prev = monthMap.get(monthKey) || 0
+        monthMap.set(monthKey, prev + numberFromValue(row?.measurements?.sum_value))
+      }
+    }
+  }
+
+  const sorted = [...monthMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  return {
+    months: sorted.map(([m]) => `${m}-01T00:00:00+00:00`),
+    revenue: sorted.map(([, v]) => v),
+  }
+}
+
+/**
+ * Fetch a single metric's monthly counts for campaign-only emails.
+ * Uses `equals($flow,"")` to exclude flow-attributed events.
+ */
+async function fetchCampaignMonthlyMetric(
+  supabase: SupabaseClient,
+  connectionId: string,
+  metricId: string,
+  measurement: 'count' | 'unique' | 'sum_value' = 'count'
+): Promise<Map<string, number>> {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth() - 12, 1)
+  const end = new Date(now.getFullYear(), now.getMonth(), 0)
+  const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01T00:00:00+00:00`
+  const endStr = dayAfter(`${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`)
+
+  const requestBody = {
+    data: {
+      type: 'metric-aggregate',
+      attributes: {
+        metric_id: metricId,
+        measurements: [measurement],
+        interval: 'month',
+        page_size: 500,
+        by: [],
+        filter: [
+          `greater-or-equal(datetime,${startStr})`,
+          `less-than(datetime,${endStr})`,
+          'equals($flow,"")',
+        ],
+      },
+    },
+  }
+
+  console.log('[Campaign Metrics] POST /api/metric-aggregates/', {
+    metricId,
+    measurement,
+    dateRange: `${startStr} → ${endStr}`,
+    filter: requestBody.data.attributes.filter,
+  })
+
+  const res = await klaviyoFetchWithRetry(supabase, connectionId, '/api/metric-aggregates/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  })
+
+  if (!res) {
+    console.error('[Campaign Metrics] null response for metricId:', metricId)
+    return new Map()
+  }
+
+  const responseBody = await res.text()
+  console.log('[Campaign Metrics] Response status=%d, metricId=%s, bodyLength=%d', res.status, metricId, responseBody.length)
+
+  if (!res.ok) {
+    console.error('[Campaign Metrics] FAILED metricId=%s status=%d body=%s', metricId, res.status, responseBody.substring(0, 500))
+    return new Map()
+  }
+
+  let payload: any
+  try {
+    payload = JSON.parse(responseBody)
+  } catch {
+    console.error('[Campaign Metrics] JSON parse failed for metricId:', metricId)
+    return new Map()
+  }
+
+  const attrs = payload?.data?.attributes
+  const rows = resultRows(payload)
+  const dates: string[] = attrs?.dates ?? attrs?.date_times ?? []
+
+  console.log('[Campaign Metrics] metricId=%s rows=%d, dates=%d', metricId, rows.length, dates.length)
+
+  const monthMap = new Map<string, number>()
+
+  if (rows.length === 1 && dates.length > 0) {
+    // Single-row format: one row with measurement arrays aligned to dates[]
+    const values: number[] = rows[0]?.measurements?.[measurement] ?? []
+    console.log('[Campaign Metrics] Single-row format: %d dates, %d values', dates.length, values.length)
+    for (let i = 0; i < dates.length; i++) {
+      const monthKey = dates[i].slice(0, 7)
+      const prev = monthMap.get(monthKey) || 0
+      monthMap.set(monthKey, prev + (typeof values[i] === 'number' ? values[i] : 0))
+    }
+  } else {
+    // Multi-row format: one row per month bucket with a datetime key
+    for (const row of rows) {
+      const dt = row?.datetime ?? row?.date
+      if (typeof dt === 'string') {
+        const monthKey = dt.slice(0, 7)
+        const prev = monthMap.get(monthKey) || 0
+        monthMap.set(monthKey, prev + numberFromValue(row?.measurements?.[measurement]))
+      }
+    }
+  }
+
+  console.log('[Campaign Metrics] Final monthMap for metricId=%s:', metricId, Object.fromEntries(monthMap))
+
+  return monthMap
+}
+
+/**
+ * Fetch campaign open and click rates per month by querying
+ * Opened Email, Clicked Email, and Received Email metrics
+ * filtered to campaign-only events (excluding flows).
+ */
+async function fetchCampaignMonthlyRates(
+  supabase: SupabaseClient,
+  connectionId: string,
+  openedMetricId: string,
+  clickedMetricId: string,
+  receivedMetricId: string,
+  months: string[]
+): Promise<{ openRate: number[]; clickRate: number[] }> {
+  const emptyRates = { openRate: months.map(() => 0), clickRate: months.map(() => 0) }
+
+  try {
+    console.log('[Campaign Rates] Starting — openedId=%s, clickedId=%s, receivedId=%s, months=%d',
+      openedMetricId, clickedMetricId, receivedMetricId, months.length)
+
+    console.log('[Campaign Rates] Fetching Received Email (count)...')
+    const received = await fetchCampaignMonthlyMetric(supabase, connectionId, receivedMetricId, 'count')
+    console.log('[Campaign Rates] Received Email result: %d months with data', received.size)
+    await sleep(REPORTING_GAP_MS)
+
+    console.log('[Campaign Rates] Fetching Opened Email (unique)...')
+    const opened = await fetchCampaignMonthlyMetric(supabase, connectionId, openedMetricId, 'unique')
+    console.log('[Campaign Rates] Opened Email result: %d months with data', opened.size)
+    await sleep(REPORTING_GAP_MS)
+
+    console.log('[Campaign Rates] Fetching Clicked Email (unique)...')
+    const clicked = await fetchCampaignMonthlyMetric(supabase, connectionId, clickedMetricId, 'unique')
+    console.log('[Campaign Rates] Clicked Email result: %d months with data', clicked.size)
+
+    const openRate = months.map((m) => {
+      const key = m.slice(0, 7)
+      const recv = received.get(key) ?? 0
+      const opens = opened.get(key) ?? 0
+      return recv > 0 ? opens / recv : 0
+    })
+
+    const clickRate = months.map((m) => {
+      const key = m.slice(0, 7)
+      const recv = received.get(key) ?? 0
+      const clicks = clicked.get(key) ?? 0
+      return recv > 0 ? clicks / recv : 0
+    })
+
+    console.log('[Campaign Rates] Final results:', {
+      openRate: openRate.map((v) => v.toFixed(3)),
+      clickRate: clickRate.map((v) => v.toFixed(3)),
+    })
+
+    return { openRate, clickRate }
+  } catch (err) {
+    console.error('[Campaign Rates] Error:', err)
+    return emptyRates
+  }
+}
+
+export async function fetchAccountOverview(
+  supabase: SupabaseClient,
+  connectionId: string,
+  placedOrderMetricId: string,
+  openedEmailMetricId: string | null,
+  clickedEmailMetricId: string | null,
+  receivedEmailMetricId: string | null
+): Promise<KlaviyoAnalyticsData['accountOverview']> {
+  try {
+    console.log('[Account Overview] Starting for connection=%s, metricIds: placed=%s, opened=%s, clicked=%s, received=%s',
+      connectionId, placedOrderMetricId, openedEmailMetricId, clickedEmailMetricId, receivedEmailMetricId)
+
+    // 1. Flow series (has a dedicated series endpoint)
+    const flowRows = await fetchFlowSeriesReport(supabase, connectionId, placedOrderMetricId)
+    const flow = aggregateSeriesRows(flowRows)
+
+    if (flow.months.length === 0) {
+      console.warn('[Account Overview] No flow months found, returning null')
+      return null
+    }
+
+    // 2. Klaviyo-attributed monthly revenue via metric-aggregates
+    await sleep(REPORTING_GAP_MS)
+    const totalMonthly = await fetchMonthlyAttributedRevenue(supabase, connectionId, placedOrderMetricId)
+
+    // 3. Derive campaign revenue = attributed total - flow per month
+    const totalByMonth = new Map<string, number>()
+    for (let i = 0; i < totalMonthly.months.length; i++) {
+      const key = totalMonthly.months[i].slice(0, 7)
+      totalByMonth.set(key, totalMonthly.revenue[i])
+    }
+
+    const months = flow.months
+    const campaignRevenue = months.map((m, i) => {
+      const key = m.slice(0, 7)
+      const total = totalByMonth.get(key) ?? 0
+      return Math.max(0, total - flow.revenue[i])
+    })
+
+    // 4. Campaign open/click rates via metric-aggregates filtered to campaign-only events
+    let campaignOpenRate = months.map(() => 0)
+    let campaignClickRate = months.map(() => 0)
+
+    console.log('[Account Overview] Campaign revenue derived:', campaignRevenue)
+
+    if (openedEmailMetricId && clickedEmailMetricId && receivedEmailMetricId) {
+      console.log('[Account Overview] All email metric IDs present, fetching campaign rates...')
+      await sleep(REPORTING_GAP_MS)
+      const campaignRates = await fetchCampaignMonthlyRates(
+        supabase,
+        connectionId,
+        openedEmailMetricId,
+        clickedEmailMetricId,
+        receivedEmailMetricId,
+        months
+      )
+      campaignOpenRate = campaignRates.openRate
+      campaignClickRate = campaignRates.clickRate
+    } else {
+      console.warn('[Account Overview] SKIPPING campaign rates — missing email metric IDs:', {
+        openedEmailMetricId,
+        clickedEmailMetricId,
+        receivedEmailMetricId,
+      })
+    }
+
+    const result = {
+      months,
+      campaignRevenue,
+      flowRevenue: flow.revenue,
+      campaignOpenRate,
+      flowOpenRate: flow.openRate,
+      campaignClickRate,
+      flowClickRate: flow.clickRate,
+    }
+
+    console.log('[Account Overview] FINAL RESULT:', {
+      months: months.length,
+      campaignRevenue,
+      campaignOpenRate,
+      campaignClickRate,
+      flowRevenue: flow.revenue,
+      flowOpenRate: flow.openRate,
+      flowClickRate: flow.clickRate,
+    })
+
+    return result
+  } catch (err) {
+    console.error('[Account Overview] Error:', err)
+    return null
   }
 }

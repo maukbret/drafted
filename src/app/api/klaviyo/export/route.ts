@@ -277,11 +277,7 @@ ${normalizedFooter}
         </td>
       </tr>` : ''
 
-  const safePreviewText = escapeHtml(previewText.trim())
-  const previewBlock = safePreviewText ? `
-  <div style="display:none; font-size:1px; line-height:1px; max-height:0px; max-width:0px; opacity:0; overflow:hidden;">
-    ${safePreviewText}
-  </div>` : ''
+  const previewBlock = buildHiddenPreheaderBlock(previewText)
 
   return `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
@@ -358,6 +354,19 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+function buildHiddenPreheaderBlock(previewText: string): string {
+  const safePreviewText = escapeHtml(previewText.trim())
+  const preheaderSpacer = '&nbsp;&zwnj;'.repeat(160)
+
+  return `
+  <div style="display:none; font-size:1px; line-height:1px; max-height:0px; max-width:0px; opacity:0; overflow:hidden; mso-hide:all; color:transparent;">
+    ${safePreviewText || '&nbsp;'}
+  </div>
+  <div style="display:none; font-size:1px; line-height:1px; max-height:0px; max-width:0px; opacity:0; overflow:hidden; mso-hide:all; color:transparent;">
+    ${preheaderSpacer}
+  </div>`
 }
 
 function normalizeImageUrl(url: string | null | undefined): string | null {

@@ -76,6 +76,15 @@ export interface KlaviyoAnalyticsData {
   unsubscribers?: number | null
   netGrowth?: number | null
   netGrowthPercent?: number | null
+  accountOverview?: {
+    months: string[]
+    campaignRevenue: number[]
+    flowRevenue: number[]
+    campaignOpenRate: number[]
+    flowOpenRate: number[]
+    campaignClickRate: number[]
+    flowClickRate: number[]
+  } | null
 }
 
 export interface KlaviyoAnalyticsCampaign {

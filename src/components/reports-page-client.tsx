@@ -211,6 +211,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
   const [includeListGrowth, setIncludeListGrowth] = useState(true)
   const [addSummary, setAddSummary] = useState(true)
   const [includeActionItems, setIncludeActionItems] = useState(true)
+  const [includeAccountOverview, setIncludeAccountOverview] = useState(false)
   const [language, setLanguage] = useState('en')
   const [formError, setFormError] = useState<string | null>(null)
   const [generationError, setGenerationError] = useState<GenerationErrorState | null>(null)
@@ -255,6 +256,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
     setIncludeListGrowth(true)
     setAddSummary(true)
     setIncludeActionItems(true)
+    setIncludeAccountOverview(false)
     setLanguage('en')
     setFormError(null)
   }, [connections, defaultCompareRange, defaultPeriodRange])
@@ -305,6 +307,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
         compEnd: comparison.end,
         topN: String(REPORT_TOP_N),
         includeListGrowth: includeListGrowth ? '1' : '0',
+        includeAccountOverview: includeAccountOverview ? '1' : '0',
       })
 
       const res = await fetch(`/api/klaviyo/analytics/dashboard?${params.toString()}`)
@@ -398,6 +401,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
           includeListGrowth,
           addSummary,
           includeActionItems,
+          includeAccountOverview,
           language,
           fetchedAt: analyticsResponse.fetchedAt,
           analyticsData: analyticsResponse.data,
@@ -435,6 +439,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
     compareRange,
     connectionId,
     connections,
+    includeAccountOverview,
     includeActionItems,
     includeListGrowth,
     language,
@@ -688,6 +693,22 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
                 <Label htmlFor="include-action-items" className="font-medium">
                   Actionable / to-do
                 </Label>
+              </div>
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="include-account-overview"
+                  className="mt-1"
+                  checked={includeAccountOverview}
+                  onCheckedChange={(checked) => setIncludeAccountOverview(checked === true)}
+                />
+                <div>
+                  <Label htmlFor="include-account-overview" className="font-medium">
+                    Include account overview
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Shows 12-month revenue, open rate, and click rate trends for campaigns and flows.
+                  </p>
+                </div>
               </div>
             </div>
 

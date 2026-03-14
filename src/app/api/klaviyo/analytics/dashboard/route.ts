@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { AnalyticsFetchError, discoverMetricIds, fetchPeriodData } from '@/lib/klaviyo-analytics'
+import { AnalyticsFetchError, discoverMetricIds, fetchAccountOverview, fetchPeriodData } from '@/lib/klaviyo-analytics'
 import { NextRequest, NextResponse } from 'next/server'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { KlaviyoAnalyticsData } from '@/types/database'
@@ -157,6 +157,7 @@ export async function GET(request: NextRequest) {
     const compEnd = searchParams.get('compEnd')
     const topN = parseTopN(searchParams.get('topN'))
     const includeListGrowth = parseBooleanFlag(searchParams.get('includeListGrowth'))
+    const includeAccountOverview = parseBooleanFlag(searchParams.get('includeAccountOverview'))
 
     if (!connectionId || !periodStart || !periodEnd || !compStart || !compEnd) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
@@ -264,6 +265,31 @@ export async function GET(request: NextRequest) {
       metricIds
     )
 
+    let accountOverview: KlaviyoAnalyticsData['accountOverview'] = null
+    console.log('[Analytics Dashboard] Account overview check:', {
+      includeAccountOverview,
+      hasCampaignsRead: hasScope(scope, 'campaigns:read'),
+      hasFlowsRead: hasScope(scope, 'flows:read'),
+      scope: scope?.substring(0, 200),
+    })
+    if (includeAccountOverview && hasScope(scope, 'campaigns:read') && hasScope(scope, 'flows:read')) {
+      console.log('[Analytics Dashboard] Fetching account overview, placedOrderMetricId:', metricIds.placedOrderMetricId)
+      accountOverview = await fetchAccountOverview(
+        supabase,
+        connectionId,
+        metricIds.placedOrderMetricId,
+        metricIds.openedEmailMetricId,
+        metricIds.clickedEmailMetricId,
+        metricIds.receivedEmailMetricId
+      )
+      console.log('[Analytics Dashboard] Account overview result:', accountOverview ? {
+        months: accountOverview.months.length,
+        sampleMonth: accountOverview.months[0],
+        campaignRevenue: accountOverview.campaignRevenue.slice(0, 3),
+        flowRevenue: accountOverview.flowRevenue.slice(0, 3),
+      } : null)
+    }
+
     const data: KlaviyoAnalyticsData = {
       totalRevenue: current.totalRevenue,
       compTotalRevenue: comparison.totalRevenue,
@@ -282,6 +308,7 @@ export async function GET(request: NextRequest) {
             netGrowthPercent: current.netGrowthPercent,
           }
         : {}),
+      ...(accountOverview ? { accountOverview } : {}),
     }
 
     const missingScopes = includeListGrowth && !hasSegmentsWrite ? ['segments:write'] : []

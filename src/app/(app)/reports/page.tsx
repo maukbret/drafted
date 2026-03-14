@@ -18,6 +18,7 @@ interface AnalyticsReportRow {
   include_list_growth: boolean
   add_summary: boolean
   include_action_items: boolean
+  include_account_overview?: boolean
   language?: string | null
   created_at: string
   status: string
@@ -120,6 +121,7 @@ export default async function ReportsPage() {
       includeListGrowth: row.include_list_growth,
       addSummary: row.add_summary,
       includeActionItems: row.include_action_items,
+      includeAccountOverview: row.include_account_overview ?? false,
       language: row.language || 'en',
       createdAt: row.created_at,
       status: row.status === 'ready' ? 'ready' : 'ready',

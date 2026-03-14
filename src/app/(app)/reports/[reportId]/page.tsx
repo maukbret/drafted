@@ -29,6 +29,7 @@ interface ReportDetailRow {
   include_list_growth: boolean
   add_summary: boolean
   include_action_items: boolean
+  include_account_overview?: boolean
   language?: string | null
   created_at: string
   fetched_at: string
@@ -73,6 +74,7 @@ async function loadReport(
   userId: string
 ): Promise<ReportDetailRow | null> {
   const queryVariants = [
+    'id, connection_id, title, account_label, period_start, period_end, compare_start, compare_end, period_month, compare_month, include_list_growth, add_summary, include_action_items, include_account_overview, language, created_at, fetched_at, status, analytics_data, ai_status, ai_insights, ai_model, ai_generated_at, ai_error',
     'id, connection_id, title, account_label, period_start, period_end, compare_start, compare_end, period_month, compare_month, include_list_growth, add_summary, include_action_items, language, created_at, fetched_at, status, analytics_data, ai_status, ai_insights, ai_model, ai_generated_at, ai_error',
     'id, connection_id, title, account_label, period_start, period_end, compare_start, compare_end, period_month, compare_month, include_list_growth, add_summary, include_action_items, language, created_at, fetched_at, status, analytics_data',
     'id, connection_id, title, account_label, period_month, compare_month, include_list_growth, add_summary, include_action_items, language, created_at, fetched_at, status, analytics_data, ai_status, ai_insights, ai_model, ai_generated_at, ai_error',
@@ -134,6 +136,7 @@ export default async function ReportDetailRoute({ params }: ReportDetailRoutePro
     includeListGrowth: row.include_list_growth,
     addSummary: row.add_summary,
     includeActionItems: row.include_action_items,
+    includeAccountOverview: row.include_account_overview ?? false,
     language: row.language || 'en',
     createdAt: row.created_at,
     fetchedAt: row.fetched_at,
