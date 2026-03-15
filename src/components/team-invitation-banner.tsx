@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useRealtimeSubscription } from '@/hooks/use-realtime-subscription'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -18,16 +18,12 @@ interface Invitation {
 }
 
 export function TeamInvitationBanner({ userId }: { userId: string }) {
-  const pathname = usePathname()
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
   const [processingId, setProcessingId] = useState<string | null>(null)
   const router = useRouter()
 
-  const isAnalyticsPage = pathname?.startsWith('/analytics')
-
   const fetchInvitations = useCallback(async () => {
-    if (isAnalyticsPage) return
     try {
       const response = await fetch('/api/invitations')
       if (response.ok) {
@@ -37,12 +33,11 @@ export function TeamInvitationBanner({ userId }: { userId: string }) {
     } catch (err) {
       console.error('Failed to fetch invitations:', err)
     }
-  }, [isAnalyticsPage])
+  }, [])
 
   useEffect(() => {
-    if (isAnalyticsPage) return
     fetchInvitations()
-  }, [fetchInvitations, isAnalyticsPage])
+  }, [fetchInvitations])
 
   const realtimeSubscriptions = useMemo(() => [
     { table: 'team_invitations', events: ['INSERT', 'UPDATE'] as const },
@@ -52,7 +47,6 @@ export function TeamInvitationBanner({ userId }: { userId: string }) {
     subscriptions: realtimeSubscriptions,
     currentUserId: userId,
     onExternalChange: fetchInvitations,
-    enabled: !isAnalyticsPage,
   })
 
   const handleAccept = async (invitation: Invitation) => {

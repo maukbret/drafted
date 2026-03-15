@@ -457,8 +457,10 @@ export function generateReportPdf(options: PdfOptions) {
     )
   }
 
-  // Open in new tab
-  const pdfBlob = doc.output('blob')
-  const url = URL.createObjectURL(pdfBlob)
-  window.open(url, '_blank')
+  // Download with report title as filename
+  const safeName = report.title
+    .replace(/[^a-zA-Z0-9\s\-_]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+  doc.save(`${safeName || 'report'}.pdf`)
 }

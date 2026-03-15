@@ -25,9 +25,11 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ReportInsightSection, ReportInsights } from '@/lib/report-insights'
 import { generateReportPdf } from '@/lib/report-pdf'
 import { AccountOverviewCharts } from '@/components/analytics/account-overview-charts'
+import { BrandIcon } from '@/components/brand-icon'
 
 interface ReportDetailPageProps {
   report: SavedReportDetail
+  connectionStoreUrl?: string | null
 }
 
 function formatInteger(value: number | null | undefined): string {
@@ -140,7 +142,7 @@ function InsightCard({ title, section, sectionKey, excludedActionItems, onToggle
   )
 }
 
-export function ReportDetailPage({ report }: ReportDetailPageProps) {
+export function ReportDetailPage({ report, connectionStoreUrl }: ReportDetailPageProps) {
   const [title, setTitle] = useState(report.title)
   const [draftTitle, setDraftTitle] = useState(report.title)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
@@ -365,7 +367,12 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
               <Pencil className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
             </button>
           )}
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+            <BrandIcon
+              accountName={report.accountLabel}
+              storeUrl={connectionStoreUrl}
+              className="h-4 w-4"
+            />
             {report.accountLabel} · {periodLabel} vs {compareLabel}
           </p>
         </div>
@@ -460,12 +467,12 @@ export function ReportDetailPage({ report }: ReportDetailPageProps) {
       )}
 
       <Tabs defaultValue="report">
-        <TabsList>
-          <TabsTrigger value="report">Report</TabsTrigger>
-          {report.includeAccountOverview && (
+        {report.includeAccountOverview && (
+          <TabsList>
+            <TabsTrigger value="report">Report</TabsTrigger>
             <TabsTrigger value="overview">Account Overview</TabsTrigger>
-          )}
-        </TabsList>
+          </TabsList>
+        )}
 
         <TabsContent value="report" className="space-y-6 pt-2">
           <RevenueCards

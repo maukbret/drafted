@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, FileText, Loader2, Plus } from 'lucide-react'
+import { AlertCircle, Check, Circle, FileText, Loader2, Plus } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -79,6 +79,12 @@ interface CreateReportApiResponse {
   error?: string
 }
 
+interface InsightsApiResponse {
+  insights?: unknown
+  status?: string
+  error?: string
+}
+
 type ReportsView = 'overview' | 'generating'
 
 interface GenerationErrorState {
@@ -88,6 +94,151 @@ interface GenerationErrorState {
 }
 
 const REPORT_TOP_N = 5
+
+type StepStatus = 'completed' | 'active' | 'pending'
+
+interface GenerationStep {
+  id: string
+  label: string
+  description: string
+}
+
+function getGenerationSteps(options: {
+  includeListGrowth: boolean
+  includeAccountOverview: boolean
+  includeInsights: boolean
+}): GenerationStep[] {
+  const steps: GenerationStep[] = [
+    {
+      id: 'prepare',
+      label: 'Preparing request',
+      description: 'Setting up your report parameters',
+    },
+    {
+      id: 'campaigns',
+      label: 'Fetching campaign data',
+      description: 'Pulling campaign performance from Klaviyo',
+    },
+    {
+      id: 'flows',
+      label: 'Fetching flow data',
+      description: 'Pulling flow performance from Klaviyo',
+    },
+  ]
+
+  if (options.includeListGrowth) {
+    steps.push({
+      id: 'list-growth',
+      label: 'Fetching list growth',
+      description: 'Counting subscribers and profile changes',
+    })
+  }
+
+  if (options.includeAccountOverview) {
+    steps.push({
+      id: 'account-overview',
+      label: 'Fetching account overview',
+      description: 'Loading 12-month trend data for campaigns and flows',
+    })
+  }
+
+  steps.push({
+    id: 'saving',
+    label: 'Saving report',
+    description: 'Storing your report data',
+  })
+
+  if (options.includeInsights) {
+    steps.push({
+      id: 'insights',
+      label: 'Generating insights',
+      description: 'Creating summary, highlights, and action items',
+    })
+  }
+
+  steps.push({
+    id: 'complete',
+    label: 'Opening your report',
+    description: 'Redirecting to your new report',
+  })
+
+  return steps
+}
+
+function getStepStatus(stepIndex: number, activeStepIndex: number): StepStatus {
+  if (stepIndex < activeStepIndex) return 'completed'
+  if (stepIndex === activeStepIndex) return 'active'
+  return 'pending'
+}
+
+function GenerationStepRow({
+  step,
+  status,
+}: {
+  step: GenerationStep
+  status: StepStatus
+}) {
+  return (
+    <div
+      className={`relative flex items-center gap-3.5 rounded-xl border px-4 py-3.5 transition-all duration-500 ${
+        status === 'completed'
+          ? 'border-emerald-200 bg-emerald-50/70'
+          : status === 'active'
+            ? 'border-orange-200 bg-white shadow-sm'
+            : 'border-transparent bg-muted/40'
+      }`}
+    >
+      {/* Status icon */}
+      <div className="flex-shrink-0">
+        {status === 'completed' && (
+          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500">
+            <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+          </div>
+        )}
+        {status === 'active' && (
+          <div className="flex h-6 w-6 items-center justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+          </div>
+        )}
+        {status === 'pending' && (
+          <div className="flex h-6 w-6 items-center justify-center">
+            <Circle className="h-4 w-4 text-muted-foreground/40" />
+          </div>
+        )}
+      </div>
+
+      {/* Label and description */}
+      <div className="min-w-0 flex-1">
+        <p
+          className={`text-sm font-medium transition-colors duration-500 ${
+            status === 'completed'
+              ? 'text-emerald-700'
+              : status === 'active'
+                ? 'text-foreground'
+                : 'text-muted-foreground/60'
+          }`}
+        >
+          {step.label}
+        </p>
+        {status === 'active' && (
+          <p className="mt-0.5 text-xs text-muted-foreground">{step.description}</p>
+        )}
+      </div>
+
+      {/* Status badge for active step */}
+      {status === 'active' && (
+        <span className="flex-shrink-0 rounded-full bg-orange-100 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-600">
+          In progress
+        </span>
+      )}
+
+      {/* Subtle gradient overlay for active step */}
+      {status === 'active' && (
+        <div className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-r from-transparent via-transparent to-orange-50/80" />
+      )}
+    </div>
+  )
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -209,8 +360,8 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
   const [periodRange, setPeriodRange] = useState<DateRange | undefined>(defaultPeriodRange)
   const [compareRange, setCompareRange] = useState<DateRange | undefined>(defaultCompareRange)
   const [includeListGrowth, setIncludeListGrowth] = useState(true)
-  const [addSummary, setAddSummary] = useState(true)
-  const [includeActionItems, setIncludeActionItems] = useState(true)
+  const [addSummary, setAddSummary] = useState(false)
+  const [includeActionItems, setIncludeActionItems] = useState(false)
   const [includeAccountOverview, setIncludeAccountOverview] = useState(false)
   const [language, setLanguage] = useState('en')
   const [formError, setFormError] = useState<string | null>(null)
@@ -219,6 +370,8 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
   const [progressValue, setProgressValue] = useState(0)
   const [progressDetail, setProgressDetail] = useState('Starting report generation...')
   const progressValueRef = useRef(0)
+  const [activeStepIndex, setActiveStepIndex] = useState(0)
+  const [generationSteps, setGenerationSteps] = useState<GenerationStep[]>([])
 
   const hasConnections = connections.length > 0
   const isGenerating = view === 'generating'
@@ -254,8 +407,8 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
     setPeriodRange(defaultPeriodRange)
     setCompareRange(defaultCompareRange)
     setIncludeListGrowth(true)
-    setAddSummary(true)
-    setIncludeActionItems(true)
+    setAddSummary(false)
+    setIncludeActionItems(false)
     setIncludeAccountOverview(false)
     setLanguage('en')
     setFormError(null)
@@ -294,6 +447,16 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
     setView('generating')
     setProgressValue(0)
     progressValueRef.current = 0
+    setActiveStepIndex(0)
+
+    const wantsInsights = addSummary
+    const steps = getGenerationSteps({
+      includeListGrowth,
+      includeAccountOverview,
+      includeInsights: wantsInsights,
+    })
+    setGenerationSteps(steps)
+
     setProgressDetail('Preparing report request...')
     await animateProgressTo(16, 450)
 
@@ -357,11 +520,28 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
       fetchSettled = true
     })
 
+    // Calculate step thresholds for the fetch portion (steps between 'prepare' and 'saving')
+    const fetchStepIds = steps.map((s) => s.id)
+    const savingIndex = fetchStepIds.indexOf('saving')
+    const fetchStepCount = savingIndex - 1 // number of data-fetch steps (between prepare and saving)
+    const progressPerFetchStep = Math.floor(66 / fetchStepCount) // distribute 16-82 range
+
+    setActiveStepIndex(1) // move past 'prepare' to first fetch step
     setProgressDetail('Fetching live analytics from Klaviyo...')
+
     while (!fetchSettled) {
       const next = Math.min(82, progressValueRef.current + 1 + Math.floor(Math.random() * 3))
       progressValueRef.current = next
       setProgressValue(next)
+
+      // Advance the active step based on progress thresholds
+      const fetchProgress = next - 16 // 0-66 range
+      const stepFromProgress = Math.min(
+        savingIndex - 1,
+        1 + Math.floor(fetchProgress / progressPerFetchStep)
+      )
+      setActiveStepIndex(stepFromProgress)
+
       await sleep(260)
     }
 
@@ -380,10 +560,16 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
       return
     }
 
-    setProgressDetail('Saving report output...')
-    await animateProgressTo(92, 250)
+    const insightsIndex = steps.findIndex((s) => s.id === 'insights')
+    const completeIndex = steps.findIndex((s) => s.id === 'complete')
+    const savingProgress = wantsInsights ? 85 : 92
 
-    const title = `${formatRangeLabel(period.start, period.end)} Performance Report`
+    setActiveStepIndex(savingIndex)
+    setProgressDetail('Saving report output...')
+    await animateProgressTo(savingProgress, 250)
+
+    const connName = selectedConnection.account_name || 'Unnamed account'
+    const title = `${connName} - ${formatRangeLabel(period.start, period.end)} Report`
 
     let savedReport: SavedReportListItem
     try {
@@ -428,11 +614,57 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
     }
 
     setReports((prev) => [savedReport, ...prev.filter((report) => report.id !== savedReport.id)])
+
+    // Generate insights if the user opted in
+    if (wantsInsights && insightsIndex !== -1) {
+      setActiveStepIndex(insightsIndex)
+      setProgressDetail('Generating insights...')
+
+      let insightsSettled = false
+      const insightsPromise = (async () => {
+        const res = await fetch(`/api/reports/${savedReport.id}/insights`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force: false }),
+        })
+
+        let json: InsightsApiResponse = {}
+        try {
+          json = (await res.json()) as InsightsApiResponse
+        } catch {
+          json = {}
+        }
+
+        if (!res.ok || json.error) {
+          // Insights failure is non-fatal — report is already saved
+          console.error('Insights generation failed:', json.error)
+        }
+      })().finally(() => {
+        insightsSettled = true
+      })
+
+      const insightsProgressTarget = 96
+      while (!insightsSettled) {
+        const next = Math.min(
+          insightsProgressTarget,
+          progressValueRef.current + 1 + Math.floor(Math.random() * 2)
+        )
+        progressValueRef.current = next
+        setProgressValue(next)
+        await sleep(300)
+      }
+
+      await insightsPromise
+      await animateProgressTo(insightsProgressTarget, 150)
+    }
+
+    setActiveStepIndex(completeIndex)
     setProgressDetail('Opening your report...')
     await animateProgressTo(100, 240)
-    setView('overview')
-    resetModalForm()
+    // Navigate first, then reset — stay on the generating screen
+    // until Next.js has loaded the report page to avoid a flash
     router.push(`/reports/${savedReport.id}`)
+    resetModalForm()
   }, [
     addSummary,
     animateProgressTo,
@@ -451,7 +683,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
   if (isGenerating) {
     if (generationError) {
       return (
-        <div className="flex min-h-[70vh] items-center justify-center">
+        <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
           <Card className="w-full max-w-2xl border-red-200 bg-red-50">
             <CardContent className="flex flex-col items-center justify-center gap-4 py-12 text-center">
               <AlertCircle className="h-10 w-10 text-red-500" />
@@ -482,19 +714,40 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
     }
 
     return (
-      <div className="flex min-h-[70vh] items-center justify-center">
-        <Card className="w-full max-w-2xl">
-          <CardContent className="flex flex-col items-center justify-center gap-5 py-12">
-            <Loader2 className="h-10 w-10 animate-spin text-foreground" />
-            <div className="w-full max-w-xl space-y-3">
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
+        <Card className="w-full max-w-lg border-border/60 shadow-lg">
+          <CardContent className="flex flex-col gap-5 pt-8 pb-6">
+            {/* Header */}
+            <div className="space-y-1 px-1">
+              <h2 className="text-lg font-semibold text-foreground">
+                Generating your report
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                We&apos;re pulling data from Klaviyo to build your report.
+              </p>
+            </div>
+
+            {/* Progress bar */}
+            <div className="space-y-1.5">
               <Progress
                 value={progressValue}
-                className="h-3"
-                indicatorClassName="bg-orange-500"
+                className="h-2"
+                indicatorClassName="bg-orange-500 transition-all duration-300"
               />
-              <p className="text-center text-sm text-foreground">
-                {progressDetail}
+              <p className="text-right text-xs text-muted-foreground">
+                {progressValue}%
               </p>
+            </div>
+
+            {/* Step checklist */}
+            <div className="space-y-2">
+              {generationSteps.map((step, index) => (
+                <GenerationStepRow
+                  key={step.id}
+                  step={step}
+                  status={getStepStatus(index, activeStepIndex)}
+                />
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -674,25 +927,24 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
               </div>
               </div>
              
-              <div className="flex items-center gap-3">
+              <div className="flex items-start gap-3">
                 <Checkbox
-                  id="add-summary"
+                  id="include-insights"
+                  className="mt-1"
                   checked={addSummary}
-                  onCheckedChange={(checked) => setAddSummary(checked === true)}
+                  onCheckedChange={(checked) => {
+                    setAddSummary(checked === true)
+                    setIncludeActionItems(checked === true)
+                  }}
                 />
-                <Label htmlFor="add-summary" className="font-medium">
-                  Add summary
-                </Label>
-              </div>
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="include-action-items"
-                  checked={includeActionItems}
-                  onCheckedChange={(checked) => setIncludeActionItems(checked === true)}
-                />
-                <Label htmlFor="include-action-items" className="font-medium">
-                  Actionable / to-do
-                </Label>
+                <div>
+                  <Label htmlFor="include-insights" className="font-medium">
+                    Include insights
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Generates a summary with highlights and actionable to-do items for each section of the report.
+                  </p>
+                </div>
               </div>
               <div className="flex items-start gap-3">
                 <Checkbox

@@ -124,6 +124,16 @@ export default async function ReportDetailRoute({ params }: ReportDetailRoutePro
   const aiInsights = normalizeReportInsights(row.ai_insights)
   const aiStatus = isReportAiStatus(row.ai_status) ? row.ai_status : (aiInsights ? 'ready' : 'idle')
 
+  let connectionStoreUrl: string | null = null
+  if (row.connection_id) {
+    const { data: conn } = await supabase
+      .from('klaviyo_connections')
+      .select('store_url')
+      .eq('id', row.connection_id)
+      .single()
+    connectionStoreUrl = conn?.store_url || null
+  }
+
   const report: SavedReportDetail = {
     id: row.id,
     connectionId: row.connection_id,
@@ -151,7 +161,7 @@ export default async function ReportDetailRoute({ params }: ReportDetailRoutePro
 
   return (
     <div className="p-8">
-      <ReportDetailPage report={report} />
+      <ReportDetailPage report={report} connectionStoreUrl={connectionStoreUrl} />
     </div>
   )
 }
