@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
         headers: {
           'Authorization': `Bearer ${tokens.access_token}`,
           'Accept': 'application/json',
-          'revision': '2024-10-15',
+          'revision': '2026-01-15',
         },
       })
       if (accountResponse.ok) {

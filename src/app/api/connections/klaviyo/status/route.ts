@@ -47,7 +47,7 @@ export async function GET() {
             headers: {
               'Authorization': `Bearer ${accessToken}`,
               'Accept': 'application/json',
-              'revision': '2024-10-15',
+              'revision': '2026-01-15',
             },
           })
 

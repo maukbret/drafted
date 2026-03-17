@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
             'Authorization': `Bearer ${klaviyoToken}`,
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'revision': '2024-10-15',
+            'revision': '2026-01-15',
           },
           body: JSON.stringify({
             data: {
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${klaviyoToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'revision': '2024-10-15',
+        'revision': '2026-01-15',
       },
       body: JSON.stringify({
         data: {

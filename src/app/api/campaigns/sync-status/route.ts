@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
               headers: {
                 'Authorization': `Bearer ${token}`,
                 'Accept': 'application/json',
-                'revision': '2024-10-15',
+                'revision': '2026-01-15',
               },
             }
           )

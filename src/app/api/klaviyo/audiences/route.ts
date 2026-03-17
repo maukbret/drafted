@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
     const headers = {
       'Authorization': `Bearer ${klaviyoToken}`,
       'Accept': 'application/json',
-      'revision': '2024-10-15',
+      'revision': '2026-01-15',
     }
 
     const fetchAllPages = async (baseUrl: string) => {

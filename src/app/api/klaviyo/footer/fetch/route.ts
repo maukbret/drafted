@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       headers: {
         'Authorization': `Bearer ${klaviyoToken}`,
         'Accept': 'application/json',
-        'revision': '2024-10-15',
+        'revision': '2026-01-15',
       },
     })
 
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       headers: {
         'Authorization': `Bearer ${klaviyoToken}`,
         'Accept': 'application/json',
-        'revision': '2024-10-15',
+        'revision': '2026-01-15',
       },
     })
 
@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
     let html = messageData.data?.attributes?.body?.html ||
                messageData.data?.attributes?.html ||
                messageData.data?.attributes?.content?.html ||
+               messageData.data?.attributes?.definition?.content?.html ||
                ''
 
     // If no HTML, try to get it from the template
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
           headers: {
             'Authorization': `Bearer ${klaviyoToken}`,
             'Accept': 'application/json',
-            'revision': '2024-10-15',
+            'revision': '2026-01-15',
           },
         })
 

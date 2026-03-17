@@ -209,7 +209,7 @@ export async function POST(
             headers: {
               'Authorization': `Bearer ${klaviyoToken}`,
               'Accept': 'application/json',
-              'revision': '2024-10-15',
+              'revision': '2026-01-15',
             },
           })
           if (accountResponse.ok) {
@@ -364,7 +364,7 @@ export async function POST(
                   'Authorization': `Bearer ${klaviyoToken}`,
                   'Content-Type': 'application/json',
                   'Accept': 'application/json',
-                  'revision': '2024-06-15',
+                  'revision': '2026-01-15',
                 },
                 body: JSON.stringify({
                   data: {
@@ -427,7 +427,7 @@ export async function POST(
               'Authorization': `Bearer ${klaviyoToken}`,
               'Content-Type': 'application/json',
               'Accept': 'application/json',
-              'revision': '2024-06-15',
+              'revision': '2026-01-15',
             },
             body: JSON.stringify({
               data: {
@@ -458,7 +458,7 @@ export async function POST(
               'Authorization': `Bearer ${klaviyoToken}`,
               'Content-Type': 'application/json',
               'Accept': 'application/json',
-              'revision': '2024-06-15',
+              'revision': '2026-01-15',
             },
             body: JSON.stringify({
               data: {
@@ -499,7 +499,7 @@ export async function POST(
             headers: {
               'Authorization': `Bearer ${klaviyoToken}`,
               'Accept': 'application/json',
-              'revision': '2024-06-15',
+              'revision': '2026-01-15',
             },
           })
 
@@ -514,7 +514,7 @@ export async function POST(
                 'Authorization': `Bearer ${klaviyoToken}`,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'revision': '2024-06-15',
+                'revision': '2026-01-15',
               },
               body: JSON.stringify({
                 data: {
@@ -528,8 +528,8 @@ export async function POST(
                     },
                     send_strategy: campaign.scheduled_at ? {
                       method: 'static',
-                      options_static: {
-                        datetime: campaign.scheduled_at,
+                      datetime: campaign.scheduled_at,
+                      options: {
                         is_local: campaign.send_in_recipient_timezone || false,
                         ...(campaign.send_in_recipient_timezone ? { send_past_recipients_immediately: true } : {}),
                       },
@@ -537,15 +537,15 @@ export async function POST(
                     tracking_options: {
                       is_tracking_clicks: true,
                       is_tracking_opens: true,
-                      is_add_utm: !!campaign.utm_settings?.enabled,
-                      utm_params: campaign.utm_settings?.enabled
+                      add_tracking_params: !!campaign.utm_settings?.enabled,
+                      custom_tracking_params: campaign.utm_settings?.enabled
                         ? [
-                            { name: 'utm_source', value: campaign.utm_settings.source },
-                            { name: 'utm_medium', value: campaign.utm_settings.medium },
-                            { name: 'utm_campaign', value: campaign.utm_settings.campaign },
-                            { name: 'utm_content', value: campaign.utm_settings.content },
-                            { name: 'utm_term', value: campaign.utm_settings.term },
-                          ].filter((p: { name: string; value: string }) => p.value)
+                            { type: 'static', name: 'utm_source', value: campaign.utm_settings.source },
+                            { type: 'static', name: 'utm_medium', value: campaign.utm_settings.medium },
+                            { type: 'static', name: 'utm_campaign', value: campaign.utm_settings.campaign },
+                            { type: 'static', name: 'utm_content', value: campaign.utm_settings.content },
+                            { type: 'static', name: 'utm_term', value: campaign.utm_settings.term },
+                          ].filter((p: { type: string; name: string; value: string }) => p.value)
                         : [],
                     },
                   },
@@ -569,18 +569,20 @@ export async function POST(
                   'Authorization': `Bearer ${klaviyoToken}`,
                   'Content-Type': 'application/json',
                   'Accept': 'application/json',
-                  'revision': '2024-06-15',
+                  'revision': '2026-01-15',
                 },
                 body: JSON.stringify({
                   data: {
                     type: 'campaign-message',
                     id: messageId,
                     attributes: {
-                      content: {
-                        subject: campaign.subject_line,
-                        preview_text: campaign.preview_text || '',
-                        from_email: senderEmail,
-                        from_label: senderName,
+                      definition: {
+                        content: {
+                          subject: campaign.subject_line,
+                          preview_text: campaign.preview_text || '',
+                          from_email: senderEmail,
+                          from_label: senderName,
+                        },
                       },
                     },
                   },
@@ -614,18 +616,15 @@ export async function POST(
                 {
                   type: 'campaign-message',
                   attributes: {
-                    channel: 'email',
-                    label: 'Email Message',
-                    content: {
-                      subject: campaign.subject_line,
-                      preview_text: campaign.preview_text || '',
-                      from_email: senderEmail,
-                      from_label: senderName,
-                    },
-                    render_options: {
-                      shorten_links: true,
-                      add_org_prefix: true,
-                      add_info_link: true,
+                    definition: {
+                      channel: 'email',
+                      label: 'Email Message',
+                      content: {
+                        subject: campaign.subject_line,
+                        preview_text: campaign.preview_text || '',
+                        from_email: senderEmail,
+                        from_label: senderName,
+                      },
                     },
                   },
                 },
@@ -637,14 +636,14 @@ export async function POST(
             tracking_options: {
               is_tracking_clicks: true,
               is_tracking_opens: true,
-              is_add_utm: !!campaign.utm_settings?.enabled,
-              utm_params: campaign.utm_settings?.enabled
+              add_tracking_params: !!campaign.utm_settings?.enabled,
+              custom_tracking_params: campaign.utm_settings?.enabled
                 ? [
-                    { name: 'utm_source', value: campaign.utm_settings.source },
-                    { name: 'utm_medium', value: campaign.utm_settings.medium },
-                    { name: 'utm_campaign', value: campaign.utm_settings.campaign },
-                    { name: 'utm_content', value: campaign.utm_settings.content },
-                    { name: 'utm_term', value: campaign.utm_settings.term },
+                    { type: 'static', name: 'utm_source', value: campaign.utm_settings.source },
+                    { type: 'static', name: 'utm_medium', value: campaign.utm_settings.medium },
+                    { type: 'static', name: 'utm_campaign', value: campaign.utm_settings.campaign },
+                    { type: 'static', name: 'utm_content', value: campaign.utm_settings.content },
+                    { type: 'static', name: 'utm_term', value: campaign.utm_settings.term },
                   ].filter((p: { name: string; value: string }) => p.value)
                 : [],
             },
@@ -653,8 +652,8 @@ export async function POST(
           if (campaign.scheduled_at) {
             campaignAttributes.send_strategy = {
               method: 'static',
-              options_static: {
-                datetime: campaign.scheduled_at,
+              datetime: campaign.scheduled_at,
+              options: {
                 is_local: campaign.send_in_recipient_timezone || false,
                 ...(campaign.send_in_recipient_timezone ? { send_past_recipients_immediately: true } : {}),
               },
@@ -667,7 +666,7 @@ export async function POST(
               'Authorization': `Bearer ${klaviyoToken}`,
               'Content-Type': 'application/json',
               'Accept': 'application/json',
-              'revision': '2024-06-15',
+              'revision': '2026-01-15',
             },
             body: JSON.stringify({
               data: {
@@ -707,7 +706,7 @@ export async function POST(
             'Authorization': `Bearer ${klaviyoToken}`,
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'revision': '2024-06-15',
+            'revision': '2026-01-15',
           },
           body: JSON.stringify({
             data: {
@@ -755,7 +754,7 @@ export async function POST(
               'Authorization': `Bearer ${klaviyoToken}`,
               'Content-Type': 'application/json',
               'Accept': 'application/json',
-              'revision': '2024-06-15',
+              'revision': '2026-01-15',
             },
             body: JSON.stringify({
               data: {
