@@ -67,3 +67,7 @@ export function canAccessReports(userId?: string | null): boolean {
 export function canAccessProductFeed(userId?: string | null): boolean {
   return canAccessFeature('productFeed', userId)
 }
+
+export function isAdmin(userId?: string | null): boolean {
+  return userId === LEGACY_ALLOWED_USER_ID
+}

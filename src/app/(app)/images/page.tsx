@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ImageUploader } from '@/components/image-uploader'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 
 export default async function ImagesPage() {
   const supabase = await createClient()
@@ -39,26 +38,22 @@ export default async function ImagesPage() {
           </p>
         </div>
       </div>
-      <div className="max-w-4xl">
-        {hasConnections ? (
-          <ImageUploader klaviyoConnections={klaviyoConnections || []} />
-        ) : (
-          <Card>
-            <CardContent className="p-6">
-              <p className="text-muted-foreground mb-4">
-                {!figmaConnection && !klaviyoConnections?.length
-                  ? 'Connect your Figma and Klaviyo accounts to start uploading images.'
-                  : !figmaConnection
-                  ? 'Connect your Figma account to start uploading images.'
-                  : 'Add a Klaviyo account to start uploading images.'}
-              </p>
-              <Button asChild>
-                <Link href="/connections">Set up connections</Link>
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      {hasConnections ? (
+        <ImageUploader klaviyoConnections={klaviyoConnections || []} />
+      ) : (
+        <div>
+          <p className="text-muted-foreground mb-4">
+            {!figmaConnection && !klaviyoConnections?.length
+              ? 'Connect your Figma and Klaviyo accounts to start uploading images.'
+              : !figmaConnection
+              ? 'Connect your Figma account to start uploading images.'
+              : 'Add a Klaviyo account to start uploading images.'}
+          </p>
+          <Button asChild>
+            <Link href="/connections">Set up connections</Link>
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

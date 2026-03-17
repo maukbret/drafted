@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { SidebarLayout } from '@/components/sidebar-layout'
 import { TeamInvitationBanner } from '@/components/team-invitation-banner'
 import { FooterMissingBanner } from '@/components/footer-missing-banner'
-import { canAccessReports } from '@/lib/feature-access'
+import { canAccessReports, isAdmin } from '@/lib/feature-access'
 
 export default async function AppLayout({
   children,
@@ -29,6 +29,7 @@ export default async function AppLayout({
       userEmail={user.email || ''}
       profile={profile}
       canAccessReports={canAccessReports(user.id)}
+      isAdmin={isAdmin(user.id)}
     >
       <TeamInvitationBanner userId={user.id} />
       <FooterMissingBanner userId={user.id} />

@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { UserSettingsModal } from './user-settings-modal'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/user-avatar'
-import { Mail, Image, Link2, Settings, LogOut, Users, CreditCard, FileText } from 'lucide-react'
+import { Mail, Image, Link2, Settings, LogOut, Users, CreditCard, FileText, Shield } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface UserProfile {
@@ -19,6 +19,7 @@ interface SidebarLayoutProps {
   userEmail: string
   profile: UserProfile | null
   canAccessReports: boolean
+  isAdmin?: boolean
 }
 
 export function SidebarLayout({
@@ -26,6 +27,7 @@ export function SidebarLayout({
   userEmail,
   profile,
   canAccessReports,
+  isAdmin,
 }: SidebarLayoutProps) {
   const pathname = usePathname()
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -33,14 +35,48 @@ export function SidebarLayout({
   const displayName = profile?.full_name || userEmail
   const avatarUrl = profile?.avatar_url || null
 
-  const navItems = [
-    { href: '/campaigns', label: 'Campaigns', icon: Mail },
-    ...(canAccessReports ? [{ href: '/reports', label: 'Reports', icon: FileText }] : []),
-    { href: '/images', label: 'Upload images', icon: Image },
-    { href: '/connections', label: 'Connections', icon: Link2 },
-    { href: '/team', label: 'Team', icon: Users },
-    { href: '/billing', label: 'Billing', icon: CreditCard },
+  type NavItem = { href: string; label: string; icon: React.ElementType }
+  type NavGroup = { label?: string; items: NavItem[] }
+
+  const navGroups: NavGroup[] = [
+    {
+      items: [
+        { href: '/campaigns', label: 'Campaigns', icon: Mail },
+        ...(canAccessReports ? [{ href: '/reports', label: 'Reports', icon: FileText }] : []),
+        { href: '/images', label: 'Upload images', icon: Image },
+      ],
+    },
+    {
+      label: 'Settings',
+      items: [
+        { href: '/connections', label: 'Connections', icon: Link2 },
+        { href: '/team', label: 'Team', icon: Users },
+        { href: '/billing', label: 'Billing', icon: CreditCard },
+      ],
+    },
+    ...(isAdmin ? [{
+      label: 'Admin',
+      items: [{ href: '/admin', label: 'Admin', icon: Shield }],
+    }] : []),
   ]
+
+  function NavLink({ item }: { item: NavItem }) {
+    const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+    return (
+      <Link
+        href={item.href}
+        className={cn(
+          'flex items-center gap-2 px-2 py-2 rounded-md text-sm font-medium transition-colors',
+          isActive
+            ? 'bg-secondary text-foreground shadow-sm-sm nav-active'
+            : 'text-muted-foreground hover:bg-background hover:text-foreground'
+        )}
+      >
+        <item.icon className="h-4 w-4" />
+        {item.label}
+      </Link>
+    )
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -53,25 +89,19 @@ export function SidebarLayout({
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-3 space-y-1">
-            {navItems.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    'flex items-center gap-2 px-2 py-2 rounded-md text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-secondary text-foreground shadow-sm-sm nav-active'
-                      : 'text-muted-foreground hover:bg-background hover:text-foreground'
-                  )}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              )
-            })}
+          <nav className="flex-1 p-3 space-y-6">
+            {navGroups.map((group, i) => (
+              <div key={i} className="space-y-1">
+                {group.label && (
+                  <p className="px-2 text-xs font-semibold text-muted-foreground/60 uppercase tracking-wider">
+                    {group.label}
+                  </p>
+                )}
+                {group.items.map((item) => (
+                  <NavLink key={item.href} item={item} />
+                ))}
+              </div>
+            ))}
           </nav>
 
           {/* User */}

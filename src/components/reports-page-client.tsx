@@ -814,14 +814,14 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
               >
                 {/* Main content */}
                 <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-2 truncate text-sm font-semibold text-foreground">
+                  <div className="flex items-center gap-2 truncate text-sm font-semibold text-foreground">
                     <BrandIcon
                       accountName={report.accountLabel}
                       storeUrl={conn?.store_url}
                       className="h-4 w-4 flex-shrink-0 rounded-md"
                     />
                     {report.title}
-                  </p>
+                  </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 pl-">
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Calendar className="h-3 w-3" />

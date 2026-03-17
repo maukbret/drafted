@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -12,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Check, Copy, Upload } from 'lucide-react'
+import { Loader2, Check, Copy, Upload, Info } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface KlaviyoConnection {
@@ -219,82 +218,88 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-2xl">
       {/* Upload form */}
-      <Card>
-        <CardContent className="p-6">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="klaviyo-account">Klaviyo account</Label>
-              <Select
-                value={selectedKlaviyoId}
-                onValueChange={setSelectedKlaviyoId}
-                disabled={loading}
-              >
-                <SelectTrigger id="klaviyo-account">
-                  <SelectValue placeholder="Select a Klaviyo account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {klaviyoConnections.map((conn) => (
-                    <SelectItem key={conn.id} value={conn.id}>
-                      {conn.account_name || 'Unnamed account'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="klaviyo-account">Klaviyo account</Label>
+          <Select
+            value={selectedKlaviyoId}
+            onValueChange={setSelectedKlaviyoId}
+            disabled={loading}
+          >
+            <SelectTrigger id="klaviyo-account">
+              <SelectValue placeholder="Select a Klaviyo account" />
+            </SelectTrigger>
+            <SelectContent>
+              {klaviyoConnections.map((conn) => (
+                <SelectItem key={conn.id} value={conn.id}>
+                  {conn.account_name || 'Unnamed account'}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="figma-url">Figma URL</Label>
-              <Input
-                id="figma-url"
-                type="url"
-                value={figmaUrl}
-                onChange={(e) => setFigmaUrl(e.target.value)}
-                placeholder="https://www.figma.com/design/..."
-                disabled={loading}
-              />
-              <p className="text-xs text-muted-foreground">
-                Copy the link to your email design frame in Figma (must include node-id)
-              </p>
-            </div>
+        <div className="space-y-2">
+          <Label htmlFor="figma-url">Figma URL</Label>
+          <Input
+            id="figma-url"
+            type="url"
+            value={figmaUrl}
+            onChange={(e) => setFigmaUrl(e.target.value)}
+            placeholder="https://www.figma.com/design/..."
+            disabled={loading}
+          />
+          <p className="text-xs text-muted-foreground">
+            Copy the link to your email design frame in Figma (must include node-id)
+          </p>
+        </div>
 
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+        <div className="flex gap-3 rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground">
+          <Info className="h-4 w-4 mt-0.5 shrink-0" />
+          <p>
+            <span className="font-medium text-foreground">Your email must be built with separate sections.</span>{' '}
+            This tool looks at the child frames inside the frame you link — each child frame becomes one image uploaded to Klaviyo.
+            If your email isn&apos;t designed with distinct sections (e.g. header, hero, footer as separate frames),
+            you&apos;ll end up with random or unusable images in your account.
+          </p>
+        </div>
 
-            {progress && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {progress}
-              </div>
-            )}
+        {error && (
+          <p className="text-sm text-destructive">{error}</p>
+        )}
 
-            <Button
-              type="submit"
-              disabled={loading || !figmaUrl.trim() || !selectedKlaviyoId}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Uploading...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload Images to Klaviyo
-                </>
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+        {progress && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {progress}
+          </div>
+        )}
+
+        <Button
+          type="submit"
+          disabled={loading || !figmaUrl.trim() || !selectedKlaviyoId}
+        >
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Uploading...
+            </>
+          ) : (
+            <>
+              <Upload className="h-4 w-4 mr-2" />
+              Upload images to Klaviyo
+            </>
+          )}
+        </Button>
+      </form>
 
       {/* Uploaded images */}
       {uploadedImages.length > 0 && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle className="text-lg">Uploaded Images ({uploadedImages.length})</CardTitle>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Uploaded images ({uploadedImages.length})</p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={copyAllUrls}>
                 <Copy className="h-4 w-4 mr-2" />
@@ -304,54 +309,46 @@ export function ImageUploader({ klaviyoConnections }: ImageUploaderProps) {
                 Upload more
               </Button>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {uploadedImages.map((image, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-4 p-3 bg-muted rounded-lg"
-              >
-                {/* Thumbnail */}
-                <div className="w-16 h-16 flex-shrink-0 bg-muted-foreground/10 rounded overflow-hidden">
-                  <img
-                    src={image.klaviyoUrl}
-                    alt={image.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">{image.name}</p>
-                  <p className="text-xs text-muted-foreground truncate mt-1">
-                    {image.klaviyoUrl}
-                  </p>
-                </div>
-
-                {/* Copy button */}
-                <Button
-                  variant={image.copied ? 'default' : 'secondary'}
-                  size="sm"
-                  onClick={() => copyToClipboard(image.klaviyoUrl, index)}
-                  className={image.copied ? 'bg-green-600 hover:bg-green-600' : ''}
-                >
-                  {image.copied ? (
-                    <>
-                      <Check className="h-4 w-4 mr-1" />
-                      Copied!
-                    </>
-                  ) : (
-                    'Copy URL'
-                  )}
-                </Button>
+          </div>
+          {uploadedImages.map((image, index) => (
+            <div
+              key={index}
+              className="flex items-center gap-4 p-3 bg-muted rounded-lg"
+            >
+              <div className="w-16 h-16 flex-shrink-0 bg-muted-foreground/10 rounded overflow-hidden">
+                <img
+                  src={image.klaviyoUrl}
+                  alt={image.name}
+                  className="w-full h-full object-cover"
+                />
               </div>
-            ))}
-
-            <p className="text-xs text-muted-foreground pt-2">
-              Use these URLs in Klaviyo&apos;s drag &amp; drop editor or in dynamic content blocks.
-            </p>
-          </CardContent>
-        </Card>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm truncate">{image.name}</p>
+                <p className="text-xs text-muted-foreground truncate mt-1">
+                  {image.klaviyoUrl}
+                </p>
+              </div>
+              <Button
+                variant={image.copied ? 'default' : 'secondary'}
+                size="sm"
+                onClick={() => copyToClipboard(image.klaviyoUrl, index)}
+                className={image.copied ? 'bg-green-600 hover:bg-green-600' : ''}
+              >
+                {image.copied ? (
+                  <>
+                    <Check className="h-4 w-4 mr-1" />
+                    Copied!
+                  </>
+                ) : (
+                  'Copy URL'
+                )}
+              </Button>
+            </div>
+          ))}
+          <p className="text-xs text-muted-foreground pt-1">
+            Use these URLs in Klaviyo&apos;s drag &amp; drop editor or in dynamic content blocks.
+          </p>
+        </div>
       )}
     </div>
   )
