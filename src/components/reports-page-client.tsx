@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, Check, Circle, FileText, Loader2, Plus } from 'lucide-react'
+import { AlertCircle, Calendar, Check, ChevronRight, Circle, FileText, Loader2, Plus, Sparkles } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -39,14 +39,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { BrandIcon } from '@/components/brand-icon'
 import { KlaviyoAnalyticsData } from '@/types/database'
 import { SavedReportListItem } from '@/types/reports'
 import { formatRangeLabel, toIsoDate } from '@/lib/report-dates'
@@ -242,6 +235,20 @@ function GenerationStepRow({
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function relativeTime(dateStr: string): string {
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diffMs = now - then
+  const diffMins = Math.floor(diffMs / 60_000)
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 7) return `${diffDays}d ago`
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 function accountLabel(connection: Connection | undefined): string {
@@ -791,60 +798,92 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
         </Card>
       )}
 
-      <div className="rounded-md border p-2">
-        <Table className="table-fixed w-full">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[42%] bg-muted/35 first:rounded-l-md">Report</TableHead>
-              <TableHead className="w-[24%] bg-muted/35">Account</TableHead>
-              <TableHead className="w-[12%] bg-muted/35">Period</TableHead>
-              <TableHead className="w-[12%] bg-muted/35">Compare</TableHead>
-              <TableHead className="w-[10%] bg-muted/35 last:rounded-r-md">Created</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {reports.length > 0 ? (
-              reports.map((report) => {
-                return (
-                  <TableRow
-                    key={report.id}
-                    className="h-[56px] cursor-pointer hover:bg-muted/40"
-                    onClick={() => openReport(report.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        openReport(report.id)
-                      }
-                    }}
-                    tabIndex={0}
-                    role="button"
-                    aria-label={`Open ${report.title}`}
-                  >
-                    <TableCell className="font-medium">{report.title}</TableCell>
-                    <TableCell className="text-muted-foreground">{report.accountLabel}</TableCell>
-                    <TableCell className="text-sm">{formatRangeLabel(report.periodStart, report.periodEnd)}</TableCell>
-                    <TableCell className="text-sm">{formatRangeLabel(report.compareStart, report.compareEnd)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(report.createdAt).toLocaleString('en-US', {
-                        month: 'short',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            ) : (
-              <TableRow>
-                <TableCell colSpan={5} className="h-28 text-center text-sm text-muted-foreground">
-                  No reports generated yet. Click <span className="font-medium text-foreground">Create new report</span> to create your first one.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {reports.length > 0 ? (
+        <div className="space-y-2">
+          {reports.map((report) => {
+            const conn = connections.find(
+              (c) => accountLabel(c) === report.accountLabel || c.account_name === report.accountLabel
+            )
+
+            return (
+              <button
+                key={report.id}
+                type="button"
+                onClick={() => openReport(report.id)}
+                className="group flex w-full items-center gap-4 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/40"
+              >
+                {/* Main content */}
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-2 truncate text-sm font-semibold text-foreground">
+                    <BrandIcon
+                      accountName={report.accountLabel}
+                      storeUrl={conn?.store_url}
+                      className="h-4 w-4 flex-shrink-0 rounded-md"
+                    />
+                    {report.title}
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 pl-">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Calendar className="h-3 w-3" />
+                      {formatRangeLabel(report.periodStart, report.periodEnd)}
+                    </span>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span className="text-xs text-muted-foreground">
+                      vs {formatRangeLabel(report.compareStart, report.compareEnd)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Badges */}
+                <div className="hidden flex-shrink-0 items-center gap-1.5 sm:flex">
+                  {report.addSummary && (
+                    <Badge variant="secondary" className="gap-1 text-[10px] font-medium">
+                      <Sparkles className="h-2.5 w-2.5" />
+                      Insights
+                    </Badge>
+                  )}
+                  {report.includeAccountOverview && (
+                    <Badge variant="secondary" className="text-[10px] font-medium">
+                      Overview
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Timestamp + chevron */}
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {relativeTime(report.createdAt)}
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5" />
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <FileText className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h3 className="mt-4 font-semibold">No reports yet</h3>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              Create your first report to get a complete performance breakdown from your Klaviyo data.
+            </p>
+            <Button
+              onClick={() => {
+                resetModalForm()
+                setModalOpen(true)
+              }}
+              disabled={!hasConnections}
+              className="mt-5"
+            >
+              <Plus className="h-4 w-4 buttonIcon" />
+              Create new report
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-2xl">

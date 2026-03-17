@@ -271,7 +271,7 @@ function generateEmailHtml(frames: Array<{
   const normalizedFooter = normalizeFooterHtmlForExport(footerHtml)
   const footerSection = normalizedFooter ? `
       <tr>
-        <td align="center" valign="top" style="padding: 0;">
+        <td align="center" valign="top" style="padding: 0;" class="email-footer">
           <!-- Footer -->
 ${normalizedFooter}
         </td>
@@ -310,6 +310,9 @@ ${normalizedFooter}
       .email-container img { width: 100% !important; height: auto !important; }
       .email-container table[width="600"] { width: 100% !important; }
       .email-container td[width="300"] { width: 50% !important; display: inline-block !important; }
+      /* Footer: let tables scale but keep images at their natural size */
+      .email-footer table { width: 100% !important; max-width: 600px !important; }
+      .email-footer img { width: auto !important; height: auto !important; max-width: 100% !important; }
     }
     /* iOS blue link fix */
     a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; font-size: inherit !important; font-family: inherit !important; font-weight: inherit !important; line-height: inherit !important; }

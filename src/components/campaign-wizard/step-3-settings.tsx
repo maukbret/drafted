@@ -251,11 +251,14 @@ export function Step3Settings({
 
       try {
         const response = await fetch(`/api/klaviyo/default-audience?connectionId=${connectionId}`)
-        const data: DefaultAudienceResponse = await response.json()
 
         if (!response.ok) {
-          throw new Error(data.error || 'Failed to load default audience')
+          let message = 'Failed to load default audience'
+          try { const data = await response.json(); message = data.error || message } catch {}
+          throw new Error(message)
         }
+
+        const data: DefaultAudienceResponse = await response.json()
 
         if (!isActive) return
         setDefaultAudience(data.defaultAudience || null)
@@ -329,6 +332,8 @@ export function Step3Settings({
     const fetchProductFeedPreset = async () => {
       try {
         const response = await fetch(`/api/klaviyo/product-feed-preset?connectionId=${connectionId}`)
+        if (!response.ok) return
+
         const data = await response.json()
 
         if (!isActive) return
@@ -430,12 +435,14 @@ export function Step3Settings({
 
     try {
       const response = await fetch(`/api/klaviyo/audiences?connectionId=${connectionId}`)
-      const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to load current audiences')
+        let message = 'Failed to load current audiences'
+        try { const data = await response.json(); message = data.error || message } catch {}
+        throw new Error(message)
       }
 
+      const data = await response.json()
       const availableAudiences = (data.audiences || []) as KlaviyoAudience[]
       const audiencesById = new Map(
         availableAudiences.map((audience) => [audience.id, audience])

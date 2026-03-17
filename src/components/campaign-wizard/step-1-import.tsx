@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Loader2, Link as LinkIcon, Check, ChevronsUpDown } from 'lucide-react'
+import { Loader2, Link as LinkIcon, Check, ChevronsUpDown, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface KlaviyoConnection {
@@ -55,6 +55,35 @@ export function Step1Import({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
+  const [existingImport, setExistingImport] = useState<{ projectName: string; importedAt: string } | null>(null)
+  const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Check if Figma URL was previously imported (debounced)
+  useEffect(() => {
+    if (checkTimerRef.current) clearTimeout(checkTimerRef.current)
+    setExistingImport(null)
+
+    const hasNodeId = figmaUrl.includes('node-id=')
+    const hasDesignPath = figmaUrl.includes('/design/')
+    if (!figmaUrl || !hasNodeId || !hasDesignPath) return
+
+    checkTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/figma/check-import?url=${encodeURIComponent(figmaUrl)}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.exists) {
+          setExistingImport({ projectName: data.projectName, importedAt: data.importedAt })
+        }
+      } catch {
+        // Silently ignore — non-critical check
+      }
+    }, 400)
+
+    return () => {
+      if (checkTimerRef.current) clearTimeout(checkTimerRef.current)
+    }
+  }, [figmaUrl])
 
   const showStreamErrorToast = (data: Record<string, unknown>) => {
     const message = typeof data?.message === 'string' ? data.message : 'An error occurred'
@@ -320,9 +349,16 @@ export function Step1Import({
           placeholder="https://www.figma.com/design/..."
           disabled={loading}
         />
-        <p className="text-xs text-muted-foreground">
-          Paste the URL of your Figma frame. Make sure the URL includes a node-id parameter.
-        </p>
+        {existingImport ? (
+          <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+            <Zap className="h-3.5 w-3.5" />
+            <span>Previously imported — this will be quick</span>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Paste the URL of your Figma frame. Make sure the URL includes a node-id parameter.
+          </p>
+        )}
       </div>
 
       {/* Slice mode is always enabled — checkbox hidden but logic preserved */}

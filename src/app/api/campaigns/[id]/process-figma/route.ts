@@ -108,12 +108,17 @@ export async function POST(
           if (cachedFrames && cachedFrames.length > 0) {
             cachedFramesForFallback = cachedFrames
 
-            if (activeCooldownSec > 0 && !forceRefresh) {
-              send({
-                type: 'warning',
-                code: 'using_cached_frames',
-                message: `Figma is temporarily rate-limited. Using your cached frames for now (retry in ~${activeCooldownSec}s).`,
-              })
+            if (!forceRefresh) {
+              send({ type: 'progress', message: 'Design previously imported. Setting up...' })
+
+              if (activeCooldownSec > 0) {
+                send({
+                  type: 'warning',
+                  code: 'using_cached_frames',
+                  message: `Figma is temporarily rate-limited. Using your cached frames for now (retry in ~${activeCooldownSec}s).`,
+                })
+              }
+
               send({
                 type: 'done',
                 projectId: campaign.project_id,
@@ -123,6 +128,128 @@ export async function POST(
               })
               controller.close()
               return
+            }
+          }
+        }
+
+        // Check for existing import from any campaign (cross-campaign dedup)
+        if (!forceRefresh) {
+          const { data: existingProject } = await supabase
+            .from('projects')
+            .select('id, name, figma_url')
+            .eq('user_id', user.id)
+            .eq('figma_file_key', fileKey)
+            .eq('figma_node_id', nodeId)
+            .eq('status', 'ready')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+
+          if (existingProject && existingProject.id !== campaign.project_id) {
+            const { data: existingFrames } = await supabase
+              .from('frames')
+              .select('*')
+              .eq('project_id', existingProject.id)
+              .order('display_order', { ascending: true })
+
+            if (existingFrames && existingFrames.length > 0) {
+              send({ type: 'progress', message: 'Design previously imported. Setting up...' })
+
+              // Delete existing project/frames for this campaign
+              if (campaign.project_id) {
+                await supabase.from('frames').delete().eq('project_id', campaign.project_id)
+                await supabase.from('projects').delete().eq('id', campaign.project_id)
+              }
+
+              // Create new project by cloning metadata
+              const { data: newProject, error: cloneProjectError } = await supabase
+                .from('projects')
+                .insert({
+                  user_id: user.id,
+                  name: existingProject.name,
+                  figma_url: figmaUrl,
+                  figma_file_key: fileKey,
+                  figma_node_id: nodeId,
+                  klaviyo_connection_id: campaign.klaviyo_connection_id,
+                  campaign_id: campaignId,
+                  status: 'ready',
+                })
+                .select()
+                .single()
+
+              if (cloneProjectError || !newProject) {
+                console.error('Clone project error:', cloneProjectError)
+                // Fall through to normal import flow
+              } else {
+                // Copy storage image if in slice mode
+                let clonedImageUrl = existingFrames[0].image_url
+                if (normalizedSliceMode && existingFrames[0].image_url) {
+                  const supabaseAdmin = createAdminClient(
+                    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                    process.env.SUPABASE_SERVICE_ROLE_KEY!
+                  )
+
+                  const oldPath = `${user.id}/${existingProject.id}/full.png`
+                  const newPath = `${user.id}/${newProject.id}/full.png`
+                  const { error: copyError } = await supabaseAdmin.storage
+                    .from('frame-images')
+                    .copy(oldPath, newPath)
+
+                  if (!copyError) {
+                    const { data: publicUrlData } = supabaseAdmin.storage
+                      .from('frame-images')
+                      .getPublicUrl(newPath)
+                    clonedImageUrl = publicUrlData.publicUrl
+                  }
+                  // If copy fails, keep referencing the existing URL
+                }
+
+                // Clone frame records
+                const framesToInsert = existingFrames.map((frame, index) => ({
+                  project_id: newProject.id,
+                  figma_node_id: frame.figma_node_id,
+                  name: frame.name,
+                  width: frame.width,
+                  image_url: index === 0 && clonedImageUrl ? clonedImageUrl : frame.image_url,
+                  display_order: frame.display_order,
+                }))
+
+                const { error: cloneFramesError } = await supabase
+                  .from('frames')
+                  .insert(framesToInsert)
+
+                if (!cloneFramesError) {
+                  // Update campaign
+                  await supabase
+                    .from('campaigns')
+                    .update({
+                      project_id: newProject.id,
+                      figma_url: figmaUrl,
+                      name: campaign.name === 'Untitled Campaign' ? existingProject.name : campaign.name,
+                      slice_mode: normalizedSliceMode,
+                    })
+                    .eq('id', campaignId)
+
+                  const { data: frames } = await supabase
+                    .from('frames')
+                    .select('*')
+                    .eq('project_id', newProject.id)
+                    .order('display_order', { ascending: true })
+
+                  send({
+                    type: 'done',
+                    projectId: newProject.id,
+                    frameCount: framesToInsert.length,
+                    frames: frames || [],
+                    cloned: true,
+                  })
+                  controller.close()
+                  return
+                }
+
+                // If frame clone failed, clean up and fall through
+                await supabase.from('projects').delete().eq('id', newProject.id)
+              }
             }
           }
         }

@@ -87,6 +87,7 @@ export function CampaignWizard({
   const checkProductFeedPreset = useCallback(async (connId: string) => {
     try {
       const response = await fetch(`/api/klaviyo/product-feed-preset?connectionId=${connId}`)
+      if (!response.ok) throw new Error('Failed to check preset')
       const data = await response.json()
       setHasProductFeedPreset(!!data.preset)
     } catch {

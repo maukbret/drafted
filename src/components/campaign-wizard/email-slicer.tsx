@@ -606,7 +606,7 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
           )
 
           setProgressMessage(`Uploading section ${i + 1}...`)
-          const blob = await canvasToBlob(canvas)
+          const blob = await canvasToBlob(downscaleCanvas(canvas))
           const url = await uploadSliceImage(blob, `slice-${displayOrder}`)
 
           sliceData.push({
@@ -639,7 +639,7 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
           )
 
           setProgressMessage(`Uploading section ${i + 1} (left)...`)
-          const leftBlob = await canvasToBlob(leftCanvas)
+          const leftBlob = await canvasToBlob(downscaleCanvas(leftCanvas))
           const leftUrl = await uploadSliceImage(leftBlob, `slice-${displayOrder}`)
 
           sliceData.push({
@@ -665,7 +665,7 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
           )
 
           setProgressMessage(`Uploading section ${i + 1} (right)...`)
-          const rightBlob = await canvasToBlob(rightCanvas)
+          const rightBlob = await canvasToBlob(downscaleCanvas(rightCanvas))
           const rightUrl = await uploadSliceImage(rightBlob, `slice-${displayOrder}`)
 
           sliceData.push({
@@ -688,8 +688,9 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
       })
 
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to save slices')
+        let message = 'Failed to save slices'
+        try { const data = await response.json(); message = data.error || message } catch {}
+        throw new Error(message)
       }
 
       const { frames: newFrames } = await response.json()
@@ -714,8 +715,9 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
     })
 
     if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || 'Failed to upload image')
+      let message = 'Failed to upload image'
+      try { const data = await response.json(); message = data.error || message } catch {}
+      throw new Error(message)
     }
 
     const { url } = await response.json()
@@ -727,8 +729,23 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
       canvas.toBlob(blob => {
         if (blob) resolve(blob)
         else reject(new Error('Canvas toBlob failed'))
-      }, 'image/png')
+      }, 'image/jpeg', 0.92)
     })
+  }
+
+  // Downscale a canvas to max width (2x retina for 600px email) to reduce upload size
+  const MAX_UPLOAD_WIDTH = 1200
+
+  function downscaleCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
+    if (source.width <= MAX_UPLOAD_WIDTH) return source
+
+    const scale = MAX_UPLOAD_WIDTH / source.width
+    const dest = document.createElement('canvas')
+    dest.width = MAX_UPLOAD_WIDTH
+    dest.height = Math.round(source.height * scale)
+    const ctx = dest.getContext('2d')!
+    ctx.drawImage(source, 0, 0, dest.width, dest.height)
+    return dest
   }
 
   if (!imageUrl) {
