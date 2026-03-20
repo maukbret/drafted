@@ -190,7 +190,9 @@ export async function POST(
           return
         }
 
-        console.log('Using Klaviyo connection:', klaviyoConnection.id, 'Account:', klaviyoConnection.klaviyo_account_id)
+        const klaviyoAccountId = klaviyoConnection.klaviyo_account_id || existingCampaign.klaviyo_account_id || null
+
+        console.log('Using Klaviyo connection:', klaviyoConnection.id, 'Account:', klaviyoAccountId)
 
         // Get valid Klaviyo token (refreshes automatically if needed)
         const klaviyoToken = await getValidKlaviyoToken(supabase, klaviyoConnection.id)
@@ -201,11 +203,17 @@ export async function POST(
           return
         }
 
+        if (!klaviyoAccountId) {
+          send({ step: 'error', message: 'This Klaviyo connection does not have an account ID. Please reconnect your Klaviyo account.' })
+          controller.close()
+          return
+        }
+
         // Fetch Klaviyo account info for sender details
         let senderEmail = ''
         let senderName = ''
         try {
-          const accountResponse = await fetch('https://a.klaviyo.com/api/accounts/', {
+          const accountResponse = await fetch(`https://a.klaviyo.com/api/accounts/${encodeURIComponent(klaviyoAccountId)}`, {
             headers: {
               'Authorization': `Bearer ${klaviyoToken}`,
               'Accept': 'application/json',
@@ -214,10 +222,13 @@ export async function POST(
           })
           if (accountResponse.ok) {
             const accountData = await accountResponse.json()
-            const account = accountData.data?.[0]?.attributes
+            const account = accountData.data?.attributes
             senderEmail = account?.contact_information?.default_sender_email || ''
             senderName = account?.contact_information?.default_sender_name || account?.public_api_name || ''
             console.log('Klaviyo account sender:', senderName, senderEmail)
+          } else {
+            const errorText = await accountResponse.text()
+            console.error('Failed to fetch Klaviyo account info:', accountResponse.status, errorText)
           }
         } catch (err) {
           console.error('Failed to fetch Klaviyo account info:', err)
@@ -233,13 +244,13 @@ export async function POST(
         const useCustomFooter = settings?.useCustomFooter !== false // Default to true if not specified
         let footerHtml = ''
 
-        if (useCustomFooter && klaviyoConnection.klaviyo_account_id) {
+        if (useCustomFooter && klaviyoAccountId) {
           // First try to get user's own footer
           let { data: footer } = await supabase
             .from('klaviyo_footers')
             .select('footer_html')
             .eq('user_id', user.id)
-            .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
+            .eq('klaviyo_account_id', klaviyoAccountId)
             .single()
 
           // If no own footer, check for team admin footer
@@ -261,7 +272,7 @@ export async function POST(
                 const { data: teamFooter } = await supabase
                   .from('klaviyo_footers')
                   .select('footer_html')
-                  .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
+                  .eq('klaviyo_account_id', klaviyoAccountId)
                   .in('user_id', adminMembers.map(m => m.user_id))
                   .single()
 
@@ -291,13 +302,13 @@ export async function POST(
         // Fetch product feed preset if campaign has product feed settings
         let productFeedHtml = ''
         const campaignProductFeedSettings = campaign.product_feed_settings as ProductFeedSettings | null
-        if (campaignProductFeedSettings?.feedName && klaviyoConnection.klaviyo_account_id) {
+        if (campaignProductFeedSettings?.feedName && klaviyoAccountId) {
           // First try user's own preset
           let { data: preset } = await supabase
             .from('product_feed_presets')
             .select('*')
             .eq('user_id', user.id)
-            .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
+            .eq('klaviyo_account_id', klaviyoAccountId)
             .single()
 
           // If no own preset, check for team admin preset
@@ -319,7 +330,7 @@ export async function POST(
                 const { data: teamPreset } = await supabase
                   .from('product_feed_presets')
                   .select('*')
-                  .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
+                  .eq('klaviyo_account_id', klaviyoAccountId)
                   .in('user_id', pfAdminMembers.map(m => m.user_id))
                   .single()
 

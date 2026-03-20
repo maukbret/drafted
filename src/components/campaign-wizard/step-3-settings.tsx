@@ -89,13 +89,26 @@ interface FooterResponse {
   error?: string
 }
 
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = (date.getMonth() + 1).toString().padStart(2, '0')
+  const day = date.getDate().toString().padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getRelativeLocalDate(daysToAdd = 0): string {
+  const date = new Date()
+  date.setDate(date.getDate() + daysToAdd)
+  return formatLocalDate(date)
+}
+
 function parseScheduledAt(scheduledAt: string | null): { date: string; time: string } {
   if (!scheduledAt) return { date: '', time: '' }
 
   try {
     const date = new Date(scheduledAt)
-    // Format as YYYY-MM-DD for date input
-    const dateStr = date.toISOString().split('T')[0]
+    // Format as YYYY-MM-DD using the viewer's local calendar date.
+    const dateStr = formatLocalDate(date)
     // Format as HH:MM for time input (in local time)
     const hours = date.getHours().toString().padStart(2, '0')
     const minutes = date.getMinutes().toString().padStart(2, '0')
@@ -183,15 +196,14 @@ export function Step3Settings({
   const [defaultAudienceError, setDefaultAudienceError] = useState<string | null>(null)
   const [defaultAudienceWarning, setDefaultAudienceWarning] = useState<string | null>(null)
   const [scheduledDate, setScheduledDate] = useState(() => {
-    // Default to today's date if no initial date
     if (parsedSchedule.date) return parsedSchedule.date
-    return new Date().toISOString().split('T')[0]
+    return getRelativeLocalDate()
   })
   const [scheduledTime, setScheduledTime] = useState(parsedSchedule.time)
   const [dateOption, setDateOption] = useState<'today' | 'tomorrow' | 'other'>(() => {
     if (!parsedSchedule.date) return 'today'
-    const today = new Date().toISOString().split('T')[0]
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+    const today = getRelativeLocalDate()
+    const tomorrow = getRelativeLocalDate(1)
     if (parsedSchedule.date === today) return 'today'
     if (parsedSchedule.date === tomorrow) return 'tomorrow'
     return 'other'
@@ -240,6 +252,15 @@ export function Step3Settings({
     timezone,
     useRecipientTimezone,
   ])
+
+  useEffect(() => {
+    if (
+      error === 'Please select a date and time' &&
+      (publishOption === 'draft' || (scheduledDate && scheduledTime))
+    ) {
+      setError(null)
+    }
+  }, [error, publishOption, scheduledDate, scheduledTime])
 
   useEffect(() => {
     let isActive = true
@@ -385,7 +406,7 @@ export function Step3Settings({
   const handleSubmit = () => {
     if (!validateForm()) return
 
-    if (!scheduledDate || !scheduledTime) {
+    if (publishOption === 'schedule' && (!scheduledDate || !scheduledTime)) {
       setError('Please select a date and time')
       return
     }
@@ -476,9 +497,9 @@ export function Step3Settings({
     }
   }
 
-  // Get minimum date/time for scheduling (now + 5 minutes)
+  // Prevent selecting past calendar dates in the manual date picker.
   const now = new Date()
-  const minDate = now.toISOString().split('T')[0]
+  const minDate = formatLocalDate(now)
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -600,13 +621,10 @@ export function Step3Settings({
               value={dateOption}
               onValueChange={(value) => {
                 if (value === 'today') {
-                  const today = new Date()
-                  setScheduledDate(today.toISOString().split('T')[0])
+                  setScheduledDate(getRelativeLocalDate())
                 }
                 if (value === 'tomorrow') {
-                  const tomorrow = new Date()
-                  tomorrow.setDate(tomorrow.getDate() + 1)
-                  setScheduledDate(tomorrow.toISOString().split('T')[0])
+                  setScheduledDate(getRelativeLocalDate(1))
                 }
                 setDateOption(value as 'today' | 'tomorrow' | 'other')
               }}
@@ -634,6 +652,7 @@ export function Step3Settings({
                     value={scheduledDate}
                     onChange={(e) => setScheduledDate(e.target.value)}
                     min={minDate}
+                    autoComplete="off"
                   />
                 </div>
               )}
@@ -643,6 +662,7 @@ export function Step3Settings({
                   type="time"
                   value={scheduledTime}
                   onChange={(e) => setScheduledTime(e.target.value)}
+                  autoComplete="off"
                 />
               </div>
               <div className="space-y-1">
