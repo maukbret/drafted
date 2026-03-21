@@ -15,6 +15,7 @@ import { Campaign } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { UserAvatar } from '@/components/user-avatar'
 import { BrandIcon } from '@/components/brand-icon'
@@ -520,6 +521,7 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
   const [editModalCampaign, setEditModalCampaign] = React.useState<CampaignWithConnection | null>(null)
   const [unscheduleModalCampaign, setUnscheduleModalCampaign] = React.useState<CampaignWithConnection | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
+  const [deleteFromKlaviyo, setDeleteFromKlaviyo] = React.useState(true)
   const [isUnscheduling, setIsUnscheduling] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('active')
@@ -641,21 +643,38 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
 
     setIsDeleting(true)
 
+    const hasKlaviyoData = !!(deleteModalCampaign.klaviyo_campaign_id || deleteModalCampaign.klaviyo_template_id)
+
     try {
       const response = await fetch(`/api/campaigns/${deleteModalCampaign.id}`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deleteFromKlaviyo: hasKlaviyoData && deleteFromKlaviyo,
+        }),
       })
 
       if (!response.ok) throw new Error('Failed to delete')
 
+      const data = await response.json()
+
+      if (data.klaviyoAlreadyDeleted?.length > 0) {
+        const items = data.klaviyoAlreadyDeleted as string[]
+        const label = items.length === 2
+          ? 'The campaign and template were'
+          : `The ${items[0]} was`
+        toast.info(`${label} already deleted from Klaviyo`)
+      }
+
       setDeleteModalCampaign(null)
+      setDeleteFromKlaviyo(true)
       router.refresh()
     } catch {
       alert('Failed to delete campaign')
     } finally {
       setIsDeleting(false)
     }
-  }, [deleteModalCampaign, router])
+  }, [deleteModalCampaign, deleteFromKlaviyo, router])
 
   const handleUnschedule = React.useCallback(async () => {
     if (!unscheduleModalCampaign) return
@@ -765,13 +784,18 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
 
       <AlertDialog
         open={!!deleteModalCampaign}
-        onOpenChange={(open) => !open && !isDeleting && setDeleteModalCampaign(null)}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) {
+            setDeleteModalCampaign(null)
+            setDeleteFromKlaviyo(true)
+          }
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
-                <Trash2 className="h-6 w-6 text-destructive" />
+              <div className="size-12 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="text-destructive" />
               </div>
               <div>
                 <AlertDialogTitle>Delete campaign</AlertDialogTitle>
@@ -785,8 +809,24 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
             <span className="font-medium text-foreground">
               &quot;{deleteModalCampaign?.name}&quot;
             </span>
-            ? This will permanently remove the campaign from your Drafted account.
+            ?
           </p>
+
+          {!!(deleteModalCampaign?.klaviyo_campaign_id || deleteModalCampaign?.klaviyo_template_id) && (
+            <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer">
+              <Checkbox
+                checked={deleteFromKlaviyo}
+                onCheckedChange={(checked) => setDeleteFromKlaviyo(checked === true)}
+                className="mt-0.5"
+              />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium">Also delete from Klaviyo</span>
+                <span className="text-xs text-muted-foreground">
+                  Remove the campaign and template from your Klaviyo account
+                </span>
+              </div>
+            </label>
+          )}
 
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>

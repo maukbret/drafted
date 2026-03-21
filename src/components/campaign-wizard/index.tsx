@@ -7,8 +7,10 @@ import { Step1Import } from './step-1-import'
 import { Step2Editor } from './step-2-editor'
 import { EmailSlicer } from './email-slicer'
 import { Step3Settings } from './step-3-settings'
+import { Step4Export } from './step-4-export'
 import { CampaignLeaveGuard } from './leave-campaign-guard'
 import { Campaign, KlaviyoAudience } from '@/types/database'
+import { ExportSettings } from '@/lib/campaign-export'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
 
@@ -75,6 +77,8 @@ export function CampaignWizard({
     initialCampaign.slice_mode && (initialCampaign.wizard_step || 1) > 2
   )
   const [conceptUpdates, setConceptUpdates] = useState<Record<string, unknown> | null>(null)
+  const [exportParams, setExportParams] = useState<{ settings: ExportSettings; asDraft: boolean } | null>(null)
+  const wasResumed = (initialCampaign.wizard_step || 1) >= 2
   const [productFeedSettings, setProductFeedSettings] = useState<ProductFeedSettings | null>(
     (initialCampaign as any).product_feed_settings || null
   )
@@ -101,9 +105,9 @@ export function CampaignWizard({
     }
   }, [connectionId, canUseProductFeed, checkProductFeedPreset])
 
-  // Update wizard step in database when it changes
+  // Update wizard step in database when it changes (skip step 4 — export is transient)
   useEffect(() => {
-    if (step !== campaign.wizard_step) {
+    if (step !== campaign.wizard_step && step <= 3) {
       fetch(`/api/campaigns/${campaign.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -157,11 +161,33 @@ export function CampaignWizard({
     setStep(3)
   }
 
-  const handleStep3Complete = () => {
+  const handleStep3Complete = (params: { settings: ExportSettings; asDraft: boolean }) => {
+    setExportParams(params)
+    setStep(4)
+  }
+
+  const handleExportComplete = () => {
     router.push('/campaigns')
   }
 
-  const goBack = () => {
+  const handleExportError = () => {
+    setStep(3)
+    setExportParams(null)
+  }
+
+  const goBack = async () => {
+    if (step === 3 && conceptUpdates) {
+      await fetch(`/api/campaigns/${campaign.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(conceptUpdates),
+      })
+      const res = await fetch(`/api/campaigns/${campaign.id}`)
+      if (res.ok) {
+        const { campaign: updated } = await res.json()
+        setCampaign(updated)
+      }
+    }
     setStep(Math.max(1, step - 1))
   }
 
@@ -180,22 +206,27 @@ export function CampaignWizard({
       <CampaignLeaveGuard
         campaignId={campaign.id}
         step={step}
-        isActive={campaign.status === 'in_progress' || (campaign.status as string) === 'concept'}
+        isActive={step !== 4 && (campaign.status === 'in_progress' || (campaign.status as string) === 'concept')}
         campaignStatus={campaign.status}
         getConceptUpdates={() => conceptUpdates}
+        wasResumed={wasResumed}
       />
-      <div className="flex items-center justify-between mb-8 flex-shrink-0">
-        <h1 className="text-2xl font-bold">{campaignName}</h1>
-        {step >= 2 && selectedAccount && (
-          <span className="text-sm text-muted-foreground">
-            {selectedAccount.account_name || 'Unnamed account'}
-          </span>
-        )}
-      </div>
+      {step !== 4 && (
+        <>
+          <div className="flex items-center justify-between mb-8 flex-shrink-0">
+            <h1 className="text-2xl font-bold">{campaignName}</h1>
+            {step >= 2 && selectedAccount && (
+              <span className="text-sm text-muted-foreground">
+                {selectedAccount.account_name || 'Unnamed account'}
+              </span>
+            )}
+          </div>
 
-      <div className="flex-shrink-0">
-        <WizardProgress currentStep={step} steps={STEPS} />
-      </div>
+          <div className="flex-shrink-0">
+            <WizardProgress currentStep={step} steps={STEPS} />
+          </div>
+        </>
+      )}
 
       <div
         className={
@@ -280,6 +311,17 @@ export function CampaignWizard({
               Go to Step 1
             </Button>
           </div>
+        )}
+
+        {step === 4 && exportParams && (
+          <Step4Export
+            campaignId={campaign.id}
+            settings={exportParams.settings}
+            asDraft={exportParams.asDraft}
+            isUpdate={!!(campaign.klaviyo_template_id && campaign.klaviyo_campaign_id)}
+            onComplete={handleExportComplete}
+            onError={handleExportError}
+          />
         )}
       </div>
     </div>

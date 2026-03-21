@@ -5,7 +5,17 @@ import { Check, ChevronDown, ChevronsUpDown, Eye, HelpCircle } from 'lucide-reac
 import { AudienceSelector } from '../audience-selector'
 import { CampaignPreviewSheet } from './campaign-preview-sheet'
 import type { ProductFeedPreviewData } from './campaign-email-preview'
-import { startCampaignExport } from '@/lib/campaign-export'
+import type { ExportSettings } from '@/lib/campaign-export'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { KlaviyoAudience } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -60,7 +70,7 @@ interface Step3SettingsProps {
   initialProductFeedSettings?: { feedName: string; productCount: number } | null
   isUpdate: boolean
   onConceptDraftChange?: (updates: Record<string, unknown>) => void
-  onComplete: () => void
+  onComplete: (params: { settings: ExportSettings; asDraft: boolean }) => void
   onBack: () => void
 }
 
@@ -215,6 +225,7 @@ export function Step3Settings({
   const [useCustomFooter, setUseCustomFooter] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showScheduleConfirm, setShowScheduleConfirm] = useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [previewFooterHtml, setPreviewFooterHtml] = useState<string | null>(null)
   const [previewFooterLoading, setPreviewFooterLoading] = useState(false)
@@ -403,6 +414,31 @@ export function Step3Settings({
     return true
   }
 
+  const buildSettings = (): ExportSettings => ({
+    name: name.trim(),
+    subjectLine: subjectLine.trim(),
+    previewText: previewText.trim() || null,
+    includedAudiences,
+    excludedAudiences,
+    scheduledDate,
+    scheduledTime,
+    timezone,
+    useRecipientTimezone,
+    useCustomFooter,
+    utmEnabled,
+    utmSource,
+    utmMedium,
+    utmCampaign: utmCampaign || name.trim(),
+    utmContent,
+    utmTerm,
+  })
+
+  const proceedWithExport = (asDraft: boolean) => {
+    setSaving(true)
+    setError(null)
+    onComplete({ settings: buildSettings(), asDraft })
+  }
+
   const handleSubmit = () => {
     if (!validateForm()) return
 
@@ -411,38 +447,14 @@ export function Step3Settings({
       return
     }
 
-    setSaving(true)
-    setError(null)
-
     const asDraft = publishOption === 'draft'
 
-    // Fire and forget - export continues in background via sonner toasts
-    startCampaignExport(
-      campaignId,
-      {
-        name: name.trim(),
-        subjectLine: subjectLine.trim(),
-        previewText: previewText.trim() || null,
-        includedAudiences,
-        excludedAudiences,
-        scheduledDate,
-        scheduledTime,
-        timezone,
-        useRecipientTimezone,
-        useCustomFooter,
-        utmEnabled,
-        utmSource,
-        utmMedium,
-        utmCampaign: utmCampaign || name.trim(),
-        utmContent,
-        utmTerm,
-      },
-      asDraft,
-      isUpdate,
-    )
+    if (!asDraft) {
+      setShowScheduleConfirm(true)
+      return
+    }
 
-    // Navigate back to campaigns immediately
-    onComplete()
+    proceedWithExport(true)
   }
 
   const handleApplyDefaultAudience = async () => {
@@ -941,6 +953,29 @@ export function Step3Settings({
         footerError={previewFooterError}
         productFeedPreview={productFeedPreview}
       />
+
+      <AlertDialog open={showScheduleConfirm} onOpenChange={setShowScheduleConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Schedule campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will schedule emails to your selected audiences. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                setShowScheduleConfirm(false)
+                proceedWithExport(false)
+              }}
+            >
+              Schedule
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

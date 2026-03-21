@@ -30,6 +30,8 @@ interface CampaignLeaveGuardProps {
   campaignStatus: string
   /** Optional callback to fetch unsaved step data for concept save. */
   getConceptUpdates?: () => Record<string, unknown> | null
+  /** Whether the campaign was resumed from a previously saved state (wizard_step >= 2 at load). */
+  wasResumed?: boolean
 }
 
 export function CampaignLeaveGuard({
@@ -38,6 +40,7 @@ export function CampaignLeaveGuard({
   isActive,
   campaignStatus,
   getConceptUpdates,
+  wasResumed = false,
 }: CampaignLeaveGuardProps) {
   const router = useRouter()
   const [isOpen, setIsOpen] = React.useState(false)
@@ -50,8 +53,8 @@ export function CampaignLeaveGuard({
   const isExported = campaignStatus === 'klaviyo_draft' || campaignStatus === 'scheduled' || campaignStatus === 'sent' || campaignStatus === 'cancelled'
 
   const shouldAutoDelete = isActive && step === 1
-  const shouldAutoSave = isExported && step >= 2
-  const shouldPrompt = isActive && step >= 2 && !isExported
+  const shouldAutoSave = (isExported && step >= 2) || (wasResumed && step >= 2)
+  const shouldPrompt = isActive && step >= 2 && !isExported && !wasResumed
 
   const navigate = React.useCallback(
     (pending: PendingNavigation) => {

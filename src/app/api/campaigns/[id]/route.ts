@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getValidKlaviyoToken } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(
@@ -141,10 +142,14 @@ export async function DELETE(
 
   const ownConnectionIds = ownConnections?.map(c => c.id) || []
 
+  // Parse request body for options
+  const body = await request.json().catch(() => ({}))
+  const deleteFromKlaviyo = body.deleteFromKlaviyo === true
+
   // Get campaign - allow if user owns it OR owns the connection it uses
   const { data: campaign } = await supabase
     .from('campaigns')
-    .select('project_id, user_id, klaviyo_connection_id')
+    .select('project_id, user_id, klaviyo_connection_id, klaviyo_campaign_id, klaviyo_template_id')
     .eq('id', id)
     .single()
 
@@ -182,6 +187,41 @@ export async function DELETE(
     return NextResponse.json({ error: 'Not authorized to delete this campaign' }, { status: 403 })
   }
 
+  // Delete from Klaviyo if requested and IDs exist
+  const klaviyoAlreadyDeleted: string[] = []
+  if (deleteFromKlaviyo && campaign.klaviyo_connection_id) {
+    const token = await getValidKlaviyoToken(supabase, campaign.klaviyo_connection_id)
+    if (token) {
+      const klaviyoHeaders = {
+        'Authorization': `Klaviyo-API-Key ${token}`,
+        'accept': 'application/vnd.api+json',
+        'revision': '2026-01-15',
+      }
+
+      // Delete campaign first (it references the template)
+      if (campaign.klaviyo_campaign_id) {
+        try {
+          const res = await fetch(`https://a.klaviyo.com/api/campaigns/${campaign.klaviyo_campaign_id}`, {
+            method: 'DELETE',
+            headers: klaviyoHeaders,
+          })
+          if (res.status === 404) klaviyoAlreadyDeleted.push('campaign')
+        } catch { /* ignore */ }
+      }
+
+      // Then delete the template
+      if (campaign.klaviyo_template_id) {
+        try {
+          const res = await fetch(`https://a.klaviyo.com/api/templates/${campaign.klaviyo_template_id}`, {
+            method: 'DELETE',
+            headers: klaviyoHeaders,
+          })
+          if (res.status === 404) klaviyoAlreadyDeleted.push('template')
+        } catch { /* ignore */ }
+      }
+    }
+  }
+
   // Delete associated project's frames if there's a project
   if (campaign.project_id) {
     await supabase
@@ -206,5 +246,5 @@ export async function DELETE(
     return NextResponse.json({ error: 'Failed to delete campaign' }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, klaviyoAlreadyDeleted })
 }
