@@ -1,3 +1,5 @@
+import { scopeCssUnderSelector, scaleCssWidths } from './footer-css'
+
 const TARGET_EMAIL_WIDTH = 600
 
 function extractWidthFromTag(tag: string): number | null {
@@ -92,6 +94,26 @@ export function normalizeFooterHtmlForExport(html: string, targetWidth = TARGET_
     /(\b(?:width|max-width|min-width)\s*:\s*)(\d+(?:\.\d+)?)px/gi,
     (_, prefix: string, value: string) => `${prefix}${scaleDimensionValue(value, scale)}px`
   )
+
+  return normalized
+}
+
+export function normalizeFooterCssForExport(
+  css: string,
+  footerBaseWidth?: number,
+  targetWidth = TARGET_EMAIL_WIDTH
+): string {
+  if (!css) return ''
+
+  const baseWidth = footerBaseWidth ?? targetWidth
+  const scale = baseWidth > 0 && baseWidth !== targetWidth ? targetWidth / baseWidth : 1
+
+  let normalized = css
+  if (scale !== 1) {
+    normalized = scaleCssWidths(normalized, scale)
+  }
+
+  normalized = scopeCssUnderSelector(normalized)
 
   return normalized
 }

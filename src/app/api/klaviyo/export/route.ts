@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getValidKlaviyoToken } from '@/lib/klaviyo'
-import { normalizeFooterHtmlForExport } from '@/lib/email/footer-normalize'
+import { normalizeFooterHtmlForExport, normalizeFooterCssForExport } from '@/lib/email/footer-normalize'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
@@ -63,18 +63,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No frames found' }, { status: 400 })
     }
 
-    // Fetch stored footer HTML for this Klaviyo account
+    // Fetch stored footer HTML and CSS for this Klaviyo account
     let footerHtml = ''
+    let footerCss = ''
     if (klaviyoConnection.klaviyo_account_id) {
       const { data: footer } = await supabase
         .from('klaviyo_footers')
-        .select('footer_html')
+        .select('footer_html, footer_css')
         .eq('user_id', user.id)
         .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
         .single()
 
       if (footer) {
         footerHtml = footer.footer_html
+        footerCss = footer.footer_css || ''
       }
     }
 
@@ -147,7 +149,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 2: Generate HTML email with footer
-    const html = generateEmailHtml(uploadedFrames, footerHtml, '')
+    const html = generateEmailHtml(uploadedFrames, footerHtml, '', footerCss)
 
     // Step 3: Create template in Klaviyo
     const templateName = project.name || `Figma Import - ${new Date().toLocaleDateString('en-GB')}`
@@ -204,7 +206,7 @@ function generateEmailHtml(frames: Array<{
   width: number | null
   klaviyo_image_url: string | null
   link_url: string | null
-}>, footerHtml: string = '', previewText: string = ''): string {
+}>, footerHtml: string = '', previewText: string = '', footerCss: string = ''): string {
   // Group frames for side-by-side layout
   const rows: string[] = []
   let i = 0
@@ -269,6 +271,7 @@ function generateEmailHtml(frames: Array<{
   const frameRows = rows.join('\n')
 
   const normalizedFooter = normalizeFooterHtmlForExport(footerHtml)
+  const normalizedCss = footerCss ? normalizeFooterCssForExport(footerCss) : ''
   const footerSection = normalizedFooter ? `
       <tr>
         <td align="center" valign="top" style="padding: 0;" class="email-footer">
@@ -314,6 +317,7 @@ ${normalizedFooter}
       .email-footer table { width: 100% !important; max-width: 600px !important; }
       .email-footer img { width: auto !important; height: auto !important; max-width: 100% !important; }
     }
+${normalizedCss ? `    /* Preserved Klaviyo footer styles */\n${normalizedCss}` : ''}
     /* iOS blue link fix */
     a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; font-size: inherit !important; font-family: inherit !important; font-weight: inherit !important; line-height: inherit !important; }
     /* Gmail blue link fix */

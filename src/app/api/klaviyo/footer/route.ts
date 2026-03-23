@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
 // POST - Save footer for a connection
 export async function POST(request: NextRequest) {
   try {
-    const { connectionId, footerHtml, sourceUrl } = await request.json()
+    const { connectionId, footerHtml, footerCss, sourceUrl } = await request.json()
 
     if (!connectionId) {
       return NextResponse.json({ error: 'Connection ID is required' }, { status: 400 })
@@ -120,6 +120,7 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         klaviyo_account_id: connection.klaviyo_account_id,
         footer_html: footerHtml,
+        footer_css: footerCss || null,
         source_url: sourceUrl || null,
         updated_at: new Date().toISOString(),
       }, {

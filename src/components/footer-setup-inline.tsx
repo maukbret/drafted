@@ -46,6 +46,7 @@ export function FooterSetupInline({ connectionId, hasFooter, onComplete, onSkip,
   const [campaignsLoading, setCampaignsLoading] = useState(true)
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
   const [sourceUrl, setSourceUrl] = useState('')
+  const [headCss, setHeadCss] = useState('')
 
   useEffect(() => {
     const fetchCampaigns = async () => {
@@ -92,6 +93,7 @@ export function FooterSetupInline({ connectionId, hasFooter, onComplete, onSkip,
       }
 
       setSections(data.sections)
+      setHeadCss(data.headCss || '')
       setStep('select')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch campaign content')
@@ -129,6 +131,7 @@ export function FooterSetupInline({ connectionId, hasFooter, onComplete, onSkip,
       }
 
       setSections(data.sections)
+      setHeadCss(data.headCss || '')
       setStep('select')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch preview')
@@ -189,6 +192,7 @@ export function FooterSetupInline({ connectionId, hasFooter, onComplete, onSkip,
         body: JSON.stringify({
           connectionId,
           footerHtml: getCombinedHtml(),
+          footerCss: headCss || undefined,
           sourceUrl,
         }),
       })

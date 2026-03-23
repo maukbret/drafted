@@ -140,7 +140,11 @@ export async function POST(request: NextRequest) {
     // Parse the HTML to extract sections
     const sections = parseEmailSections(html)
 
+    // Extract CSS from <head> <style> tags (media queries, responsive rules)
+    const headCss = extractHeadCss(html)
+
     console.log('Parsed sections count:', sections.length)
+    console.log('Extracted head CSS length:', headCss.length)
 
     if (sections.length === 0) {
       return NextResponse.json({
@@ -148,7 +152,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    return NextResponse.json({ sections })
+    return NextResponse.json({ sections, headCss })
 
   } catch (err) {
     console.error('Footer fetch error:', err)
@@ -161,6 +165,16 @@ interface EmailSection {
   html: string
   preview: string // Truncated text preview
   index: number
+}
+
+function extractHeadCss(html: string): string {
+  const $ = cheerio.load(html)
+  const cssBlocks: string[] = []
+  $('head style').each((_, el) => {
+    const content = $(el).html()
+    if (content) cssBlocks.push(content)
+  })
+  return cssBlocks.join('\n')
 }
 
 function parseEmailSections(html: string): EmailSection[] {

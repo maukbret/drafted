@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getValidKlaviyoToken } from '@/lib/klaviyo'
-import { normalizeFooterHtmlForExport } from '@/lib/email/footer-normalize'
+import { normalizeFooterHtmlForExport, normalizeFooterCssForExport } from '@/lib/email/footer-normalize'
 import { generateProductFeedHtml } from '@/lib/email/product-feed-html'
 import type { ProductFeedPreset, ProductFeedSettings } from '@/lib/email/product-feed-html'
 import { NextRequest } from 'next/server'
@@ -243,12 +243,13 @@ export async function POST(
         // Fetch stored footer HTML for this Klaviyo account (if useCustomFooter is enabled)
         const useCustomFooter = settings?.useCustomFooter !== false // Default to true if not specified
         let footerHtml = ''
+        let footerCss = ''
 
         if (useCustomFooter && klaviyoAccountId) {
           // First try to get user's own footer
           let { data: footer } = await supabase
             .from('klaviyo_footers')
-            .select('footer_html')
+            .select('footer_html, footer_css')
             .eq('user_id', user.id)
             .eq('klaviyo_account_id', klaviyoAccountId)
             .single()
@@ -271,7 +272,7 @@ export async function POST(
               if (adminMembers && adminMembers.length > 0) {
                 const { data: teamFooter } = await supabase
                   .from('klaviyo_footers')
-                  .select('footer_html')
+                  .select('footer_html, footer_css')
                   .eq('klaviyo_account_id', klaviyoAccountId)
                   .in('user_id', adminMembers.map(m => m.user_id))
                   .single()
@@ -283,7 +284,8 @@ export async function POST(
 
           if (footer) {
             footerHtml = footer.footer_html
-            console.log('Using stored footer, length:', footerHtml.length)
+            footerCss = footer.footer_css || ''
+            console.log('Using stored footer, length:', footerHtml.length, 'css length:', footerCss.length)
           }
         }
 
@@ -422,7 +424,7 @@ export async function POST(
         // Step 3: Create or update template in Klaviyo
         send({ step: 'template', status: 'in_progress', label: isUpdate ? 'Updating template' : 'Creating template' })
 
-        const html = generateEmailHtml(uploadedFrames, footerHtml, campaign.preview_text || '', productFeedHtml)
+        const html = generateEmailHtml(uploadedFrames, footerHtml, campaign.preview_text || '', productFeedHtml, footerCss)
 
         let templateId = campaign.klaviyo_template_id
         let klaviyoCampaignId = campaign.klaviyo_campaign_id
@@ -833,7 +835,7 @@ function generateEmailHtml(frames: Array<{
   width: number | null
   klaviyo_image_url: string | null
   link_url: string | null
-}>, footerHtml: string = '', previewText: string = '', productFeedHtml: string = ''): string {
+}>, footerHtml: string = '', previewText: string = '', productFeedHtml: string = '', footerCss: string = ''): string {
   // Group frames for side-by-side layout
   const rows: string[] = []
   let i = 0
@@ -900,6 +902,7 @@ function generateEmailHtml(frames: Array<{
   const productFeedSection = productFeedHtml || ''
 
   const normalizedFooter = normalizeFooterHtmlForExport(footerHtml)
+  const normalizedCss = footerCss ? normalizeFooterCssForExport(footerCss) : ''
   const footerSection = normalizedFooter ? `
       <tr>
         <td align="center" valign="top" style="padding: 0;" class="email-footer">
@@ -945,6 +948,7 @@ ${normalizedFooter}
       .email-footer table { width: 100% !important; max-width: 600px !important; }
       .email-footer img { width: auto !important; height: auto !important; max-width: 100% !important; }
     }
+${normalizedCss ? `    /* Preserved Klaviyo footer styles */\n${normalizedCss}` : ''}
     /* iOS blue link fix */
     a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; font-size: inherit !important; font-family: inherit !important; font-weight: inherit !important; line-height: inherit !important; }
     /* Gmail blue link fix */
