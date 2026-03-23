@@ -34,13 +34,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Verify user owns this connection
-    const { data: connection } = await supabase
+    // Verify user owns this connection or is a team admin with access
+    let { data: connection } = await supabase
       .from('klaviyo_connections')
       .select('id')
       .eq('id', connectionId)
       .eq('user_id', user.id)
       .single()
+
+    if (!connection) {
+      // Check if user is a team admin who shares a team with the connection owner
+      const { data: sharedConnection } = await supabase
+        .from('klaviyo_connections')
+        .select('id, user_id')
+        .eq('id', connectionId)
+        .single()
+
+      if (sharedConnection) {
+        const { data: memberships } = await supabase
+          .from('team_members')
+          .select('team_id, role')
+          .eq('user_id', user.id)
+
+        const adminTeamIds = (memberships || [])
+          .filter(m => m.role === 'admin')
+          .map(m => m.team_id)
+
+        if (adminTeamIds.length > 0) {
+          const { data: ownerInTeam } = await supabase
+            .from('team_members')
+            .select('team_id')
+            .eq('user_id', sharedConnection.user_id)
+            .in('team_id', adminTeamIds)
+            .maybeSingle()
+
+          if (ownerInTeam) {
+            connection = sharedConnection
+          }
+        }
+      }
+    }
 
     if (!connection) {
       return NextResponse.json({ error: 'Klaviyo connection not found' }, { status: 404 })

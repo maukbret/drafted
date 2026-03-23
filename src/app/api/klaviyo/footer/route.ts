@@ -96,12 +96,46 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the connection to find the Klaviyo account ID
-    const { data: connection } = await supabase
+    // First try own connection, then fall back to team admin access
+    let { data: connection } = await supabase
       .from('klaviyo_connections')
-      .select('klaviyo_account_id')
+      .select('klaviyo_account_id, user_id')
       .eq('id', connectionId)
       .eq('user_id', user.id)
       .single()
+
+    if (!connection) {
+      // Check if user is an admin in a team that shares this connection's owner
+      const { data: sharedConnection } = await supabase
+        .from('klaviyo_connections')
+        .select('klaviyo_account_id, user_id')
+        .eq('id', connectionId)
+        .single()
+
+      if (sharedConnection) {
+        const { data: memberships } = await supabase
+          .from('team_members')
+          .select('team_id, role')
+          .eq('user_id', user.id)
+
+        const adminTeamIds = (memberships || [])
+          .filter(m => m.role === 'admin')
+          .map(m => m.team_id)
+
+        if (adminTeamIds.length > 0) {
+          const { data: ownerInTeam } = await supabase
+            .from('team_members')
+            .select('team_id')
+            .eq('user_id', sharedConnection.user_id)
+            .in('team_id', adminTeamIds)
+            .maybeSingle()
+
+          if (ownerInTeam) {
+            connection = sharedConnection
+          }
+        }
+      }
+    }
 
     if (!connection) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
@@ -117,7 +151,7 @@ export async function POST(request: NextRequest) {
     const { data: footer, error: upsertError } = await supabase
       .from('klaviyo_footers')
       .upsert({
-        user_id: user.id,
+        user_id: connection.user_id,
         klaviyo_account_id: connection.klaviyo_account_id,
         footer_html: footerHtml,
         footer_css: footerCss || null,
@@ -160,22 +194,55 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Get the connection to find the Klaviyo account ID
-    const { data: connection } = await supabase
+    // First try own connection, then fall back to team admin access
+    let { data: connection } = await supabase
       .from('klaviyo_connections')
-      .select('klaviyo_account_id')
+      .select('klaviyo_account_id, user_id')
       .eq('id', connectionId)
       .eq('user_id', user.id)
       .single()
+
+    if (!connection) {
+      const { data: sharedConnection } = await supabase
+        .from('klaviyo_connections')
+        .select('klaviyo_account_id, user_id')
+        .eq('id', connectionId)
+        .single()
+
+      if (sharedConnection) {
+        const { data: memberships } = await supabase
+          .from('team_members')
+          .select('team_id, role')
+          .eq('user_id', user.id)
+
+        const adminTeamIds = (memberships || [])
+          .filter(m => m.role === 'admin')
+          .map(m => m.team_id)
+
+        if (adminTeamIds.length > 0) {
+          const { data: ownerInTeam } = await supabase
+            .from('team_members')
+            .select('team_id')
+            .eq('user_id', sharedConnection.user_id)
+            .in('team_id', adminTeamIds)
+            .maybeSingle()
+
+          if (ownerInTeam) {
+            connection = sharedConnection
+          }
+        }
+      }
+    }
 
     if (!connection || !connection.klaviyo_account_id) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
-    // Delete the footer
+    // Delete the footer for the connection owner
     await supabase
       .from('klaviyo_footers')
       .delete()
-      .eq('user_id', user.id)
+      .eq('user_id', connection.user_id)
       .eq('klaviyo_account_id', connection.klaviyo_account_id)
 
     return NextResponse.json({ success: true })
