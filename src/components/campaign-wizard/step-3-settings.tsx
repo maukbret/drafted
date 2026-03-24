@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, ChevronDown, ChevronsUpDown, Eye, HelpCircle } from 'lucide-react'
+import { Check, ChevronDown, ChevronsUpDown, Eye, HelpCircle, Loader2 } from 'lucide-react'
 import { AudienceSelector } from '../audience-selector'
 import { CampaignPreviewSheet } from './campaign-preview-sheet'
 import type { ProductFeedPreviewData } from './campaign-email-preview'
@@ -46,6 +46,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
 interface Step3SettingsProps {
@@ -75,6 +81,8 @@ interface Step3SettingsProps {
 }
 
 interface DefaultAudiencePreset {
+  id: string
+  name: string
   includedAudiences: KlaviyoAudience[]
   excludedAudiences: KlaviyoAudience[]
 }
@@ -88,7 +96,7 @@ interface Frame {
 }
 
 interface DefaultAudienceResponse {
-  defaultAudience: DefaultAudiencePreset | null
+  presets: DefaultAudiencePreset[]
   error?: string
 }
 
@@ -200,9 +208,10 @@ export function Step3Settings({
   const [previewText, setPreviewText] = useState(initialPreviewText || '')
   const [includedAudiences, setIncludedAudiences] = useState<KlaviyoAudience[]>(initialIncludedAudiences || [])
   const [excludedAudiences, setExcludedAudiences] = useState<KlaviyoAudience[]>(initialExcludedAudiences || [])
-  const [defaultAudience, setDefaultAudience] = useState<DefaultAudiencePreset | null>(null)
+  const [defaultAudiencePresets, setDefaultAudiencePresets] = useState<DefaultAudiencePreset[]>([])
   const [loadingDefaultAudience, setLoadingDefaultAudience] = useState(true)
   const [applyingDefaultAudience, setApplyingDefaultAudience] = useState(false)
+  const [appliedPresetName, setAppliedPresetName] = useState<string | null>(null)
   const [defaultAudienceError, setDefaultAudienceError] = useState<string | null>(null)
   const [defaultAudienceWarning, setDefaultAudienceWarning] = useState<string | null>(null)
   const [scheduledDate, setScheduledDate] = useState(() => {
@@ -293,10 +302,10 @@ export function Step3Settings({
         const data: DefaultAudienceResponse = await response.json()
 
         if (!isActive) return
-        setDefaultAudience(data.defaultAudience || null)
+        setDefaultAudiencePresets(data.presets || [])
       } catch (err) {
         if (!isActive) return
-        setDefaultAudience(null)
+        setDefaultAudiencePresets([])
         setDefaultAudienceError(err instanceof Error ? err.message : 'Failed to load default audience')
       } finally {
         if (!isActive) return
@@ -307,7 +316,7 @@ export function Step3Settings({
     if (connectionId) {
       fetchDefaultAudience()
     } else {
-      setDefaultAudience(null)
+      setDefaultAudiencePresets([])
       setLoadingDefaultAudience(false)
     }
 
@@ -457,10 +466,8 @@ export function Step3Settings({
     proceedWithExport(true)
   }
 
-  const handleApplyDefaultAudience = async () => {
-    if (!defaultAudience || applyingDefaultAudience) {
-      return
-    }
+  const handleApplyDefaultAudience = async (preset: DefaultAudiencePreset) => {
+    if (applyingDefaultAudience) return
 
     setApplyingDefaultAudience(true)
     setDefaultAudienceError(null)
@@ -487,19 +494,20 @@ export function Step3Settings({
           .filter((audience): audience is KlaviyoAudience => !!audience)
       )
 
-      const validIncludedAudiences = resolveAudiences(defaultAudience.includedAudiences)
-      const validExcludedAudiences = resolveAudiences(defaultAudience.excludedAudiences)
+      const validIncludedAudiences = resolveAudiences(preset.includedAudiences)
+      const validExcludedAudiences = resolveAudiences(preset.excludedAudiences)
       const missingCount =
-        (defaultAudience.includedAudiences.length - validIncludedAudiences.length) +
-        (defaultAudience.excludedAudiences.length - validExcludedAudiences.length)
+        (preset.includedAudiences.length - validIncludedAudiences.length) +
+        (preset.excludedAudiences.length - validExcludedAudiences.length)
 
       // Apply replaces the current audience selection.
       setIncludedAudiences(validIncludedAudiences)
       setExcludedAudiences(validExcludedAudiences)
+      setAppliedPresetName(preset.name)
 
       if (missingCount > 0) {
         setDefaultAudienceWarning(
-          `${missingCount} audience${missingCount === 1 ? '' : 's'} in this default no longer exist in Klaviyo. We applied the remaining audiences.`
+          `${missingCount} audience${missingCount === 1 ? '' : 's'} in this preset no longer exist in Klaviyo. We applied the remaining audiences.`
         )
       }
     } catch (err) {
@@ -572,25 +580,63 @@ export function Step3Settings({
           <div className="rounded-lg border bg-muted/30 p-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium">Default audience preset</p>
+                <p className="text-sm font-medium">Audience presets</p>
                 <p className="text-xs text-muted-foreground">
                   {loadingDefaultAudience
-                    ? 'Loading default audience...'
-                    : defaultAudience
-                      ? `${defaultAudience.includedAudiences.length} include · ${defaultAudience.excludedAudiences.length} exclude`
-                      : 'No default audience is set for this account. Set one from Connections.'}
+                    ? 'Loading presets...'
+                    : appliedPresetName
+                      ? `${appliedPresetName} has been applied`
+                      : defaultAudiencePresets.length === 0
+                        ? 'No audience presets set for this account. Set them from Connections.'
+                        : defaultAudiencePresets.length === 1
+                          ? `${defaultAudiencePresets[0].name} · ${defaultAudiencePresets[0].includedAudiences.length} include · ${defaultAudiencePresets[0].excludedAudiences.length} exclude`
+                          : `${defaultAudiencePresets.length} presets available`}
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleApplyDefaultAudience}
-                disabled={saving || loadingDefaultAudience || !defaultAudience || applyingDefaultAudience}
-                className="rounded-full"
-              >
-                {applyingDefaultAudience ? 'Applying...' : 'Apply default audience'}
-              </Button>
+              {loadingDefaultAudience ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : defaultAudiencePresets.length <= 1 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => defaultAudiencePresets[0] && handleApplyDefaultAudience(defaultAudiencePresets[0])}
+                  disabled={saving || defaultAudiencePresets.length === 0 || applyingDefaultAudience}
+                  className="rounded-full"
+                >
+                  {applyingDefaultAudience ? 'Applying...' : 'Apply default audience'}
+                </Button>
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={saving || applyingDefaultAudience}
+                      className="rounded-full"
+                    >
+                      {applyingDefaultAudience ? 'Applying...' : 'Apply preset'}
+                      <ChevronDown className="ml-1.5 h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {defaultAudiencePresets.map((preset) => (
+                      <DropdownMenuItem
+                        key={preset.id}
+                        onClick={() => handleApplyDefaultAudience(preset)}
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-medium">{preset.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {preset.includedAudiences.length} include · {preset.excludedAudiences.length} exclude
+                          </span>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
 

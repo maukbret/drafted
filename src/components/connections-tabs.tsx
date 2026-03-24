@@ -680,7 +680,7 @@ export function ConnectionsTabs({
                 {canEdit && (
                   <DropdownMenuItem onClick={() => setDefaultAudienceConnection(conn)}>
                     <Users className="h-4 w-4 mr-1.5" />
-                    {conn.hasDefaultAudience ? 'Edit default audience' : 'Set default audience'}
+                    {conn.hasDefaultAudience ? 'Manage audience presets' : 'Set audience presets'}
                   </DropdownMenuItem>
                 )}
                 {canEdit && (

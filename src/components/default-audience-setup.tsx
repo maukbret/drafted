@@ -11,7 +11,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AlertCircle, Loader2, Plus, Trash2 } from 'lucide-react'
 
 interface DefaultAudienceSetupProps {
   connectionId: string
@@ -20,12 +23,18 @@ interface DefaultAudienceSetupProps {
   onCancel: () => void
 }
 
-interface DefaultAudienceResponse {
-  defaultAudience: {
-    includedAudiences: KlaviyoAudience[]
-    excludedAudiences: KlaviyoAudience[]
-  } | null
-  error?: string
+interface PresetFromApi {
+  id: string
+  name: string
+  includedAudiences: KlaviyoAudience[]
+  excludedAudiences: KlaviyoAudience[]
+}
+
+interface PresetDraft {
+  id?: string
+  name: string
+  includedAudiences: KlaviyoAudience[]
+  excludedAudiences: KlaviyoAudience[]
 }
 
 interface LastUsedAudiencePreset {
@@ -40,18 +49,19 @@ interface LastUsedAudienceResponse {
   error?: string
 }
 
+const MAX_PRESETS = 3
+
 export function DefaultAudienceSetup({
   connectionId,
   connectionName,
   onComplete,
   onCancel,
 }: DefaultAudienceSetupProps) {
-  const [includedAudiences, setIncludedAudiences] = useState<KlaviyoAudience[]>([])
-  const [excludedAudiences, setExcludedAudiences] = useState<KlaviyoAudience[]>([])
-  const [hasExistingDefault, setHasExistingDefault] = useState(false)
+  const [presets, setPresets] = useState<PresetDraft[]>([])
+  const [activeTab, setActiveTab] = useState('0')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [clearing, setClearing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [loadingLastUsed, setLoadingLastUsed] = useState(true)
   const [applyingLastUsed, setApplyingLastUsed] = useState(false)
   const [lastUsedAudience, setLastUsedAudience] = useState<LastUsedAudiencePreset | null>(null)
@@ -62,41 +72,58 @@ export function DefaultAudienceSetup({
   useEffect(() => {
     let isActive = true
 
-    const fetchDefaultAudience = async () => {
+    const fetchPresets = async () => {
       setLoading(true)
       setError(null)
 
       try {
         const response = await fetch(`/api/klaviyo/default-audience?connectionId=${connectionId}`)
-        const data: DefaultAudienceResponse = await response.json()
+        const data = await response.json()
 
         if (!response.ok) {
-          throw new Error(data.error || 'Failed to load default audience')
+          throw new Error(data.error || 'Failed to load presets')
         }
 
         if (!isActive) return
 
-        const defaultAudience = data.defaultAudience
-        setIncludedAudiences(defaultAudience?.includedAudiences || [])
-        setExcludedAudiences(defaultAudience?.excludedAudiences || [])
-        setHasExistingDefault(!!defaultAudience)
+        const apiPresets: PresetFromApi[] = data.presets || []
+        if (apiPresets.length > 0) {
+          setPresets(apiPresets.map((p) => ({
+            id: p.id,
+            name: p.name,
+            includedAudiences: p.includedAudiences,
+            excludedAudiences: p.excludedAudiences,
+          })))
+        } else {
+          // Start with one empty preset
+          setPresets([{ name: 'Default', includedAudiences: [], excludedAudiences: [] }])
+        }
       } catch (err) {
         if (!isActive) return
-        setError(err instanceof Error ? err.message : 'Failed to load default audience')
+        setError(err instanceof Error ? err.message : 'Failed to load presets')
       } finally {
         if (!isActive) return
         setLoading(false)
       }
     }
 
-    fetchDefaultAudience()
+    fetchPresets()
 
     return () => {
       isActive = false
     }
   }, [connectionId])
 
+  // Only show "last used audience" when no presets exist yet (first-time setup)
+  const hasExistingPresets = presets.some((p) => !!p.id)
+
   useEffect(() => {
+    // Skip fetching last used audience if user already has saved presets
+    if (loading || hasExistingPresets) {
+      setLoadingLastUsed(false)
+      return
+    }
+
     let isActive = true
 
     const fetchLastUsedAudience = async () => {
@@ -129,7 +156,14 @@ export function DefaultAudienceSetup({
     return () => {
       isActive = false
     }
-  }, [connectionId])
+  }, [connectionId, loading, hasExistingPresets])
+
+  const activeIndex = parseInt(activeTab, 10)
+  const activePreset = presets[activeIndex]
+
+  const updateActivePreset = (updates: Partial<PresetDraft>) => {
+    setPresets((prev) => prev.map((p, i) => i === activeIndex ? { ...p, ...updates } : p))
+  }
 
   const applyLastUsedAudience = async () => {
     if (!lastUsedAudience || applyingLastUsed) return
@@ -163,8 +197,10 @@ export function DefaultAudienceSetup({
         (lastUsedAudience.includedAudiences.length - validIncludedAudiences.length) +
         (lastUsedAudience.excludedAudiences.length - validExcludedAudiences.length)
 
-      setIncludedAudiences(validIncludedAudiences)
-      setExcludedAudiences(validExcludedAudiences)
+      updateActivePreset({
+        includedAudiences: validIncludedAudiences,
+        excludedAudiences: validExcludedAudiences,
+      })
 
       if (missingCount > 0) {
         setLastUsedWarning(
@@ -178,9 +214,30 @@ export function DefaultAudienceSetup({
     }
   }
 
-  const saveDefaultAudience = async () => {
-    if (includedAudiences.length === 0) {
-      setError('Select at least one audience to include in the default')
+  const addPreset = () => {
+    if (presets.length >= MAX_PRESETS) return
+    const newIndex = presets.length
+    setPresets((prev) => [...prev, { name: '', includedAudiences: [], excludedAudiences: [] }])
+    setActiveTab(String(newIndex))
+  }
+
+  const saveAllPresets = async () => {
+    // Validate all presets before saving
+    for (const preset of presets) {
+      if (!preset.name.trim()) {
+        setError('All presets must have a name')
+        return
+      }
+      if (preset.includedAudiences.length === 0) {
+        setError(`Preset "${preset.name || 'Untitled'}" needs at least one included audience`)
+        return
+      }
+    }
+
+    // Check for duplicate names
+    const names = presets.map((p) => p.name.trim().toLowerCase())
+    if (new Set(names).size !== names.length) {
+      setError('Each preset must have a unique name')
       return
     }
 
@@ -188,56 +245,84 @@ export function DefaultAudienceSetup({
     setError(null)
 
     try {
-      const response = await fetch('/api/klaviyo/default-audience', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          connectionId,
-          includedAudiences,
-          excludedAudiences,
-        }),
-      })
+      const updatedPresets = [...presets]
 
-      const data: DefaultAudienceResponse = await response.json()
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to save default audience')
+      for (let i = 0; i < presets.length; i++) {
+        const preset = presets[i]
+        const response = await fetch('/api/klaviyo/default-audience', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            connectionId,
+            presetId: preset.id,
+            presetName: preset.name.trim(),
+            includedAudiences: preset.includedAudiences,
+            excludedAudiences: preset.excludedAudiences,
+          }),
+        })
+
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || `Failed to save preset "${preset.name}"`)
+        }
+
+        const savedPreset = data.preset as PresetFromApi
+        updatedPresets[i] = {
+          id: savedPreset.id,
+          name: savedPreset.name,
+          includedAudiences: savedPreset.includedAudiences,
+          excludedAudiences: savedPreset.excludedAudiences,
+        }
       }
 
-      setHasExistingDefault(true)
+      setPresets(updatedPresets)
       onComplete()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save default audience')
+      setError(err instanceof Error ? err.message : 'Failed to save presets')
     } finally {
       setSaving(false)
     }
   }
 
-  const clearDefaultAudience = async () => {
-    setClearing(true)
+  const deletePreset = async () => {
+    if (!activePreset) return
+
+    if (!activePreset.id) {
+      // Unsaved preset, just remove from local state
+      setPresets((prev) => prev.filter((_, i) => i !== activeIndex))
+      setActiveTab('0')
+      return
+    }
+
+    setDeleting(true)
     setError(null)
 
     try {
-      const response = await fetch(`/api/klaviyo/default-audience?connectionId=${connectionId}`, {
-        method: 'DELETE',
-      })
+      const response = await fetch(
+        `/api/klaviyo/default-audience?connectionId=${connectionId}&presetId=${activePreset.id}`,
+        { method: 'DELETE' }
+      )
 
       const data = await response.json()
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to clear default audience')
+        throw new Error(data.error || 'Failed to delete preset')
       }
 
-      setIncludedAudiences([])
-      setExcludedAudiences([])
-      setHasExistingDefault(false)
-      onComplete()
+      const remaining = presets.filter((_, i) => i !== activeIndex)
+      setPresets(remaining)
+      setActiveTab('0')
+
+      if (remaining.length === 0) {
+        onComplete()
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to clear default audience')
+      setError(err instanceof Error ? err.message : 'Failed to delete preset')
     } finally {
-      setClearing(false)
+      setDeleting(false)
     }
   }
 
-  const isBusy = loading || saving || clearing
+  const isBusy = loading || saving || deleting
 
   return (
     <Dialog
@@ -250,76 +335,116 @@ export function DefaultAudienceSetup({
     >
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Default audience</DialogTitle>
+          <DialogTitle>Audience presets</DialogTitle>
           <DialogDescription>
-            {connectionName} · This preset is shared for campaigns that use this Klaviyo account.
+            {connectionName} · Manage up to {MAX_PRESETS} audience presets for this account.
           </DialogDescription>
         </DialogHeader>
 
         {loading ? (
           <div className="py-8 flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading default audience...
+            Loading presets...
           </div>
         ) : (
           <div className="space-y-6 py-2">
-            <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-              In campaign step 3, users can click <span className="font-medium text-foreground">Apply default audience</span> to fill include and exclude audiences from this preset.
-            </div>
-
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">Last used audience</p>
-                  <p className="text-xs text-muted-foreground">
-                    {loadingLastUsed
-                      ? 'Loading last used audience...'
-                      : lastUsedAudience
-                        ? `${lastUsedAudience.campaignName} · ${lastUsedAudience.includedAudiences.length} include · ${lastUsedAudience.excludedAudiences.length} exclude`
-                        : 'No sent campaigns found'}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={applyLastUsedAudience}
-                  disabled={isBusy || loadingLastUsed || !lastUsedAudience || applyingLastUsed}
-                  className="rounded-full"
-                >
-                  {applyingLastUsed ? 'Applying...' : 'Apply last used'}
-                </Button>
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <div className="flex items-center gap-2">
+                <TabsList className="flex-1">
+                  {presets.map((preset, index) => (
+                    <TabsTrigger key={index} value={String(index)} className="flex-1 truncate">
+                      {preset.name || 'Untitled'}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                {presets.length < MAX_PRESETS && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 shrink-0"
+                    onClick={addPreset}
+                    disabled={isBusy}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
-            </div>
 
-            {lastUsedError && (
-              <div className="p-3 border border-destructive/20 bg-destructive/10 rounded-lg text-sm text-destructive flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>{lastUsedError}</span>
-              </div>
-            )}
+              {presets.map((preset, index) => (
+                <TabsContent key={index} value={String(index)} className="space-y-6 mt-4">
+                  <div>
+                    <Label htmlFor={`preset-name-${index}`}>Preset name</Label>
+                    <Input
+                      id={`preset-name-${index}`}
+                      value={preset.name}
+                      onChange={(e) => updateActivePreset({ name: e.target.value })}
+                      placeholder="e.g. English market"
+                      maxLength={50}
+                      className="mt-1.5"
+                    />
+                  </div>
 
-            {lastUsedWarning && (
-              <div className="p-3 border border-amber-500/40 bg-amber-500/10 rounded-lg text-sm text-amber-700 dark:text-amber-300">
-                {lastUsedWarning}
-              </div>
-            )}
+                  {!hasExistingPresets && (
+                    <>
+                      <div className="rounded-lg border bg-muted/30 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium">Last used audience</p>
+                            <p className="text-xs text-muted-foreground">
+                              {loadingLastUsed
+                                ? 'Loading last used audience...'
+                                : lastUsedAudience
+                                  ? `${lastUsedAudience.campaignName} · ${lastUsedAudience.includedAudiences.length} include · ${lastUsedAudience.excludedAudiences.length} exclude`
+                                  : 'No sent campaigns found'}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={applyLastUsedAudience}
+                            disabled={isBusy || loadingLastUsed || !lastUsedAudience || applyingLastUsed}
+                            className="rounded-full"
+                          >
+                            {applyingLastUsed ? 'Applying...' : 'Apply last used'}
+                          </Button>
+                        </div>
+                      </div>
 
-            <AudienceSelector
-              connectionId={connectionId}
-              selectedAudiences={includedAudiences}
-              onChange={setIncludedAudiences}
-              label="Default include"
-              placeholder="Select lists or segments to include..."
-            />
+                      {lastUsedError && (
+                        <div className="p-3 border border-destructive/20 bg-destructive/10 rounded-lg text-sm text-destructive flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                          <span>{lastUsedError}</span>
+                        </div>
+                      )}
 
-            <AudienceSelector
-              connectionId={connectionId}
-              selectedAudiences={excludedAudiences}
-              onChange={setExcludedAudiences}
-              label="Default exclude (optional)"
-              placeholder="Select lists or segments to exclude..."
-            />
+                      {lastUsedWarning && (
+                        <div className="p-3 border border-amber-500/40 bg-amber-500/10 rounded-lg text-sm text-amber-700 dark:text-amber-300">
+                          {lastUsedWarning}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <AudienceSelector
+                    connectionId={connectionId}
+                    selectedAudiences={preset.includedAudiences}
+                    onChange={(audiences) => updateActivePreset({ includedAudiences: audiences })}
+                    label="Default include"
+                    placeholder="Select lists or segments to include..."
+                  />
+
+                  <AudienceSelector
+                    connectionId={connectionId}
+                    selectedAudiences={preset.excludedAudiences}
+                    onChange={(audiences) => updateActivePreset({ excludedAudiences: audiences })}
+                    label="Default exclude (optional)"
+                    placeholder="Select lists or segments to exclude..."
+                  />
+                </TabsContent>
+              ))}
+            </Tabs>
 
             {error && (
               <div className="p-3 border border-destructive/20 bg-destructive/10 rounded-lg text-sm text-destructive flex items-start gap-2">
@@ -328,32 +453,38 @@ export function DefaultAudienceSetup({
               </div>
             )}
 
-            <div className="flex justify-end gap-3">
-              {hasExistingDefault && (
+            <div className="flex justify-between">
+              <div>
+                {activePreset && (presets.length > 1 || activePreset.id) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={deletePreset}
+                    disabled={isBusy}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1.5" />
+                    {deleting ? 'Deleting...' : 'Delete preset'}
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-3">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={clearDefaultAudience}
+                  onClick={onCancel}
                   disabled={isBusy}
                 >
-                  {clearing ? 'Clearing...' : 'Clear default'}
+                  Cancel
                 </Button>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onCancel}
-                disabled={isBusy}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={saveDefaultAudience}
-                disabled={isBusy || includedAudiences.length === 0}
-              >
-                {saving ? 'Saving...' : hasExistingDefault ? 'Update default' : 'Save default'}
-              </Button>
+                <Button
+                  type="button"
+                  onClick={saveAllPresets}
+                  disabled={isBusy || presets.length === 0 || presets.some((p) => p.includedAudiences.length === 0)}
+                >
+                  {saving ? 'Saving...' : presets.every((p) => p.id) ? 'Update presets' : 'Save presets'}
+                </Button>
+              </div>
             </div>
           </div>
         )}
