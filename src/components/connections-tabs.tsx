@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useRealtimeSubscription } from '@/hooks/use-realtime-subscription'
 import DOMPurify from 'dompurify'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
@@ -168,19 +167,6 @@ export function ConnectionsTabs({
   const [globalFilter, setGlobalFilter] = useState('')
   const router = useRouter()
   const searchParams = useSearchParams()
-
-  const connectionsSubscriptions = useMemo(() => [
-    { table: 'klaviyo_connections', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
-    { table: 'klaviyo_footers', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
-    { table: 'klaviyo_default_audiences', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
-    { table: 'product_feed_presets', events: ['INSERT', 'UPDATE', 'DELETE'] as const },
-  ], [])
-
-  useRealtimeSubscription({
-    subscriptions: connectionsSubscriptions,
-    currentUserId,
-    enabled: !!currentUserId,
-  })
 
   // Check for limit_reached error from OAuth callback
   useEffect(() => {
