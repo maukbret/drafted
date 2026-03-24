@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { ensureKlaviyoAccountId } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET - Retrieve stored footer for a connection
@@ -55,7 +56,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (!connection.klaviyo_account_id) {
+    const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
+    if (!klaviyoAccountId) {
       return NextResponse.json({ footer: null })
     }
 
@@ -64,7 +66,7 @@ export async function GET(request: NextRequest) {
       .from('klaviyo_footers')
       .select('*')
       .eq('user_id', footerOwnerId)
-      .eq('klaviyo_account_id', connection.klaviyo_account_id)
+      .eq('klaviyo_account_id', klaviyoAccountId)
       .single()
 
     return NextResponse.json({ footer: footer || null })
@@ -141,7 +143,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
-    if (!connection.klaviyo_account_id) {
+    const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
+    if (!klaviyoAccountId) {
       return NextResponse.json({
         error: 'This Klaviyo connection does not have an account ID. Please reconnect your Klaviyo account.'
       }, { status: 400 })
@@ -152,7 +155,7 @@ export async function POST(request: NextRequest) {
       .from('klaviyo_footers')
       .upsert({
         user_id: connection.user_id,
-        klaviyo_account_id: connection.klaviyo_account_id,
+        klaviyo_account_id: klaviyoAccountId,
         footer_html: footerHtml,
         footer_css: footerCss || null,
         source_url: sourceUrl || null,
@@ -234,7 +237,12 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    if (!connection || !connection.klaviyo_account_id) {
+    if (!connection) {
+      return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
+    }
+
+    const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
+    if (!klaviyoAccountId) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
@@ -243,7 +251,7 @@ export async function DELETE(request: NextRequest) {
       .from('klaviyo_footers')
       .delete()
       .eq('user_id', connection.user_id)
-      .eq('klaviyo_account_id', connection.klaviyo_account_id)
+      .eq('klaviyo_account_id', klaviyoAccountId)
 
     return NextResponse.json({ success: true })
 

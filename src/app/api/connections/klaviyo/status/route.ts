@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { getValidKlaviyoToken } from '@/lib/klaviyo'
+import { ensureKlaviyoAccountId, getValidKlaviyoToken } from '@/lib/klaviyo'
 import { NextResponse } from 'next/server'
 
 interface ConnectionStatus {
@@ -20,7 +20,7 @@ export async function GET() {
     // Get all Klaviyo connections for this user
     const { data: connections } = await supabase
       .from('klaviyo_connections')
-      .select('id')
+      .select('id, klaviyo_account_id')
       .eq('user_id', user.id)
 
     if (!connections || connections.length === 0) {
@@ -42,32 +42,21 @@ export async function GET() {
             }
           }
 
-          // Validate the token by calling Klaviyo API
-          const accountResponse = await fetch('https://a.klaviyo.com/api/accounts/', {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Accept': 'application/json',
-              'revision': '2026-01-15',
-            },
+          const accountId = conn.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, conn.id, {
+            accessToken,
           })
 
-          if (accountResponse.ok) {
+          if (accountId) {
             return {
               id: conn.id,
               status: 'active' as const,
             }
-          } else if (accountResponse.status === 401) {
-            return {
-              id: conn.id,
-              status: 'expired' as const,
-              error: 'Token invalid or revoked',
-            }
-          } else {
-            return {
-              id: conn.id,
-              status: 'error' as const,
-              error: `API error: ${accountResponse.status}`,
-            }
+          }
+
+          return {
+            id: conn.id,
+            status: 'error' as const,
+            error: 'Connected, but could not resolve the Klaviyo account ID',
           }
         } catch (err) {
           console.error(`Error checking connection ${conn.id}:`, err)

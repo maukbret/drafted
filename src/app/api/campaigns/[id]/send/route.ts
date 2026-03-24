@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import { getValidKlaviyoToken } from '@/lib/klaviyo'
+import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
+import { getFrameDisplayUrl } from '@/lib/frame-url'
+import { ensureKlaviyoAccountId, getValidKlaviyoToken } from '@/lib/klaviyo'
 import { normalizeFooterHtmlForExport, normalizeFooterCssForExport } from '@/lib/email/footer-normalize'
 import { generateProductFeedHtml } from '@/lib/email/product-feed-html'
 import type { ProductFeedPreset, ProductFeedSettings } from '@/lib/email/product-feed-html'
@@ -190,10 +192,6 @@ export async function POST(
           return
         }
 
-        const klaviyoAccountId = klaviyoConnection.klaviyo_account_id || existingCampaign.klaviyo_account_id || null
-
-        console.log('Using Klaviyo connection:', klaviyoConnection.id, 'Account:', klaviyoAccountId)
-
         // Get valid Klaviyo token (refreshes automatically if needed)
         const klaviyoToken = await getValidKlaviyoToken(supabase, klaviyoConnection.id)
 
@@ -202,6 +200,13 @@ export async function POST(
           controller.close()
           return
         }
+
+        const klaviyoAccountId = klaviyoConnection.klaviyo_account_id
+          || await ensureKlaviyoAccountId(supabase, klaviyoConnection.id, { accessToken: klaviyoToken })
+          || existingCampaign.klaviyo_account_id
+          || null
+
+        console.log('Using Klaviyo connection:', klaviyoConnection.id, 'Account:', klaviyoAccountId)
 
         if (!klaviyoAccountId) {
           send({ step: 'error', message: 'This Klaviyo connection does not have an account ID. Please reconnect your Klaviyo account.' })
@@ -366,8 +371,19 @@ export async function POST(
             if (!fallbackImageUrl) return null
             // Skip upload if image was already uploaded to Klaviyo
             if (existingKlaviyoImageUrl) {
+              const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
+              if (deletedSourceImage) {
+                await supabase
+                  .from('frames')
+                  .update({ image_url: null })
+                  .eq('id', frame.id)
+              }
               console.log('Skipping image upload, already exists:', frame.name)
-              return { ...frame, klaviyo_image_url: existingKlaviyoImageUrl }
+              return {
+                ...frame,
+                image_url: deletedSourceImage ? null : frame.image_url,
+                klaviyo_image_url: existingKlaviyoImageUrl,
+              }
             }
 
             try {
@@ -394,17 +410,20 @@ export async function POST(
               if (imageResponse.ok) {
                 const imageData = await imageResponse.json()
                 const klaviyoImageUrl = normalizeImageUrl(imageData.data?.attributes?.image_url) || fallbackImageUrl
+                const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
 
-                // Update database (non-blocking, don't await)
-                supabase
+                await supabase
                   .from('frames')
-                  .update({ klaviyo_image_url: klaviyoImageUrl })
+                  .update({
+                    image_url: deletedSourceImage ? null : frame.image_url,
+                    klaviyo_image_url: klaviyoImageUrl,
+                  })
                   .eq('id', frame.id)
-                  .then(
-                    () => console.log('Updated frame:', frame.name),
-                    (err) => console.error('Frame update error:', err)
-                  )
-                return { ...frame, klaviyo_image_url: klaviyoImageUrl }
+                return {
+                  ...frame,
+                  image_url: deletedSourceImage ? null : frame.image_url,
+                  klaviyo_image_url: klaviyoImageUrl,
+                }
               } else {
                 console.error('Image upload failed:', frame.name)
                 return { ...frame, klaviyo_image_url: fallbackImageUrl }
@@ -833,6 +852,7 @@ const HALF_WIDTH_THRESHOLD = 300
 function generateEmailHtml(frames: Array<{
   name: string
   width: number | null
+  image_url?: string | null
   klaviyo_image_url: string | null
   link_url: string | null
 }>, footerHtml: string = '', previewText: string = '', productFeedHtml: string = '', footerCss: string = ''): string {
@@ -843,12 +863,12 @@ function generateEmailHtml(frames: Array<{
   while (i < frames.length) {
     const current = frames[i]
     const next = frames[i + 1]
-    const currentImageUrl = normalizeImageUrl(current.klaviyo_image_url)
+    const currentImageUrl = normalizeImageUrl(getFrameDisplayUrl(current))
     if (!currentImageUrl) {
       i += 1
       continue
     }
-    const nextImageUrl = next ? normalizeImageUrl(next.klaviyo_image_url) : null
+    const nextImageUrl = next ? normalizeImageUrl(getFrameDisplayUrl(next)) : null
 
     const currentIsHalf = (current.width ?? 600) <= HALF_WIDTH_THRESHOLD
     const nextIsHalf = !!next && !!nextImageUrl && (next.width ?? 600) <= HALF_WIDTH_THRESHOLD

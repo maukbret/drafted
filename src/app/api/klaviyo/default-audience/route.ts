@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { ensureKlaviyoAccountId } from '@/lib/klaviyo'
 import { createServiceClient } from '@/lib/supabase/service'
 import { KlaviyoAudience } from '@/types/database'
 import { NextRequest, NextResponse } from 'next/server'
@@ -142,7 +143,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    if (!connection.klaviyo_account_id) {
+    const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
+    if (!klaviyoAccountId) {
       return NextResponse.json({ defaultAudience: null, presets: [] })
     }
 
@@ -150,7 +152,7 @@ export async function GET(request: NextRequest) {
       .from('klaviyo_default_audiences')
       .select('id, preset_name, included_audiences, excluded_audiences')
       .eq('user_id', connection.user_id)
-      .eq('klaviyo_account_id', connection.klaviyo_account_id)
+      .eq('klaviyo_account_id', klaviyoAccountId)
       .order('created_at')
       .limit(MAX_PRESETS)
 
@@ -226,7 +228,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not authorized to manage presets for this connection' }, { status: 403 })
     }
 
-    if (!connection.klaviyo_account_id) {
+    const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
+    if (!klaviyoAccountId) {
       return NextResponse.json({
         error: 'This Klaviyo connection does not have an account ID. Please reconnect your Klaviyo account.',
       }, { status: 400 })
@@ -266,7 +269,7 @@ export async function POST(request: NextRequest) {
         .from('klaviyo_default_audiences')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', ownerId)
-        .eq('klaviyo_account_id', connection.klaviyo_account_id)
+        .eq('klaviyo_account_id', klaviyoAccountId)
 
       if (countError) {
         console.error('Count presets error:', countError)
@@ -281,7 +284,7 @@ export async function POST(request: NextRequest) {
         .from('klaviyo_default_audiences')
         .insert({
           user_id: ownerId,
-          klaviyo_account_id: connection.klaviyo_account_id,
+          klaviyo_account_id: klaviyoAccountId,
           preset_name: presetName,
           included_audiences: includedAudiences,
           excluded_audiences: excludedAudiences,
@@ -328,7 +331,12 @@ export async function DELETE(request: NextRequest) {
       .eq('id', connectionId)
       .single()
 
-    if (!connection || !connection.klaviyo_account_id) {
+    if (!connection) {
+      return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
+    }
+
+    const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
+    if (!klaviyoAccountId) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
@@ -358,7 +366,7 @@ export async function DELETE(request: NextRequest) {
         .from('klaviyo_default_audiences')
         .delete()
         .eq('user_id', ownerId)
-        .eq('klaviyo_account_id', connection.klaviyo_account_id)
+        .eq('klaviyo_account_id', klaviyoAccountId)
 
       if (error) {
         console.error('Delete default audience error:', error)

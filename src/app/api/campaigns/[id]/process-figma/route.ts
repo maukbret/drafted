@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { deleteFrameImagesForProject } from '@/lib/frame-images-server'
 import {
   buildFigmaRateLimitMessage,
   FigmaRateLimitDetails,
@@ -157,6 +158,7 @@ export async function POST(
 
               // Delete existing project/frames for this campaign
               if (campaign.project_id) {
+                await deleteFrameImagesForProject(user.id, campaign.project_id)
                 await supabase.from('frames').delete().eq('project_id', campaign.project_id)
                 await supabase.from('projects').delete().eq('id', campaign.project_id)
               }
@@ -248,6 +250,7 @@ export async function POST(
                 }
 
                 // If frame clone failed, clean up and fall through
+                await deleteFrameImagesForProject(user.id, newProject.id)
                 await supabase.from('projects').delete().eq('id', newProject.id)
               }
             }
@@ -458,6 +461,7 @@ export async function POST(
 
         // Delete existing project and frames if campaign already has one
         if (campaign.project_id) {
+          await deleteFrameImagesForProject(user.id, campaign.project_id)
           await supabase
             .from('frames')
             .delete()
@@ -561,6 +565,7 @@ export async function POST(
 
         if (framesError) {
           console.error('Frames creation error:', framesError)
+          await deleteFrameImagesForProject(user.id, project.id)
           await supabase.from('projects').delete().eq('id', project.id)
           send({ type: 'error', message: 'Failed to save frames' })
           controller.close()

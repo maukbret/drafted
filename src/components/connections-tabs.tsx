@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import DOMPurify from 'dompurify'
+import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   flexRender,
@@ -180,6 +181,16 @@ export function ConnectionsTabs({
     if (error === 'invalid_store_url') {
       setShowAddForm(true)
       setAddFormError('Please enter a valid store URL before connecting Klaviyo.')
+      const url = new URL(window.location.href)
+      url.searchParams.delete('error')
+      window.history.replaceState({}, '', url.toString())
+    }
+    if (error === 'klaviyo_account_lookup_failed') {
+      setShowAddForm(true)
+      setAddFormError('Connection failed. Add your organization country in Klaviyo Settings and try reconnecting.')
+      toast.error('Klaviyo connection failed', {
+        description: 'Drafted could not read your Klaviyo account details. Adding your organization country in Klaviyo Settings can fix this.',
+      })
       const url = new URL(window.location.href)
       url.searchParams.delete('error')
       window.history.replaceState({}, '', url.toString())

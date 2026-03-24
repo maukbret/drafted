@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { deleteFrameImagesForProjectExceptUrls } from '@/lib/frame-images-server'
 import { NextRequest, NextResponse } from 'next/server'
 
 interface SliceInput {
@@ -69,6 +70,12 @@ export async function POST(
       console.error('Frames creation error:', framesError)
       return NextResponse.json({ error: 'Failed to create frames' }, { status: 500 })
     }
+
+    await deleteFrameImagesForProjectExceptUrls(
+      user.id,
+      projectId,
+      slices.map(slice => slice.imageUrl)
+    )
 
     return NextResponse.json({ frames: frames || [] })
   } catch (err) {

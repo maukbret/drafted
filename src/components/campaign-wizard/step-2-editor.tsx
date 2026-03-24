@@ -1,5 +1,6 @@
 'use client'
 
+import { getFrameDisplayUrl } from '@/lib/frame-url'
 import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,6 +32,7 @@ interface Frame {
   name: string
   width: number | null
   image_url: string | null
+  klaviyo_image_url?: string | null
   link_url: string | null
   display_order: number
 }
@@ -261,153 +263,156 @@ export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onC
           </div>
           <ScrollArea className="flex-1">
             <div className="divide-y">
-              {frames.map((frame, index) => (
-                <div
-                  key={frame.id}
-                  className={cn(
-                    'p-3 cursor-pointer transition-colors',
-                    activeFrameId === frame.id ? 'bg-muted' : 'hover:bg-muted/50'
-                  )}
-                  onClick={() => setActiveFrameId(frame.id)}
-                >
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
-                      {index + 1}
-                    </div>
-                    <div className="flex-shrink-0 w-12 h-8 bg-muted rounded overflow-hidden">
-                      {frame.image_url && (
-                        <img
-                          src={frame.image_url}
-                          alt={frame.name}
-                          className="w-full h-full object-cover"
-                        />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <span className="text-sm font-medium text-muted-foreground flex-shrink-0">Alt:</span>
-                        {editingAltFrameId === frame.id ? (
-                          <Input
-                            type="text"
-                            value={frame.name}
-                            onChange={(e) => updateFrameName(frame.id, e.target.value)}
-                            onBlur={(e) => handleAltBlur(frame.id, e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault()
-                                handleAltBlur(frame.id, (e.target as HTMLInputElement).value)
-                              }
-                              if (e.key === 'Escape') {
-                                e.preventDefault()
-                                setEditingAltFrameId(null)
-                              }
-                            }}
-                            autoFocus
-                            className="h-7 min-w-0 flex-1 text-sm font-normal"
-                            aria-label="Edit alt text"
+              {frames.map((frame, index) => {
+                const frameImageUrl = getFrameDisplayUrl(frame)
+                return (
+                  <div
+                    key={frame.id}
+                    className={cn(
+                      'p-3 cursor-pointer transition-colors',
+                      activeFrameId === frame.id ? 'bg-muted' : 'hover:bg-muted/50'
+                    )}
+                    onClick={() => setActiveFrameId(frame.id)}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
+                        {index + 1}
+                      </div>
+                      <div className="flex-shrink-0 w-12 h-8 bg-muted rounded overflow-hidden">
+                        {frameImageUrl && (
+                          <img
+                            src={frameImageUrl}
+                            alt={frame.name}
+                            className="w-full h-full object-cover"
                           />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setEditingAltFrameId(frame.id)
-                              setActiveFrameId(frame.id)
-                            }}
-                            className="min-w-0 flex-1 truncate text-left text-sm font-normal hover:underline"
-                            title={frame.name}
-                          >
-                            {frame.name}
-                          </button>
                         )}
                       </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-sm font-medium text-muted-foreground flex-shrink-0">Alt:</span>
+                          {editingAltFrameId === frame.id ? (
+                            <Input
+                              type="text"
+                              value={frame.name}
+                              onChange={(e) => updateFrameName(frame.id, e.target.value)}
+                              onBlur={(e) => handleAltBlur(frame.id, e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  handleAltBlur(frame.id, (e.target as HTMLInputElement).value)
+                                }
+                                if (e.key === 'Escape') {
+                                  e.preventDefault()
+                                  setEditingAltFrameId(null)
+                                }
+                              }}
+                              autoFocus
+                              className="h-7 min-w-0 flex-1 text-sm font-normal"
+                              aria-label="Edit alt text"
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setEditingAltFrameId(frame.id)
+                                setActiveFrameId(frame.id)
+                              }}
+                              className="min-w-0 flex-1 truncate text-left text-sm font-normal hover:underline"
+                              title={frame.name}
+                            >
+                              {frame.name}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {(frame.width ?? 600) <= HALF_WIDTH_THRESHOLD && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
+                            50%
+                          </Badge>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeleteModalFrame(frame)
+                          }}
+                          className="flex-shrink-0 p-1 text-muted-foreground hover:text-destructive transition-colors"
+                          title="Delete section"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      {(frame.width ?? 600) <= HALF_WIDTH_THRESHOLD && (
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
-                          50%
-                        </Badge>
-                      )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDeleteModalFrame(frame)
-                        }}
-                        className="flex-shrink-0 p-1 text-muted-foreground hover:text-destructive transition-colors"
-                        title="Delete section"
+                    <div className="relative">
+                      <Input
+                        type="text"
+                        value={frame.link_url || ''}
+                        onChange={(e) => updateFrameLink(frame.id, e.target.value)}
+                        onBlur={(e) => handleLinkBlur(frame.id, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        placeholder={defaultLinkPlaceholder || 'google.com or https://...'}
+                        className={cn(
+                          'h-8 pr-16',
+                          showValidation && missingLinkFrameIds.has(frame.id) && 'border-destructive focus-visible:ring-destructive'
+                        )}
+                        aria-invalid={showValidation && missingLinkFrameIds.has(frame.id)}
+                        aria-describedby={showValidation && missingLinkFrameIds.has(frame.id) ? `frame-link-${frame.id}-error` : undefined}
+                      />
+                      <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleApplyDomainToAll(frame.link_url || '')
+                              }}
+                              disabled={!frame.link_url?.trim() || saving}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                              aria-label="Apply this link domain to all sections"
+                            >
+                              <Globe className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            Apply this domain to all links
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleCopyLinkDown(index)
+                              }}
+                              disabled={!frame.link_url?.trim() || index === frames.length - 1 || saving}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                              aria-label="Copy this link to empty sections below"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            Copy to empty links below
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </div>
+                    {showValidation && missingLinkFrameIds.has(frame.id) && (
+                      <p
+                        id={`frame-link-${frame.id}-error`}
+                        className="mt-1 text-xs text-destructive"
                       >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                        Required. Add a URL for this section.
+                      </p>
+                    )}
                   </div>
-                  <div className="relative">
-                    <Input
-                      type="text"
-                      value={frame.link_url || ''}
-                      onChange={(e) => updateFrameLink(frame.id, e.target.value)}
-                      onBlur={(e) => handleLinkBlur(frame.id, e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      placeholder={defaultLinkPlaceholder || 'google.com or https://...'}
-                      className={cn(
-                        'h-8 pr-16',
-                        showValidation && missingLinkFrameIds.has(frame.id) && 'border-destructive focus-visible:ring-destructive'
-                      )}
-                      aria-invalid={showValidation && missingLinkFrameIds.has(frame.id)}
-                      aria-describedby={showValidation && missingLinkFrameIds.has(frame.id) ? `frame-link-${frame.id}-error` : undefined}
-                    />
-                    <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleApplyDomainToAll(frame.link_url || '')
-                            }}
-                            disabled={!frame.link_url?.trim() || saving}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                            aria-label="Apply this link domain to all sections"
-                          >
-                            <Globe className="h-3.5 w-3.5" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          Apply this domain to all links
-                        </TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleCopyLinkDown(index)
-                            }}
-                            disabled={!frame.link_url?.trim() || index === frames.length - 1 || saving}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                            aria-label="Copy this link to empty sections below"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          Copy to empty links below
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  </div>
-                  {showValidation && missingLinkFrameIds.has(frame.id) && (
-                    <p
-                      id={`frame-link-${frame.id}-error`}
-                      className="mt-1 text-xs text-destructive"
-                    >
-                      Required. Add a URL for this section.
-                    </p>
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
           </ScrollArea>
         </div>

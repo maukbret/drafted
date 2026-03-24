@@ -1,6 +1,7 @@
 'use client'
 
 import DOMPurify from 'dompurify'
+import { getFrameDisplayUrl } from '@/lib/frame-url'
 import { cn } from '@/lib/utils'
 import { normalizeFooterHtmlForExport } from '@/lib/email/footer-normalize'
 
@@ -9,6 +10,7 @@ export interface CampaignPreviewFrame {
   name: string
   width: number | null
   image_url: string | null
+  klaviyo_image_url?: string | null
   link_url: string | null
 }
 
@@ -150,44 +152,48 @@ export function CampaignEmailPreview({
           const [left, right] = item
           return (
             <div key={`row-${index}`} className="flex">
-              {[left, right].map((frame) => (
-                <div
-                  key={frame.id}
-                  className={cn(
-                    'relative transition-all w-1/2',
-                    isInteractive && 'cursor-pointer',
-                    activeFrameId === frame.id && 'outline outline-2 outline-primary -outline-offset-2'
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onFrameSelect?.(frame.id)
-                  }}
-                >
-                  {frame.image_url ? (
-                    <img
-                      src={frame.image_url}
-                      alt={frame.name}
-                      className={cn('w-full h-auto block', isInteractive && 'pointer-events-none')}
-                    />
-                  ) : (
-                    <div className={cn('aspect-video bg-muted flex items-center justify-center', isInteractive && 'pointer-events-none')}>
-                      <span className="text-muted-foreground text-xs">No image</span>
-                    </div>
-                  )}
-                  {showLinkBadges && frame.link_url && (
-                    <div className="absolute bottom-1 left-1 right-1 pointer-events-none">
-                      <span className="text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded truncate block">
-                        {frame.link_url}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ))}
+              {[left, right].map((frame) => {
+                const frameImageUrl = getFrameDisplayUrl(frame)
+                return (
+                  <div
+                    key={frame.id}
+                    className={cn(
+                      'relative transition-all w-1/2',
+                      isInteractive && 'cursor-pointer',
+                      activeFrameId === frame.id && 'outline outline-2 outline-primary -outline-offset-2'
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onFrameSelect?.(frame.id)
+                    }}
+                  >
+                    {frameImageUrl ? (
+                      <img
+                        src={frameImageUrl}
+                        alt={frame.name}
+                        className={cn('w-full h-auto block', isInteractive && 'pointer-events-none')}
+                      />
+                    ) : (
+                      <div className={cn('aspect-video bg-muted flex items-center justify-center', isInteractive && 'pointer-events-none')}>
+                        <span className="text-muted-foreground text-xs">No image</span>
+                      </div>
+                    )}
+                    {showLinkBadges && frame.link_url && (
+                      <div className="absolute bottom-1 left-1 right-1 pointer-events-none">
+                        <span className="text-[10px] bg-black/70 text-white px-1.5 py-0.5 rounded truncate block">
+                          {frame.link_url}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )
         }
 
         const frame = item
+        const frameImageUrl = getFrameDisplayUrl(frame)
         return (
           <div
             key={frame.id}
@@ -198,9 +204,9 @@ export function CampaignEmailPreview({
             )}
             onClick={() => onFrameSelect?.(frame.id)}
           >
-            {frame.image_url ? (
+            {frameImageUrl ? (
               <img
-                src={frame.image_url}
+                src={frameImageUrl}
                 alt={frame.name}
                 className="w-full h-auto block"
               />

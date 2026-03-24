@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchKlaviyoAccountId } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { validateStoreUrl } from '@/lib/store-url'
@@ -81,24 +82,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
-    // Fetch Klaviyo account ID for persistence across reconnects
-    let klaviyoAccountId: string | null = null
-    try {
-      const accountResponse = await fetch('https://a.klaviyo.com/api/accounts/', {
-        headers: {
-          'Authorization': `Bearer ${tokens.access_token}`,
-          'Accept': 'application/json',
-          'revision': '2026-01-15',
-        },
-      })
-      if (accountResponse.ok) {
-        const accountData = await accountResponse.json()
-        klaviyoAccountId = accountData.data?.[0]?.id || null
-      }
-    } catch (err) {
-      console.error('Failed to fetch Klaviyo account ID:', err)
-    }
-
     // Get account details from cookies (set by client before redirect)
     const accountNameCookie = decodeCookieValue(cookieStore.get('klaviyo_account_name')?.value)
     const accountName = accountNameCookie || 'Klaviyo Account'
@@ -119,6 +102,15 @@ export async function GET(request: NextRequest) {
       .single()
 
     const isOnboarding = !profile?.onboarding_completed
+    const failedLookupPath = isOnboarding
+      ? '/onboarding?step=klaviyo&error=klaviyo_account_lookup_failed'
+      : '/connections?error=klaviyo_account_lookup_failed'
+    const klaviyoAccountId = await fetchKlaviyoAccountId(tokens.access_token)
+
+    if (!klaviyoAccountId) {
+      console.error('Failed to fetch Klaviyo account ID during OAuth callback')
+      return NextResponse.redirect(new URL(failedLookupPath, request.url))
+    }
 
     // Check subscription tier and connection limits
     // During onboarding, allow 1 connection regardless of subscription

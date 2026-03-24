@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { startKlaviyoOAuth } from '@/lib/oauth'
+import { useSearchParams } from 'next/navigation'
 import { FooterSetupInline } from '@/components/footer-setup-inline'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { toast } from 'sonner'
 import { Loader2, CheckCircle2 } from 'lucide-react'
 
 interface KlaviyoConnectStepProps {
@@ -26,6 +28,7 @@ export function KlaviyoConnectStep({ onComplete, onSkip, initialSuccess = false,
   const [formError, setFormError] = useState<string | null>(null)
   const [footerDone, setFooterDone] = useState(false)
   const supabase = createClient()
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -66,6 +69,20 @@ export function KlaviyoConnectStep({ onComplete, onSkip, initialSuccess = false,
 
     checkConnection()
   }, [supabase, initialSuccess, newConnectionId])
+
+  useEffect(() => {
+    const error = searchParams.get('error')
+    if (error !== 'klaviyo_account_lookup_failed') return
+
+    setFormError('Connection failed. Add your organization country in Klaviyo Settings and try reconnecting.')
+    toast.error('Klaviyo connection failed', {
+      description: 'Drafted could not read your Klaviyo account details. Adding your organization country in Klaviyo Settings can fix this.',
+    })
+
+    const url = new URL(window.location.href)
+    url.searchParams.delete('error')
+    window.history.replaceState({}, '', url.toString())
+  }, [searchParams])
 
   const handleConnect = () => {
     const error = startKlaviyoOAuth(accountName, storeUrl)

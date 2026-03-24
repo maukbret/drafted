@@ -394,12 +394,12 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel, isP
 
           {/* Step: Select Sections */}
           {step === 'select' && (
-            <div className="space-y-6">
+            <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Found {sections.length} section{sections.length !== 1 ? 's' : ''} in the email. Select all sections that make up your footer:
               </p>
               <ScrollArea className="h-[400px] w-full">
-                <div className="space-y-3 pr-4">
+                <div className="space-y-2 pr-4">
                   {sections.map((section) => {
                     const isSelected = selectedSections.has(section.id)
                     return (
@@ -407,7 +407,7 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel, isP
                         key={section.id}
                         onClick={() => toggleSection(section)}
                         className={cn(
-                          'w-full text-left p-6 border rounded-lg transition-colors',
+                          'w-full text-left p-4 border rounded-lg transition-colors',
                           isSelected
                             ? 'border-primary bg-muted'
                             : 'border-border hover:border-muted-foreground'
@@ -431,15 +431,14 @@ export function FooterSetup({ connectionId, hasFooter, onComplete, onCancel, isP
                             <p className="text-xs text-muted-foreground line-clamp-2">
                               {section.preview || '(No text content)'}
                             </p>
-                            <div
-                              className="mt-2 border rounded overflow-hidden bg-white"
-                              style={{ maxHeight: '150px', overflow: 'hidden' }}
-                            >
-                              <div
-                                className="transform scale-50 origin-top-left"
-                                style={{ width: '200%' }}
-                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(section.html) }}
-                              />
+                            <div className="mt-2 h-24 overflow-hidden rounded border bg-white">
+                              <div className="relative h-full w-full">
+                                <div
+                                  className="pointer-events-none absolute left-0 top-0 origin-top-left scale-50"
+                                  style={{ width: '200%' }}
+                                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(section.html) }}
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>

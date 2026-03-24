@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { ensureKlaviyoAccountId } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET() {
@@ -132,13 +133,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid Klaviyo connection' }, { status: 400 })
     }
 
+    const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, resolvedConnectionId!)
+
     // Create the campaign with klaviyo_account_id for persistence
     const { data: campaign, error } = await supabase
       .from('campaigns')
       .insert({
         user_id: user.id,
         klaviyo_connection_id: resolvedConnectionId,
-        klaviyo_account_id: connection.klaviyo_account_id,
+        klaviyo_account_id: klaviyoAccountId,
         name: name || 'Untitled Campaign',
         subject_line: '',
         status: 'in_progress',

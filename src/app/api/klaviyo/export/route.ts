@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import { getValidKlaviyoToken } from '@/lib/klaviyo'
+import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
+import { getFrameDisplayUrl } from '@/lib/frame-url'
+import { ensureKlaviyoAccountId, getValidKlaviyoToken } from '@/lib/klaviyo'
 import { normalizeFooterHtmlForExport, normalizeFooterCssForExport } from '@/lib/email/footer-normalize'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -52,6 +54,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Klaviyo token expired. Please reconnect Klaviyo.' }, { status: 401 })
     }
 
+    const klaviyoAccountId = klaviyoConnection.klaviyo_account_id
+      || await ensureKlaviyoAccountId(supabase, klaviyoConnection.id, { accessToken: klaviyoToken })
+
     // Get frames
     const { data: frames } = await supabase
       .from('frames')
@@ -66,12 +71,12 @@ export async function POST(request: NextRequest) {
     // Fetch stored footer HTML and CSS for this Klaviyo account
     let footerHtml = ''
     let footerCss = ''
-    if (klaviyoConnection.klaviyo_account_id) {
+    if (klaviyoAccountId) {
       const { data: footer } = await supabase
         .from('klaviyo_footers')
         .select('footer_html, footer_css')
         .eq('user_id', user.id)
-        .eq('klaviyo_account_id', klaviyoConnection.klaviyo_account_id)
+        .eq('klaviyo_account_id', klaviyoAccountId)
         .single()
 
       if (footer) {
@@ -88,8 +93,17 @@ export async function POST(request: NextRequest) {
       const fallbackImageUrl = existingKlaviyoImageUrl || sourceImageUrl
       if (!fallbackImageUrl) continue
       if (existingKlaviyoImageUrl) {
+        const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
+        if (deletedSourceImage) {
+          await supabase
+            .from('frames')
+            .update({ image_url: null })
+            .eq('id', frame.id)
+        }
+
         uploadedFrames.push({
           ...frame,
+          image_url: deletedSourceImage ? null : frame.image_url,
           klaviyo_image_url: existingKlaviyoImageUrl,
         })
         continue
@@ -127,16 +141,21 @@ export async function POST(request: NextRequest) {
         } else {
           const imageData = await imageResponse.json()
           const klaviyoImageUrl = normalizeImageUrl(imageData.data?.attributes?.image_url) || fallbackImageUrl
+          const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
           
           uploadedFrames.push({
             ...frame,
+            image_url: deletedSourceImage ? null : frame.image_url,
             klaviyo_image_url: klaviyoImageUrl,
           })
 
           // Update frame in database with Klaviyo URL
           await supabase
             .from('frames')
-            .update({ klaviyo_image_url: klaviyoImageUrl })
+            .update({
+              image_url: deletedSourceImage ? null : frame.image_url,
+              klaviyo_image_url: klaviyoImageUrl,
+            })
             .eq('id', frame.id)
         }
       } catch (err) {
@@ -204,6 +223,7 @@ const HALF_WIDTH_THRESHOLD = 300
 function generateEmailHtml(frames: Array<{
   name: string
   width: number | null
+  image_url?: string | null
   klaviyo_image_url: string | null
   link_url: string | null
 }>, footerHtml: string = '', previewText: string = '', footerCss: string = ''): string {
@@ -214,12 +234,12 @@ function generateEmailHtml(frames: Array<{
   while (i < frames.length) {
     const current = frames[i]
     const next = frames[i + 1]
-    const currentImageUrl = normalizeImageUrl(current.klaviyo_image_url)
+    const currentImageUrl = normalizeImageUrl(getFrameDisplayUrl(current))
     if (!currentImageUrl) {
       i += 1
       continue
     }
-    const nextImageUrl = next ? normalizeImageUrl(next.klaviyo_image_url) : null
+    const nextImageUrl = next ? normalizeImageUrl(getFrameDisplayUrl(next)) : null
 
     const currentIsHalf = (current.width ?? 600) <= HALF_WIDTH_THRESHOLD
     const nextIsHalf = !!next && !!nextImageUrl && (next.width ?? 600) <= HALF_WIDTH_THRESHOLD

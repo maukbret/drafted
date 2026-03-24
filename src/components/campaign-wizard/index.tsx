@@ -27,6 +27,7 @@ interface Frame {
   name: string
   width: number | null
   image_url: string | null
+  klaviyo_image_url?: string | null
   link_url: string | null
   display_order: number
 }

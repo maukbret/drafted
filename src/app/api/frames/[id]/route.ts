@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function DELETE(
@@ -18,7 +19,7 @@ export async function DELETE(
     // Get the frame to verify ownership through project
     const { data: frame } = await supabase
       .from('frames')
-      .select('id, project_id, projects(user_id)')
+      .select('id, project_id, image_url, projects(user_id)')
       .eq('id', frameId)
       .single()
 
@@ -27,10 +28,12 @@ export async function DELETE(
     }
 
     // Verify the user owns this frame through the project
-   const project = (frame.projects as { user_id: string }[] | null)?.[0] ?? null
-if (!project || project.user_id !== user.id) {
-  return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-}
+    const project = (frame.projects as { user_id: string }[] | null)?.[0] ?? null
+    if (!project || project.user_id !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    }
+
+    await deleteFrameImageByUrl(frame.image_url)
 
     // Delete the frame
     const { error: deleteError } = await supabase

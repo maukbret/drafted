@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { ensureKlaviyoAccountId } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET - Retrieve product feed preset for a connection
@@ -55,7 +56,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (!connection.klaviyo_account_id) {
+    const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
+    if (!klaviyoAccountId) {
       return NextResponse.json({ preset: null })
     }
 
@@ -63,7 +65,7 @@ export async function GET(request: NextRequest) {
       .from('product_feed_presets')
       .select('*')
       .eq('user_id', presetOwnerId)
-      .eq('klaviyo_account_id', connection.klaviyo_account_id)
+      .eq('klaviyo_account_id', klaviyoAccountId)
       .single()
 
     return NextResponse.json({ preset: preset || null })
@@ -101,7 +103,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
-    if (!connection.klaviyo_account_id) {
+    const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
+    if (!klaviyoAccountId) {
       return NextResponse.json({
         error: 'This Klaviyo connection does not have an account ID. Please reconnect your Klaviyo account.'
       }, { status: 400 })
@@ -111,7 +114,7 @@ export async function POST(request: NextRequest) {
       .from('product_feed_presets')
       .upsert({
         user_id: user.id,
-        klaviyo_account_id: connection.klaviyo_account_id,
+        klaviyo_account_id: klaviyoAccountId,
         layout: layout || '2-column',
         button_color: buttonColor || '#000000',
         button_text_color: buttonTextColor || '#ffffff',
@@ -163,7 +166,12 @@ export async function DELETE(request: NextRequest) {
       .eq('user_id', user.id)
       .single()
 
-    if (!connection || !connection.klaviyo_account_id) {
+    if (!connection) {
+      return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
+    }
+
+    const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
+    if (!klaviyoAccountId) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
@@ -171,7 +179,7 @@ export async function DELETE(request: NextRequest) {
       .from('product_feed_presets')
       .delete()
       .eq('user_id', user.id)
-      .eq('klaviyo_account_id', connection.klaviyo_account_id)
+      .eq('klaviyo_account_id', klaviyoAccountId)
 
     return NextResponse.json({ success: true })
 

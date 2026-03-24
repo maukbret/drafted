@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { deleteFrameImagesForProject } from '@/lib/frame-images-server'
 import { klaviyoFetch } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -131,6 +132,8 @@ export async function POST(
 
       // Delete local project + frames
       if (campaign.project_id) {
+        await deleteFrameImagesForProject(user.id, campaign.project_id)
+
         await supabase
           .from('frames')
           .delete()

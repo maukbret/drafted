@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { deleteFrameImagesForProject } from '@/lib/frame-images-server'
 import { klaviyoFetch } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -219,6 +220,8 @@ export async function DELETE(
 
   // Delete associated project's frames if there's a project
   if (campaign.project_id) {
+    await deleteFrameImagesForProject(campaign.user_id, campaign.project_id)
+
     await supabase
       .from('frames')
       .delete()
