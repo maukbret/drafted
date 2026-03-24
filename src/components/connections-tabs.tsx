@@ -54,7 +54,7 @@ import { cn } from '@/lib/utils'
 import { normalizeStoreUrl, validateStoreUrl } from '@/lib/store-url'
 import { startFigmaOAuth as startFigmaOAuthShared, startKlaviyoOAuth as startKlaviyoOAuthShared } from '@/lib/oauth'
 import { BrandIcon } from '@/components/brand-icon'
-import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, MoreVertical, Plus, Users, Settings, Share2, Search, ShoppingBag } from 'lucide-react'
+import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, MoreVertical, Plus, Users, Settings, Share2, Search, ShoppingBag, Monitor, Smartphone } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -146,9 +146,11 @@ export function ConnectionsTabs({
   const [productFeedConnection, setProductFeedConnection] = useState<KlaviyoConnection | null>(null)
   const [footerPreviewConnection, setFooterPreviewConnection] = useState<KlaviyoConnection | null>(null)
   const [footerPreviewHtml, setFooterPreviewHtml] = useState<string | null>(null)
+  const [footerPreviewCss, setFooterPreviewCss] = useState<string | null>(null)
   const [footerPreviewSourceUrl, setFooterPreviewSourceUrl] = useState<string | null>(null)
   const [footerPreviewLoading, setFooterPreviewLoading] = useState(false)
   const [footerPreviewError, setFooterPreviewError] = useState<string | null>(null)
+  const [footerPreviewMode, setFooterPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
   const [connectionStatuses, setConnectionStatuses] = useState<Record<string, ConnectionStatus>>({})
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
@@ -224,7 +226,9 @@ export function ConnectionsTabs({
       setFooterPreviewLoading(true)
       setFooterPreviewError(null)
       setFooterPreviewHtml(null)
+      setFooterPreviewCss(null)
       setFooterPreviewSourceUrl(null)
+      setFooterPreviewMode('desktop')
 
       try {
         const response = await fetch(`/api/klaviyo/footer?connectionId=${footerPreviewConnection.id}`)
@@ -234,10 +238,9 @@ export function ConnectionsTabs({
         }
 
         if (!isActive) return
-        const footerHtml = data.footer?.footer_html || null
-        const sourceUrl = data.footer?.source_url || null
-        setFooterPreviewHtml(footerHtml)
-        setFooterPreviewSourceUrl(sourceUrl)
+        setFooterPreviewHtml(data.footer?.footer_html || null)
+        setFooterPreviewCss(data.footer?.footer_css || null)
+        setFooterPreviewSourceUrl(data.footer?.source_url || null)
       } catch (err) {
         if (!isActive) return
         setFooterPreviewError(err instanceof Error ? err.message : 'Failed to fetch footer')
@@ -1299,6 +1302,7 @@ export function ConnectionsTabs({
           if (!open) {
             setFooterPreviewConnection(null)
             setFooterPreviewHtml(null)
+            setFooterPreviewCss(null)
             setFooterPreviewSourceUrl(null)
             setFooterPreviewError(null)
           }
@@ -1324,13 +1328,78 @@ export function ConnectionsTabs({
               <div className="text-sm text-muted-foreground">No footer is installed for this account.</div>
             )}
             {footerPreviewHtml && (
-              <Card>
-                <CardContent className="bg-white rounded-lg p-6">
+              <>
+                <div className="flex items-center justify-center mb-4">
+                  <div className="flex items-center bg-muted rounded-lg p-1">
+                    <button
+                      type="button"
+                      onClick={() => setFooterPreviewMode('desktop')}
+                      className={cn(
+                        'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors',
+                        footerPreviewMode === 'desktop'
+                          ? 'bg-background shadow-sm text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <Monitor className="h-4 w-4" />
+                      Desktop
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFooterPreviewMode('mobile')}
+                      className={cn(
+                        'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors',
+                        footerPreviewMode === 'mobile'
+                          ? 'bg-background shadow-sm text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <Smartphone className="h-4 w-4" />
+                      Mobile
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-center">
                   <div
-                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(footerPreviewHtml) }}
-                  />
-                </CardContent>
-              </Card>
+                    className="border rounded-lg overflow-hidden bg-white transition-all duration-300 ease-in-out"
+                    style={{ width: footerPreviewMode === 'desktop' ? 600 : 375 }}
+                  >
+                    <iframe
+                      srcDoc={`<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { margin: 0; padding: 0; background: #fff; }
+table, td { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+${footerPreviewCss || ''}
+</style>
+</head>
+<body>
+<div class="email-footer">
+${footerPreviewHtml}
+</div>
+</body></html>`}
+                      title="Footer preview"
+                      className="w-full border-0"
+                      style={{ minHeight: 200 }}
+                      sandbox="allow-same-origin"
+                      onLoad={(e) => {
+                        const iframe = e.currentTarget
+                        try {
+                          const doc = iframe.contentDocument
+                          if (doc) {
+                            iframe.style.height = `${doc.documentElement.scrollHeight}px`
+                          }
+                        } catch {
+                          // cross-origin safety
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              </>
             )}
             {footerPreviewSourceUrl && (
               <p className="text-xs text-muted-foreground mt-3">

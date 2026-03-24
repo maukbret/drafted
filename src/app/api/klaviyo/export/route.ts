@@ -310,12 +310,8 @@ ${normalizedFooter}
     /* Responsive styles */
     @media screen and (max-width: 600px) {
       .email-container { width: 100% !important; }
-      .email-container img { width: 100% !important; height: auto !important; }
       .email-container table[width="600"] { width: 100% !important; }
       .email-container td[width="300"] { width: 50% !important; display: inline-block !important; }
-      /* Footer: let tables scale but keep images at their natural size */
-      .email-footer table { width: 100% !important; max-width: 600px !important; }
-      .email-footer img { width: auto !important; height: auto !important; max-width: 100% !important; }
     }
 ${normalizedCss ? `    /* Preserved Klaviyo footer styles */\n${normalizedCss}` : ''}
     /* iOS blue link fix */

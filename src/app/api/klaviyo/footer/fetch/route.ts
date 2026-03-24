@@ -3,6 +3,44 @@ import { getValidKlaviyoToken } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 import * as cheerio from 'cheerio'
 
+const KLAVIYO_REVISION = '2026-01-15'
+
+function klaviyoHeaders(token: string) {
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+    'revision': KLAVIYO_REVISION,
+  }
+}
+
+/**
+ * Render a Klaviyo template via the render API to get fully compiled HTML
+ * (with all CSS rules, inline styles, and resolved content).
+ */
+async function renderTemplate(token: string, templateId: string): Promise<string> {
+  const response = await fetch('https://a.klaviyo.com/api/template-render', {
+    method: 'POST',
+    headers: klaviyoHeaders(token),
+    body: JSON.stringify({
+      data: {
+        type: 'template',
+        id: templateId,
+        attributes: { context: {} },
+      },
+    }),
+  })
+
+  if (!response.ok) {
+    const errText = await response.text()
+    console.error('Template render error:', errText)
+    throw new Error('Failed to render template')
+  }
+
+  const data = await response.json()
+  return data.data?.attributes?.html || ''
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { previewUrl, connectionId } = await request.json()
@@ -86,14 +124,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Klaviyo token expired. Please reconnect.' }, { status: 401 })
     }
 
+    const headers = {
+      'Authorization': `Bearer ${klaviyoToken}`,
+      'Accept': 'application/json',
+      'revision': KLAVIYO_REVISION,
+    }
+
     // Get campaign details to find the template/message
-    const campaignResponse = await fetch(`https://a.klaviyo.com/api/campaigns/${campaignId}?include=campaign-messages`, {
-      headers: {
-        'Authorization': `Bearer ${klaviyoToken}`,
-        'Accept': 'application/json',
-        'revision': '2026-01-15',
-      },
-    })
+    const campaignResponse = await fetch(`https://a.klaviyo.com/api/campaigns/${campaignId}?include=campaign-messages`, { headers })
 
     if (!campaignResponse.ok) {
       const errorText = await campaignResponse.text()
@@ -104,7 +142,6 @@ export async function POST(request: NextRequest) {
     }
 
     const campaignData = await campaignResponse.json()
-    console.log('Campaign data:', JSON.stringify(campaignData, null, 2).substring(0, 1000))
 
     // Get the message/template HTML
     const messageId = campaignData.data?.relationships?.['campaign-messages']?.data?.[0]?.id
@@ -114,14 +151,8 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Fetch the message content
-    const messageResponse = await fetch(`https://a.klaviyo.com/api/campaign-messages/${messageId}`, {
-      headers: {
-        'Authorization': `Bearer ${klaviyoToken}`,
-        'Accept': 'application/json',
-        'revision': '2026-01-15',
-      },
-    })
+    // Fetch the message to get the template ID
+    const messageResponse = await fetch(`https://a.klaviyo.com/api/campaign-messages/${messageId}`, { headers })
 
     if (!messageResponse.ok) {
       const errorText = await messageResponse.text()
@@ -132,52 +163,54 @@ export async function POST(request: NextRequest) {
     }
 
     const messageData = await messageResponse.json()
-    console.log('Message data keys:', Object.keys(messageData.data?.attributes || {}))
 
-    // Try to get the HTML content - it might be in different places
-    let html = messageData.data?.attributes?.body?.html ||
-               messageData.data?.attributes?.html ||
-               messageData.data?.attributes?.content?.html ||
-               messageData.data?.attributes?.definition?.content?.html ||
-               ''
+    // Find the template ID so we can render the compiled HTML
+    const templateId = messageData.data?.relationships?.template?.data?.id
 
-    // If no HTML, try to get it from the template
+    let html = ''
+
+    if (templateId) {
+      // Render the template to get fully compiled HTML with all CSS
+      try {
+        html = await renderTemplate(klaviyoToken, templateId)
+        console.log('Got rendered HTML from template, length:', html.length)
+      } catch (err) {
+        console.error('Template render failed, falling back to source HTML:', err)
+      }
+    }
+
+    // Fallback: use the source HTML if render didn't work
     if (!html) {
-      const templateId = messageData.data?.relationships?.template?.data?.id
-      if (templateId) {
-        const templateResponse = await fetch(`https://a.klaviyo.com/api/templates/${templateId}`, {
-          headers: {
-            'Authorization': `Bearer ${klaviyoToken}`,
-            'Accept': 'application/json',
-            'revision': '2026-01-15',
-          },
-        })
+      html = messageData.data?.attributes?.body?.html ||
+             messageData.data?.attributes?.html ||
+             messageData.data?.attributes?.content?.html ||
+             messageData.data?.attributes?.definition?.content?.html ||
+             ''
 
+      if (!html && templateId) {
+        const templateResponse = await fetch(`https://a.klaviyo.com/api/templates/${templateId}`, { headers })
         if (templateResponse.ok) {
           const templateData = await templateResponse.json()
           html = templateData.data?.attributes?.html || ''
-          console.log('Got HTML from template, length:', html.length)
+          console.log('Fallback: got source HTML from template, length:', html.length)
         }
       }
     }
 
     if (!html) {
-      console.log('Full message data:', JSON.stringify(messageData, null, 2))
       return NextResponse.json({
         error: 'Could not extract email HTML from this campaign. The campaign may use a format we cannot parse.'
       }, { status: 400 })
     }
 
-    console.log('Fetched HTML length:', html.length)
-
-    // Parse the HTML to extract sections
+    // Parse the compiled HTML to extract sections
     const sections = parseEmailSections(html)
 
-    // Extract CSS from <head> <style> tags (media queries, responsive rules)
+    // Extract CSS from <head> <style> tags — in compiled HTML this includes
+    // all Klaviyo boilerplate rules (kl-row, kl-column, responsive breakpoints, etc.)
     const headCss = extractHeadCss(html)
 
-    console.log('Parsed sections count:', sections.length)
-    console.log('Extracted head CSS length:', headCss.length)
+    console.log('Parsed sections count:', sections.length, 'Head CSS length:', headCss.length)
 
     if (sections.length === 0) {
       return NextResponse.json({
