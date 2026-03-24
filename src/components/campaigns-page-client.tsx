@@ -4,7 +4,6 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { CampaignList } from '@/components/campaign-list'
 import { CampaignsHeader } from '@/components/campaigns-header'
-import { useRealtimeCampaigns } from '@/hooks/use-realtime-campaigns'
 import type { Campaign } from '@/types/database'
 
 interface CampaignWithConnection extends Campaign {
@@ -30,8 +29,6 @@ export function CampaignsPageClient({
 }) {
   const [isCreating, setIsCreating] = React.useState(false)
   const router = useRouter()
-
-  useRealtimeCampaigns({ currentUserId: currentUserId || '' })
 
   const handleCreateCampaign = React.useCallback(async () => {
     if (isCreating) return
