@@ -19,6 +19,18 @@ function getTimezoneOffsetString(timezone: string, date: Date): string {
   return `${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
 }
 
+function formatKlaviyoErrorMessage(errorBody: string): string {
+  try {
+    const parsed = JSON.parse(errorBody) as { errors?: Array<{ detail?: string; title?: string }> }
+    const first = parsed.errors?.[0]
+    if (first?.detail) return first.detail
+    if (first?.title) return first.title
+  } catch {
+    /* ignore */
+  }
+  return errorBody.length > 400 ? `${errorBody.slice(0, 400)}…` : errorBody
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -37,13 +49,14 @@ export async function POST(
         controller.enqueue(encoder.encode(JSON.stringify(data) + '\n'))
       }
 
+      let revertStatusAfterFailedExport: (() => Promise<void>) | null = null
+
       try {
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
 
         if (!user) {
           send({ step: 'error', message: 'Unauthorized' })
-          controller.close()
           return
         }
 
@@ -61,8 +74,26 @@ export async function POST(
 
         if (!existingCampaign) {
           send({ step: 'error', message: 'Campaign not found' })
-          controller.close()
           return
+        }
+
+        const hadSettingsUpdate = !!settings
+
+        revertStatusAfterFailedExport = async () => {
+          if (!hadSettingsUpdate) return
+          const { error } = await supabase
+            .from('campaigns')
+            .update({ status: existingCampaign.status })
+            .eq('id', campaignId)
+            .eq('user_id', user.id)
+          if (error) {
+            console.error('Failed to revert campaign status after export error:', error)
+          }
+        }
+
+        const endExportWithError = async (message: string) => {
+          await revertStatusAfterFailedExport?.()
+          send({ step: 'error', message })
         }
 
         // Get Klaviyo connection
@@ -74,7 +105,6 @@ export async function POST(
 
         if (!klaviyoConnection) {
           send({ step: 'error', message: 'Klaviyo connection not found' })
-          controller.close()
           return
         }
 
@@ -89,7 +119,6 @@ export async function POST(
 
         if (!project || !project.frames?.length) {
           send({ step: 'error', message: 'No email content found' })
-          controller.close()
           return
         }
 
@@ -157,8 +186,7 @@ export async function POST(
 
           if (updateError) {
             console.error('Campaign settings update error:', updateError)
-            send({ step: 'error', message: `Failed to save campaign settings: ${updateError.message}` })
-            controller.close()
+            await endExportWithError(`Failed to save campaign settings: ${updateError.message}`)
             return
           }
         }
@@ -174,21 +202,18 @@ export async function POST(
           .single()
 
         if (!campaign) {
-          send({ step: 'error', message: 'Campaign not found after update' })
-          controller.close()
+          await endExportWithError('Campaign not found after update')
           return
         }
 
         // Validate required fields
         if (!campaign.subject_line) {
-          send({ step: 'error', message: 'Subject line is required' })
-          controller.close()
+          await endExportWithError('Subject line is required')
           return
         }
 
         if (!campaign.included_audiences || campaign.included_audiences.length === 0) {
-          send({ step: 'error', message: 'At least one audience is required' })
-          controller.close()
+          await endExportWithError('At least one audience is required')
           return
         }
 
@@ -196,8 +221,7 @@ export async function POST(
         const klaviyoToken = await getValidKlaviyoToken(supabase, klaviyoConnection.id)
 
         if (!klaviyoToken) {
-          send({ step: 'error', message: 'Klaviyo token expired. Please reconnect Klaviyo.' })
-          controller.close()
+          await endExportWithError('Klaviyo token expired. Please reconnect Klaviyo.')
           return
         }
 
@@ -209,8 +233,7 @@ export async function POST(
         console.log('Using Klaviyo connection:', klaviyoConnection.id, 'Account:', klaviyoAccountId)
 
         if (!klaviyoAccountId) {
-          send({ step: 'error', message: 'This Klaviyo connection does not have an account ID. Please reconnect your Klaviyo account.' })
-          controller.close()
+          await endExportWithError('This Klaviyo connection does not have an account ID. Please reconnect your Klaviyo account.')
           return
         }
 
@@ -240,8 +263,7 @@ export async function POST(
         }
 
         if (!senderEmail) {
-          send({ step: 'error', message: 'Could not get sender email from Klaviyo. Please configure your sender email in Klaviyo settings.' })
-          controller.close()
+          await endExportWithError('Could not get sender email from Klaviyo. Please configure your sender email in Klaviyo settings.')
           return
         }
 
@@ -507,8 +529,7 @@ export async function POST(
           if (!templateResponse.ok) {
             const errorText = await templateResponse.text()
             console.error('Klaviyo template creation error:', errorText)
-            send({ step: 'error', message: 'Failed to create email template' })
-            controller.close()
+            await endExportWithError('Failed to create email template')
             return
           }
 
@@ -588,9 +609,11 @@ export async function POST(
             if (!updateCampaignResponse.ok) {
               const errorText = await updateCampaignResponse.text()
               console.error('Klaviyo campaign update error:', errorText)
-              // If update fails, create a new campaign
-              klaviyoCampaignId = null
-              messageId = null
+              const detail = formatKlaviyoErrorMessage(errorText)
+              await endExportWithError(
+                `Klaviyo could not update the linked campaign (no new campaign was created). ${detail} If you already scheduled or sent this email from Klaviyo, continue there instead of exporting again from Drafted.`,
+              )
+              return
             }
 
             // Update campaign message (subject, preview text)
@@ -626,9 +649,16 @@ export async function POST(
                 console.error('Klaviyo message update error:', errorText)
               }
             }
-          } else {
-            // Campaign not found, create new one
+          } else if (getCampaignResponse.status === 404) {
             klaviyoCampaignId = null
+            messageId = null
+          } else {
+            const errorText = await getCampaignResponse.text()
+            console.error('Klaviyo campaign fetch error:', getCampaignResponse.status, errorText)
+            await endExportWithError(
+              `Could not load the linked Klaviyo campaign: ${formatKlaviyoErrorMessage(errorText)}`,
+            )
+            return
           }
         }
 
@@ -711,8 +741,7 @@ export async function POST(
           if (!campaignResponse.ok) {
             const errorText = await campaignResponse.text()
             console.error('Klaviyo campaign creation error:', errorText)
-            send({ step: 'error', message: 'Failed to create campaign in Klaviyo' })
-            controller.close()
+            await endExportWithError('Failed to create campaign in Klaviyo')
             return
           }
 
@@ -726,8 +755,7 @@ export async function POST(
 
         if (!messageId) {
           console.error('No message ID found')
-          send({ step: 'error', message: 'No message found in campaign' })
-          controller.close()
+          await endExportWithError('No message found in campaign')
           return
         }
 
@@ -759,8 +787,7 @@ export async function POST(
         if (!assignTemplateResponse.ok) {
           const errorText = await assignTemplateResponse.text()
           console.error('Klaviyo assign template error:', errorText)
-          send({ step: 'error', message: 'Failed to assign template to campaign' })
-          controller.close()
+          await endExportWithError('Failed to assign template to campaign')
           return
         }
 
@@ -799,8 +826,7 @@ export async function POST(
           if (!sendResponse.ok) {
             const errorText = await sendResponse.text()
             console.error('Klaviyo send error:', errorText)
-            send({ step: 'error', message: 'Failed to send campaign' })
-            controller.close()
+            await endExportWithError('Failed to send campaign')
             return
           }
 
@@ -834,10 +860,11 @@ export async function POST(
 
       } catch (err) {
         console.error('Send campaign error:', err)
+        await revertStatusAfterFailedExport?.()
         send({ step: 'error', message: err instanceof Error ? err.message : 'Internal server error' })
+      } finally {
+        controller.close()
       }
-
-      controller.close()
     }
   })
 

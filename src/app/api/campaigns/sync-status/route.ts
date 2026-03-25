@@ -5,6 +5,11 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const DEFAULT_MAX_CAMPAIGNS = 20
 const ABSOLUTE_MAX_CAMPAIGNS = 50
+/** Stop paging once every wanted Klaviyo id has a status (recent-first sort helps). */
+const MAX_CAMPAIGN_LIST_PAGES = 200
+const EMAIL_NON_ARCHIVED_FILTER = encodeURIComponent(
+  "and(equals(messages.channel,'email'),equals(archived,false))"
+)
 const TERMINAL_STATUSES: ReadonlySet<LocalCampaignStatus> = new Set(['sent', 'cancelled'])
 
 type LocalCampaignStatus = 'in_progress' | 'klaviyo_draft' | 'scheduled' | 'cancelled' | 'sent' | 'error'
@@ -79,6 +84,78 @@ function getStaleMs(lastSyncedAt: string | null, nowMs: number): number {
   const syncedAtMs = new Date(lastSyncedAt).getTime()
   if (Number.isNaN(syncedAtMs)) return Number.MAX_SAFE_INTEGER
   return Math.max(0, nowMs - syncedAtMs)
+}
+
+/**
+ * Paginated campaign list: one scan of Klaviyo per connection instead of N GET-by-id calls.
+ * IDs not returned (e.g. archived, filtered) are left out — caller may fall back to GET.
+ */
+async function fetchKlaviyoStatusesFromList(
+  token: string,
+  wantedIds: ReadonlySet<string>
+): Promise<Map<string, string>> {
+  const byId = new Map<string, string>()
+  if (wantedIds.size === 0) return byId
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/json',
+    revision: '2026-01-15',
+  } as const
+
+  let nextUrl: string | null =
+    `https://a.klaviyo.com/api/campaigns?filter=${EMAIL_NON_ARCHIVED_FILTER}&sort=-updated_at`
+  let pageCount = 0
+
+  const allFound = () => [...wantedIds].every((id) => byId.has(id))
+
+  while (nextUrl && pageCount < MAX_CAMPAIGN_LIST_PAGES) {
+    const response = await fetch(nextUrl, { headers })
+    if (!response.ok) {
+      console.error('Klaviyo campaigns list error:', response.status, await response.text().catch(() => ''))
+      return byId
+    }
+
+    const data = (await response.json()) as {
+      data?: Array<{ id?: string; attributes?: { status?: string } }>
+      links?: { next?: string | null }
+    }
+
+    for (const item of data.data || []) {
+      const id = item?.id
+      if (typeof id !== 'string' || !wantedIds.has(id)) continue
+      const status = item.attributes?.status
+      if (typeof status === 'string') byId.set(id, status)
+    }
+
+    if (allFound()) break
+
+    nextUrl = data.links?.next ?? null
+    pageCount += 1
+  }
+
+  if (pageCount >= MAX_CAMPAIGN_LIST_PAGES && !allFound()) {
+    console.warn('Klaviyo campaign list: max pages reached before all Drafted ids were found')
+  }
+
+  return byId
+}
+
+async function fetchKlaviyoStatusById(
+  token: string,
+  klaviyoCampaignId: string
+): Promise<string | null> {
+  const response = await fetch(`https://a.klaviyo.com/api/campaigns/${klaviyoCampaignId}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+      revision: '2026-01-15',
+    },
+  })
+  if (!response.ok) return null
+  const data = (await response.json()) as { data?: { attributes?: { status?: string } } }
+  const status = data?.data?.attributes?.status
+  return typeof status === 'string' ? status : null
 }
 
 async function mapWithConcurrency<T>(
@@ -242,31 +319,41 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      await mapWithConcurrency(connectionCampaigns, 4, async (campaign) => {
-        try {
-          checkedCount++
-          const response = await fetch(
-            `https://a.klaviyo.com/api/campaigns/${campaign.klaviyo_campaign_id}`,
-            {
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json',
-                'revision': '2026-01-15',
-              },
-            }
-          )
+      const wantedIds = new Set(
+        connectionCampaigns
+          .map((c) => c.klaviyo_campaign_id)
+          .filter((id): id is string => Boolean(id))
+      )
 
-          if (!response.ok) {
-            console.error('Failed to fetch campaign status:', campaign.klaviyo_campaign_id, response.status)
+      const statusById = await fetchKlaviyoStatusesFromList(token, wantedIds)
+
+      const missingForGet = connectionCampaigns.filter(
+        (c) => c.klaviyo_campaign_id && !statusById.has(c.klaviyo_campaign_id)
+      )
+
+      await mapWithConcurrency(missingForGet, 4, async (campaign) => {
+        const kid = campaign.klaviyo_campaign_id!
+        const raw = await fetchKlaviyoStatusById(token, kid)
+        if (raw) statusById.set(kid, raw)
+      })
+
+      for (const campaign of connectionCampaigns) {
+        const kid = campaign.klaviyo_campaign_id
+        if (!kid) continue
+
+        checkedCount++
+        try {
+          const rawStatus = statusById.get(kid)
+          if (rawStatus === undefined) {
+            console.error('Failed to fetch campaign status:', kid)
             await supabaseAdmin
               .from('campaigns')
               .update({ last_status_synced_at: syncTimestamp })
               .eq('id', campaign.id)
-            return
+            continue
           }
 
-          const data = await response.json()
-          const newStatus = mapKlaviyoStatus(data?.data?.attributes?.status, campaign.status)
+          const newStatus = mapKlaviyoStatus(rawStatus, campaign.status)
 
           const nextUpdate: { status?: LocalCampaignStatus; last_status_synced_at: string } = {
             last_status_synced_at: syncTimestamp,
@@ -276,13 +363,13 @@ export async function POST(request: NextRequest) {
           }
 
           const { error: updateError } = await supabaseAdmin
-              .from('campaigns')
-              .update(nextUpdate)
-              .eq('id', campaign.id)
+            .from('campaigns')
+            .update(nextUpdate)
+            .eq('id', campaign.id)
 
           if (updateError) {
             console.error('Failed to persist campaign sync:', campaign.id, updateError)
-            return
+            continue
           }
 
           if (campaign.status !== newStatus) {
@@ -295,13 +382,13 @@ export async function POST(request: NextRequest) {
             console.log(`Updated campaign ${campaign.id}: ${campaign.status} -> ${newStatus}`)
           }
         } catch (err) {
-          console.error('Error fetching campaign:', campaign.klaviyo_campaign_id, err)
+          console.error('Error syncing campaign:', kid, err)
           await supabaseAdmin
             .from('campaigns')
             .update({ last_status_synced_at: syncTimestamp })
             .eq('id', campaign.id)
         }
-      })
+      }
     }
 
     return NextResponse.json({
