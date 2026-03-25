@@ -166,6 +166,24 @@ function buildScheduledAtValue(
   return `${scheduledDate}T${scheduledTime}:00${offset}`
 }
 
+function isScheduledSendInPast(
+  scheduledDate: string,
+  scheduledTime: string,
+  timezone: string,
+  useRecipientTimezone: boolean
+): boolean {
+  const iso = buildScheduledAtValue(
+    scheduledDate,
+    scheduledTime,
+    timezone,
+    useRecipientTimezone
+  )
+  if (!iso) return false
+  const parsed = new Date(iso).getTime()
+  if (Number.isNaN(parsed)) return false
+  return parsed <= Date.now()
+}
+
 // Common timezones with their UTC offsets
 const TIMEZONES = [
   { value: 'Europe/Amsterdam', label: 'Amsterdam (CET/CEST)', offset: '+01:00' },
@@ -275,13 +293,43 @@ export function Step3Settings({
   ])
 
   useEffect(() => {
+    if (!error) return
     if (
       error === 'Please select a date and time' &&
       (publishOption === 'draft' || (scheduledDate && scheduledTime))
     ) {
       setError(null)
+      return
     }
-  }, [error, publishOption, scheduledDate, scheduledTime])
+    if (
+      error === 'Please choose a date and time in the future.' &&
+      publishOption === 'draft'
+    ) {
+      setError(null)
+      return
+    }
+    if (
+      error === 'Please choose a date and time in the future.' &&
+      publishOption === 'schedule' &&
+      scheduledDate &&
+      scheduledTime &&
+      !isScheduledSendInPast(
+        scheduledDate,
+        scheduledTime,
+        timezone,
+        useRecipientTimezone
+      )
+    ) {
+      setError(null)
+    }
+  }, [
+    error,
+    publishOption,
+    scheduledDate,
+    scheduledTime,
+    timezone,
+    useRecipientTimezone,
+  ])
 
   useEffect(() => {
     let isActive = true
@@ -454,6 +502,19 @@ export function Step3Settings({
 
     if (publishOption === 'schedule' && (!scheduledDate || !scheduledTime)) {
       setError('Please select a date and time')
+      return
+    }
+
+    if (
+      publishOption === 'schedule' &&
+      isScheduledSendInPast(
+        scheduledDate,
+        scheduledTime,
+        timezone,
+        useRecipientTimezone
+      )
+    ) {
+      setError('Please choose a date and time in the future.')
       return
     }
 
