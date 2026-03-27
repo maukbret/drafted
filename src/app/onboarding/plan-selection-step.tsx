@@ -3,7 +3,18 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 import { Check, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+
 import { cn } from '@/lib/utils'
 
 type SubscriptionTier = 'starter' | 'advanced' | 'pro'
@@ -26,8 +37,7 @@ const TIERS: TierConfig[] = [
     features: [
       '1 Klaviyo account',
       'Unlimited campaigns',
-      'Figma to Klaviyo export',
-      'Unlimited team members',
+      '1 team member',
     ],
   },
   {
@@ -38,7 +48,6 @@ const TIERS: TierConfig[] = [
     features: [
       'Up to 5 Klaviyo accounts',
       'Unlimited campaigns',
-      'Figma to Klaviyo export',
       'Unlimited team members',
       'Priority support',
     ],
@@ -52,7 +61,6 @@ const TIERS: TierConfig[] = [
     features: [
       'Up to 20 Klaviyo accounts',
       'Unlimited campaigns',
-      'Figma to Klaviyo export',
       'Unlimited team members',
       'Priority support',
     ],
@@ -61,15 +69,25 @@ const TIERS: TierConfig[] = [
 
 interface PlanSelectionStepProps {
   onComplete: () => void
+  isPreview?: boolean
 }
 
-export function PlanSelectionStep({ onComplete }: PlanSelectionStepProps) {
+export function PlanSelectionStep({
+  onComplete,
+  isPreview = false,
+}: PlanSelectionStepProps) {
   const [loading, setLoading] = useState<SubscriptionTier | null>(null)
   const [isSkipping, setIsSkipping] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const supabase = createClient()
 
   const handleSubscribe = async (tier: SubscriptionTier) => {
+    if (isPreview) {
+      toast.message('Preview mode', {
+        description: 'Checkout is disabled on this static preview page.',
+      })
+      return
+    }
     setLoading(tier)
     setError(null)
 
@@ -99,6 +117,12 @@ export function PlanSelectionStep({ onComplete }: PlanSelectionStepProps) {
   }
 
   const handleSkipSubscription = async () => {
+    if (isPreview) {
+      toast.message('Preview mode', {
+        description: 'Skipping is disabled on this static preview page.',
+      })
+      return
+    }
     setIsSkipping(true)
     setError(null)
 
@@ -130,82 +154,93 @@ export function PlanSelectionStep({ onComplete }: PlanSelectionStepProps) {
   }
 
   return (
-    <div className="w-full space-y-4">
-      <div className="text-left space-y-1 mb-10">
-        <h1 className="text-2xl font-semibold">Choose your plan</h1>
+    <div className="w-full space-y-6">
+      <div className="text-left space-y-1">
+        <h1 className="text-2xl font-bold">Choose your plan</h1>
         <p className="text-muted-foreground">
-          Select the plan that best fits your needs. All plans include unlimited team members.
+          Select the plan that best fits your needs.
         </p>
       </div>
 
-      {/* Tier cards */}
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="flex flex-col gap-4">
         {TIERS.map((tier) => (
-          <div
+          <Card
             key={tier.tier}
             className={cn(
-              'border rounded-lg p-6 space-y-4 relative',
-              tier.popular && 'border-primary ring-1 ring-primary'
+              tier.popular &&
+                'border-primary shadow-md ring-1 ring-primary/20'
             )}
           >
-            {tier.popular && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <span className="bg-primary text-primary-foreground text-xs font-medium px-3 py-1 rounded-full">
-                  Most Popular
-                </span>
+            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 pb-4">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <CardTitle className="text-xl">{tier.name}</CardTitle>
+                {tier.popular ? <Badge>Most Popular</Badge> : null}
               </div>
-            )}
-
-            <div>
-              <h3 className="text-lg font-semibold">{tier.name}</h3>
-              <div className="mt-2">
-                <span className="text-3xl font-bold">&euro;{tier.price}</span>
-                <span className="text-muted-foreground">/month</span>
+              <div className="shrink-0 text-right">
+                <div className="flex items-baseline justify-end gap-1">
+                  <span className="text-3xl font-bold tabular-nums">
+                    &euro;{tier.price}
+                  </span>
+                  <span className="text-sm text-muted-foreground">/month</span>
+                </div>
               </div>
-            </div>
+            </CardHeader>
 
-            <ul className="space-y-3">
-              {tier.features.map((feature) => (
-                <li key={feature} className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-sm">{feature}</span>
-                </li>
-              ))}
-            </ul>
+            <Separator />
 
-            <Button
-              onClick={() => handleSubscribe(tier.tier)}
-              disabled={loading !== null || isSkipping}
-              className="w-full"
-              variant={tier.popular ? 'default' : 'outline'}
-            >
-              {loading === tier.tier ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Loading...
-                </>
-              ) : (
-                'Subscribe'
-              )}
-            </Button>
-          </div>
+            <CardContent className="pt-4">
+              <ul className="grid grid-cols-2 gap-x-4 gap-y-3">
+                {tier.features.map((feature) => (
+                  <li key={feature} className="flex items-start gap-2">
+                    <Check
+                      className="mt-0.5 size-4 shrink-0 text-primary"
+                      aria-hidden
+                    />
+                    <span className="text-sm leading-snug">{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+
+            <CardFooter className="flex w-full flex-col items-stretch space-y-0 pt-2">
+              <Button
+                onClick={() => handleSubscribe(tier.tier)}
+                disabled={loading !== null || isSkipping}
+                className="w-full"
+                variant={tier.popular ? 'default' : 'outline'}
+                size="default"
+              >
+                {loading === tier.tier ? (
+                  <>
+                    <Loader2 className="animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  'Subscribe'
+                )}
+              </Button>
+            </CardFooter>
+          </Card>
         ))}
       </div>
 
-      {error && (
-        <p className="text-sm text-destructive text-center">{error}</p>
-      )}
+      {error ? (
+        <p className="text-center text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
 
-      <div className="flex justify-between ">
-        <p className="text-xs text-left text-muted-foreground">
+      <Separator />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-muted-foreground">
           Secure payment powered by Stripe. Cancel anytime.
         </p>
-
         <button
           type="button"
           onClick={handleSkipSubscription}
           disabled={loading !== null || isSkipping}
-          className="text-left text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+          className="text-left text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50 sm:text-right"
         >
           {isSkipping ? 'Continuing...' : 'Skip for now'}
         </button>

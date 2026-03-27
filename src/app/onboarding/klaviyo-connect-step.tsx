@@ -16,9 +16,16 @@ interface KlaviyoConnectStepProps {
   onSkip: () => void
   initialSuccess?: boolean
   newConnectionId?: string | null
+  isPreview?: boolean
 }
 
-export function KlaviyoConnectStep({ onComplete, onSkip, initialSuccess = false, newConnectionId = null }: KlaviyoConnectStepProps) {
+export function KlaviyoConnectStep({
+  onComplete,
+  onSkip,
+  initialSuccess = false,
+  newConnectionId = null,
+  isPreview = false,
+}: KlaviyoConnectStepProps) {
   const [loading, setLoading] = useState(true)
   const [isConnected, setIsConnected] = useState(false)
   const [connectionId, setConnectionId] = useState<string | null>(newConnectionId)
@@ -31,6 +38,11 @@ export function KlaviyoConnectStep({ onComplete, onSkip, initialSuccess = false,
   const searchParams = useSearchParams()
 
   useEffect(() => {
+    if (isPreview) {
+      setLoading(false)
+      return
+    }
+
     const checkConnection = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
@@ -68,7 +80,7 @@ export function KlaviyoConnectStep({ onComplete, onSkip, initialSuccess = false,
     }
 
     checkConnection()
-  }, [supabase, initialSuccess, newConnectionId])
+  }, [supabase, initialSuccess, newConnectionId, isPreview])
 
   useEffect(() => {
     const error = searchParams.get('error')
@@ -85,6 +97,12 @@ export function KlaviyoConnectStep({ onComplete, onSkip, initialSuccess = false,
   }, [searchParams])
 
   const handleConnect = () => {
+    if (isPreview) {
+      toast.message('Preview mode', {
+        description: 'OAuth is disabled on this static preview page.',
+      })
+      return
+    }
     const error = startKlaviyoOAuth(accountName, storeUrl)
     if (error) {
       setFormError(error)
@@ -232,7 +250,12 @@ export function KlaviyoConnectStep({ onComplete, onSkip, initialSuccess = false,
         <button
           type="button"
           onClick={async () => {
-            // Skip Klaviyo and finish onboarding
+            if (isPreview) {
+              toast.message('Preview mode', {
+                description: 'Skip is disabled on this static preview page.',
+              })
+              return
+            }
             const { data: { user } } = await supabase.auth.getUser()
             if (user) {
               await supabase

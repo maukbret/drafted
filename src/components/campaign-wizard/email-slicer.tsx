@@ -21,7 +21,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Columns2, GripHorizontal, X, Loader2, RectangleHorizontal, Copy, Globe, ShoppingBag, Search, CheckCircle2, XCircle } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  EMAIL_LAYOUT_THREE_COL_CELL_WIDTH,
+} from '@/lib/email/frame-rows-html'
+import { Plus, GripHorizontal, X, Loader2, Copy, Globe, ShoppingBag, Search, CheckCircle2, XCircle } from 'lucide-react'
 
 interface Frame {
   id: string
@@ -33,17 +37,49 @@ interface Frame {
   display_order: number
 }
 
+type SliceColumnLayout = 'full' | 'half' | 'third'
+
+/** Active column tab in the slicer UI (overlay follows this for multi-column rows). */
+type SlicerColumnTab = 'left' | 'center' | 'right'
+
 interface SliceDefinition {
   id: string
   y: number
   height: number
-  type: 'full' | 'half'
+  type: SliceColumnLayout
   linkUrl: string
   altText: string
   leftLinkUrl: string
   leftAltText: string
+  centerLinkUrl: string
+  centerAltText: string
   rightLinkUrl: string
   rightAltText: string
+}
+
+function defaultSliceContentFields(): Pick<
+  SliceDefinition,
+  | 'type'
+  | 'linkUrl'
+  | 'altText'
+  | 'leftLinkUrl'
+  | 'leftAltText'
+  | 'centerLinkUrl'
+  | 'centerAltText'
+  | 'rightLinkUrl'
+  | 'rightAltText'
+> {
+  return {
+    type: 'full',
+    linkUrl: '',
+    altText: 'Email section',
+    leftLinkUrl: '',
+    leftAltText: 'Left column',
+    centerLinkUrl: '',
+    centerAltText: 'Center column',
+    rightLinkUrl: '',
+    rightAltText: 'Right column',
+  }
 }
 
 interface ProductFeedToggleProps {
@@ -196,6 +232,9 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
 
   const [slices, setSlices] = useState<SliceDefinition[]>([])
   const [activeSliceId, setActiveSliceId] = useState<string | null>(null)
+  const [activeColumnTabBySliceId, setActiveColumnTabBySliceId] = useState<
+    Record<string, SlicerColumnTab>
+  >({})
   const [draggingDivider, setDraggingDivider] = useState<number | null>(null)
   const [processing, setProcessing] = useState(false)
   const [progressMessage, setProgressMessage] = useState<string | null>(null)
@@ -216,13 +255,7 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
         id: initialId,
         y: 0,
         height: designHeight,
-        type: 'full',
-        linkUrl: '',
-        altText: 'Email section',
-        leftLinkUrl: '',
-        leftAltText: 'Left column',
-        rightLinkUrl: '',
-        rightAltText: 'Right column',
+        ...defaultSliceContentFields(),
       }])
       setActiveSliceId(initialId)
     }
@@ -321,13 +354,7 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
         id: newBottomId,
         y: target.y + cutOffset,
         height: target.height - cutOffset,
-        type: 'full',
-        linkUrl: '',
-        altText: 'Email section',
-        leftLinkUrl: '',
-        leftAltText: 'Left column',
-        rightLinkUrl: '',
-        rightAltText: 'Right column',
+        ...defaultSliceContentFields(),
       }
 
       // Make the new bottom slice active
@@ -421,10 +448,25 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
   // Whether the current hover position is a valid place for a cut
   const hoverIsValid = hoverY !== null && isHoveringImage && draggingDivider === null && isValidCutPosition(hoverY, slices)
 
-  const toggleSliceType = useCallback((sliceId: string) => {
-    setSlices(prev => prev.map(s =>
-      s.id === sliceId ? { ...s, type: s.type === 'full' ? 'half' : 'full' } : s
-    ))
+  const setSliceLayout = useCallback((sliceId: string, layout: SliceColumnLayout) => {
+    setSlices(prev => prev.map(s => (s.id === sliceId ? { ...s, type: layout } : s)))
+    setActiveColumnTabBySliceId(prev => {
+      if (layout === 'full') {
+        const next = { ...prev }
+        delete next[sliceId]
+        return next
+      }
+      const tab = prev[sliceId] ?? 'left'
+      if (layout === 'half' && tab === 'center') {
+        return { ...prev, [sliceId]: 'left' }
+      }
+      return prev
+    })
+  }, [])
+
+  const setSliceColumnTab = useCallback((sliceId: string, tab: SlicerColumnTab) => {
+    setActiveColumnTabBySliceId(prev => ({ ...prev, [sliceId]: tab }))
+    setActiveSliceId(sliceId)
   }, [])
 
   const updateSliceField = useCallback((sliceId: string, field: keyof SliceDefinition, value: string) => {
@@ -439,8 +481,12 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
     slices.forEach(s => {
       if (s.type === 'full') {
         if (!s.linkUrl.trim()) missing.push({ sliceId: s.id, field: 'linkUrl' })
+      } else if (s.type === 'half') {
+        if (!s.leftLinkUrl.trim()) missing.push({ sliceId: s.id, field: 'leftLinkUrl' })
+        if (!s.rightLinkUrl.trim()) missing.push({ sliceId: s.id, field: 'rightLinkUrl' })
       } else {
         if (!s.leftLinkUrl.trim()) missing.push({ sliceId: s.id, field: 'leftLinkUrl' })
+        if (!s.centerLinkUrl.trim()) missing.push({ sliceId: s.id, field: 'centerLinkUrl' })
         if (!s.rightLinkUrl.trim()) missing.push({ sliceId: s.id, field: 'rightLinkUrl' })
       }
     })
@@ -498,12 +544,16 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
       ...slice,
       linkUrl: applyDomainToLink(slice.linkUrl, targetDomain),
       leftLinkUrl: applyDomainToLink(slice.leftLinkUrl, targetDomain),
+      centerLinkUrl: applyDomainToLink(slice.centerLinkUrl, targetDomain),
       rightLinkUrl: applyDomainToLink(slice.rightLinkUrl, targetDomain),
     })))
     setError(null)
   }
 
-  const handleCopyLinkDown = (sliceIndex: number, field: 'linkUrl' | 'leftLinkUrl' | 'rightLinkUrl') => {
+  const handleCopyLinkDown = (
+    sliceIndex: number,
+    field: 'linkUrl' | 'leftLinkUrl' | 'centerLinkUrl' | 'rightLinkUrl'
+  ) => {
     const sourceSlice = slices[sliceIndex]
     if (!sourceSlice) return
 
@@ -518,10 +568,17 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
           if (slice.linkUrl.trim()) return slice
           return { ...slice, linkUrl: sourceValue }
         }
-
+        if (slice.type === 'half') {
+          return {
+            ...slice,
+            leftLinkUrl: slice.leftLinkUrl.trim() ? slice.leftLinkUrl : sourceValue,
+            rightLinkUrl: slice.rightLinkUrl.trim() ? slice.rightLinkUrl : sourceValue,
+          }
+        }
         return {
           ...slice,
           leftLinkUrl: slice.leftLinkUrl.trim() ? slice.leftLinkUrl : sourceValue,
+          centerLinkUrl: slice.centerLinkUrl.trim() ? slice.centerLinkUrl : sourceValue,
           rightLinkUrl: slice.rightLinkUrl.trim() ? slice.rightLinkUrl : sourceValue,
         }
       }
@@ -534,6 +591,11 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
       if (field === 'leftLinkUrl') {
         if (slice.leftLinkUrl.trim()) return slice
         return { ...slice, leftLinkUrl: sourceValue }
+      }
+
+      if (field === 'centerLinkUrl') {
+        if (slice.type !== 'third' || slice.centerLinkUrl.trim()) return slice
+        return { ...slice, centerLinkUrl: sourceValue }
       }
 
       if (slice.rightLinkUrl.trim()) return slice
@@ -617,7 +679,7 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
             displayOrder,
           })
           displayOrder++
-        } else {
+        } else if (slice.type === 'half') {
           const sourceTop = Math.round(slice.y * imageScale)
           const sourceBottom = i === slices.length - 1
             ? img.naturalHeight
@@ -625,7 +687,6 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
           const sourceHeight = Math.max(1, sourceBottom - sourceTop)
 
           // Half-width: crop left half and right half separately
-          // Left column
           const leftCanvas = document.createElement('canvas')
           leftCanvas.width = leftWidth
           leftCanvas.height = sourceHeight
@@ -651,7 +712,6 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
           })
           displayOrder++
 
-          // Right column
           const rightCanvas = document.createElement('canvas')
           rightCanvas.width = rightWidth
           rightCanvas.height = sourceHeight
@@ -676,6 +736,52 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
             displayOrder,
           })
           displayOrder++
+        } else {
+          const sourceTop = Math.round(slice.y * imageScale)
+          const sourceBottom = i === slices.length - 1
+            ? img.naturalHeight
+            : Math.round((slice.y + slice.height) * imageScale)
+          const sourceHeight = Math.max(1, sourceBottom - sourceTop)
+
+          const nw = img.naturalWidth
+          const col1 = Math.floor(nw / 3)
+          const col2 = Math.floor(nw / 3)
+          const col3 = nw - col1 - col2
+          const colWidths = [col1, col2, col3]
+          const labels = [
+            slice.leftAltText || 'Left column',
+            slice.centerAltText || 'Center column',
+            slice.rightAltText || 'Right column',
+          ] as const
+          const linkFields = [slice.leftLinkUrl, slice.centerLinkUrl, slice.rightLinkUrl] as const
+          let x = 0
+          const colNames = ['left', 'center', 'right'] as const
+          for (let c = 0; c < 3; c++) {
+            const cw = colWidths[c]
+            const colCanvas = document.createElement('canvas')
+            colCanvas.width = cw
+            colCanvas.height = sourceHeight
+            const cctx = colCanvas.getContext('2d')!
+            cctx.drawImage(
+              img,
+              x, sourceTop,
+              cw, sourceHeight,
+              0, 0,
+              cw, colCanvas.height
+            )
+            setProgressMessage(`Uploading section ${i + 1} (${colNames[c]})...`)
+            const colBlob = await canvasToBlob(downscaleCanvas(colCanvas))
+            const colUrl = await uploadSliceImage(colBlob, `slice-${displayOrder}`)
+            sliceData.push({
+              imageUrl: colUrl,
+              width: EMAIL_LAYOUT_THREE_COL_CELL_WIDTH,
+              name: labels[c],
+              linkUrl: normalizeUrl(linkFields[c]),
+              displayOrder,
+            })
+            displayOrder++
+            x += cw
+          }
         }
       }
 
@@ -792,6 +898,7 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
               const topPx = slice.y * displayScale
               const heightPx = slice.height * displayScale
               const isActive = activeSliceId === slice.id
+              const columnTab: SlicerColumnTab = activeColumnTabBySliceId[slice.id] ?? 'left'
 
               return (
                 <div
@@ -800,11 +907,37 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
                   style={{
                     top: topPx,
                     height: heightPx,
-                    backgroundColor: isActive ? 'rgba(255, 71, 2, 0.15)' : undefined,
+                    backgroundColor:
+                      isActive && slice.type === 'full' ? 'rgba(255, 71, 2, 0.15)' : undefined,
                   }}
                 >
+                  {isActive && slice.type === 'half' && (
+                    <div
+                      className="absolute top-0 bottom-0"
+                      style={{
+                        left: columnTab === 'right' ? '50%' : 0,
+                        width: '50%',
+                        backgroundColor: 'rgba(255, 71, 2, 0.15)',
+                      }}
+                    />
+                  )}
+                  {isActive && slice.type === 'third' && (
+                    <div
+                      className="absolute top-0 bottom-0"
+                      style={{
+                        left:
+                          columnTab === 'left'
+                            ? 0
+                            : columnTab === 'center'
+                              ? '33.33%'
+                              : '66.66%',
+                        width: columnTab === 'center' ? '33.34%' : '33.33%',
+                        backgroundColor: 'rgba(255, 71, 2, 0.15)',
+                      }}
+                    />
+                  )}
                   {/* Slice label */}
-                  <div className="absolute top-1 left-1 pointer-events-auto" data-badge>
+                  <div className="absolute top-1 left-1 pointer-events-auto z-[1]" data-badge>
                     <Badge
                       variant={isActive ? 'default' : 'secondary'}
                       className={cn(
@@ -816,16 +949,28 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
                         setActiveSliceId(slice.id)
                       }}
                     >
-                      {index + 1}{slice.type === 'half' ? ' (2 col)' : ''}
+                      {index + 1}
+                      {slice.type === 'half' ? ' (2 col)' : slice.type === 'third' ? ' (3 col)' : ''}
                     </Badge>
                   </div>
 
-                  {/* Half-width center line indicator */}
                   {slice.type === 'half' && (
                     <div
                       className="absolute top-0 bottom-0 left-1/2 w-px border-l border-dashed"
                       style={{ borderColor: 'rgba(255, 71, 2, 0.4)' }}
                     />
+                  )}
+                  {slice.type === 'third' && (
+                    <>
+                      <div
+                        className="absolute top-0 bottom-0 w-px border-l border-dashed"
+                        style={{ left: '33.33%', borderColor: 'rgba(255, 71, 2, 0.4)' }}
+                      />
+                      <div
+                        className="absolute top-0 bottom-0 w-px border-l border-dashed"
+                        style={{ left: '66.66%', borderColor: 'rgba(255, 71, 2, 0.4)' }}
+                      />
+                    </>
                   )}
                 </div>
               )
@@ -934,34 +1079,21 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
                       Section {index + 1}
                     </span>
 
-                    {/* Layout toggle */}
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <Button
-                        variant={slice.type === 'full' ? 'default' : 'outline'}
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (slice.type !== 'full') toggleSliceType(slice.id)
-                        }}
+                    <div className="flex-shrink-0 w-[132px]" onClick={e => e.stopPropagation()}>
+                      <Select
+                        value={slice.type}
+                        onValueChange={v => setSliceLayout(slice.id, v as SliceColumnLayout)}
                         disabled={processing}
                       >
-                        <RectangleHorizontal className="w-3.5 h-3.5 mr-1" />
-                        Full
-                      </Button>
-                      <Button
-                        variant={slice.type === 'half' ? 'default' : 'outline'}
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (slice.type !== 'half') toggleSliceType(slice.id)
-                        }}
-                        disabled={processing}
-                      >
-                        <Columns2 className="w-3.5 h-3.5 mr-1" />
-                        2 col
-                      </Button>
+                        <SelectTrigger className="h-7 text-xs">
+                          <SelectValue placeholder="Layout" />
+                        </SelectTrigger>
+                        <SelectContent align="end">
+                          <SelectItem value="full">Full width</SelectItem>
+                          <SelectItem value="half">2 columns</SelectItem>
+                          <SelectItem value="third">3 columns</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
 
@@ -1044,161 +1176,367 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
                     </div>
                   )}
 
-                  {/* Inputs for half-width (2-column) slice */}
                   {slice.type === 'half' && (
-                    <div className="space-y-3 ml-8">
-                      <div className="space-y-2">
-                        <span className="text-xs font-medium text-muted-foreground">Left column</span>
-                        <div>
-                          <Label className="mb-1 block text-xs text-muted-foreground">Link URL</Label>
-                          <div className="relative">
+                    <div className="ml-8 mt-1" onClick={e => e.stopPropagation()}>
+                      <Tabs
+                        value={
+                          activeColumnTabBySliceId[slice.id] === 'right'
+                            ? 'right'
+                            : 'left'
+                        }
+                        onValueChange={v =>
+                          setSliceColumnTab(slice.id, v as SlicerColumnTab)
+                        }
+                        className="w-full"
+                      >
+                        <TabsList className="grid h-8 w-full grid-cols-2 gap-0.5 p-0.5">
+                          <TabsTrigger value="left" className="px-1 text-xs">
+                            Left
+                          </TabsTrigger>
+                          <TabsTrigger value="right" className="px-1 text-xs">
+                            Right
+                          </TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="left" className="mt-2 space-y-2 focus-visible:outline-none">
+                          <div>
+                            <Label className="mb-1 block text-xs text-muted-foreground">Link URL</Label>
+                            <div className="relative">
+                              <Input
+                                type="text"
+                                value={slice.leftLinkUrl}
+                                onChange={(e) => updateSliceField(slice.id, 'leftLinkUrl', e.target.value)}
+                                onBlur={(e) => updateSliceField(slice.id, 'leftLinkUrl', normalizeUrl(e.target.value))}
+                                placeholder="google.com or https://..."
+                                className={cn(
+                                  'h-8 pr-16',
+                                  showValidation && !slice.leftLinkUrl.trim() && 'border-destructive focus-visible:ring-destructive'
+                                )}
+                                disabled={processing}
+                              />
+                              <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApplyDomainToAll(slice.leftLinkUrl)}
+                                      disabled={!slice.leftLinkUrl.trim() || processing}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                                      aria-label="Apply this link domain to all sections"
+                                    >
+                                      <Globe className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">Apply this domain to all links</TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyLinkDown(index, 'leftLinkUrl')}
+                                      disabled={!slice.leftLinkUrl.trim() || index === slices.length - 1 || processing}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                                      aria-label="Copy this link to empty sections below"
+                                    >
+                                      <Copy className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">Copy to empty links below</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </div>
+                            {showValidation && !slice.leftLinkUrl.trim() && (
+                              <p className="mt-1 text-xs text-destructive">Required</p>
+                            )}
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Alt text</Label>
                             <Input
                               type="text"
-                              value={slice.leftLinkUrl}
-                              onChange={(e) => updateSliceField(slice.id, 'leftLinkUrl', e.target.value)}
-                              onBlur={(e) => updateSliceField(slice.id, 'leftLinkUrl', normalizeUrl(e.target.value))}
-                              onClick={(e) => e.stopPropagation()}
-                              placeholder="google.com or https://..."
-                              className={cn(
-                                'h-8 pr-16',
-                                showValidation && !slice.leftLinkUrl.trim() && 'border-destructive focus-visible:ring-destructive'
-                              )}
+                              value={slice.leftAltText}
+                              onChange={(e) => updateSliceField(slice.id, 'leftAltText', e.target.value)}
+                              placeholder="Left column"
+                              className="h-8"
                               disabled={processing}
                             />
-                            <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleApplyDomainToAll(slice.leftLinkUrl)
-                                    }}
-                                    disabled={!slice.leftLinkUrl.trim() || processing}
-                                    className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                                    aria-label="Apply this link domain to all sections"
-                                  >
-                                    <Globe className="h-3.5 w-3.5" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  Apply this domain to all links
-                                </TooltipContent>
-                              </Tooltip>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleCopyLinkDown(index, 'leftLinkUrl')
-                                    }}
-                                    disabled={!slice.leftLinkUrl.trim() || index === slices.length - 1 || processing}
-                                    className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                                    aria-label="Copy this link to empty sections below"
-                                  >
-                                    <Copy className="h-3.5 w-3.5" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  Copy to empty links below
-                                </TooltipContent>
-                              </Tooltip>
-                            </div>
                           </div>
-                          {showValidation && !slice.leftLinkUrl.trim() && (
-                            <p className="mt-1 text-xs text-destructive">Required</p>
-                          )}
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Alt text</Label>
-                          <Input
-                            type="text"
-                            value={slice.leftAltText}
-                            onChange={(e) => updateSliceField(slice.id, 'leftAltText', e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            placeholder="Left column"
-                            className="h-8"
-                            disabled={processing}
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <span className="text-xs font-medium text-muted-foreground">Right column</span>
-                        <div>
-                          <Label className="mb-1 block text-xs text-muted-foreground">Link URL</Label>
-                          <div className="relative">
+                        </TabsContent>
+                        <TabsContent value="right" className="mt-2 space-y-2 focus-visible:outline-none">
+                          <div>
+                            <Label className="mb-1 block text-xs text-muted-foreground">Link URL</Label>
+                            <div className="relative">
+                              <Input
+                                type="text"
+                                value={slice.rightLinkUrl}
+                                onChange={(e) => updateSliceField(slice.id, 'rightLinkUrl', e.target.value)}
+                                onBlur={(e) => updateSliceField(slice.id, 'rightLinkUrl', normalizeUrl(e.target.value))}
+                                placeholder="google.com or https://..."
+                                className={cn(
+                                  'h-8 pr-16',
+                                  showValidation && !slice.rightLinkUrl.trim() && 'border-destructive focus-visible:ring-destructive'
+                                )}
+                                disabled={processing}
+                              />
+                              <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApplyDomainToAll(slice.rightLinkUrl)}
+                                      disabled={!slice.rightLinkUrl.trim() || processing}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                                      aria-label="Apply this link domain to all sections"
+                                    >
+                                      <Globe className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">Apply this domain to all links</TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyLinkDown(index, 'rightLinkUrl')}
+                                      disabled={!slice.rightLinkUrl.trim() || index === slices.length - 1 || processing}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                                      aria-label="Copy this link to empty sections below"
+                                    >
+                                      <Copy className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">Copy to empty links below</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </div>
+                            {showValidation && !slice.rightLinkUrl.trim() && (
+                              <p className="mt-1 text-xs text-destructive">Required</p>
+                            )}
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Alt text</Label>
                             <Input
                               type="text"
-                              value={slice.rightLinkUrl}
-                              onChange={(e) => updateSliceField(slice.id, 'rightLinkUrl', e.target.value)}
-                              onBlur={(e) => updateSliceField(slice.id, 'rightLinkUrl', normalizeUrl(e.target.value))}
-                              onClick={(e) => e.stopPropagation()}
-                              placeholder="google.com or https://..."
-                              className={cn(
-                                'h-8 pr-16',
-                                showValidation && !slice.rightLinkUrl.trim() && 'border-destructive focus-visible:ring-destructive'
-                              )}
+                              value={slice.rightAltText}
+                              onChange={(e) => updateSliceField(slice.id, 'rightAltText', e.target.value)}
+                              placeholder="Right column"
+                              className="h-8"
                               disabled={processing}
                             />
-                            <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleApplyDomainToAll(slice.rightLinkUrl)
-                                    }}
-                                    disabled={!slice.rightLinkUrl.trim() || processing}
-                                    className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                                    aria-label="Apply this link domain to all sections"
-                                  >
-                                    <Globe className="h-3.5 w-3.5" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  Apply this domain to all links
-                                </TooltipContent>
-                              </Tooltip>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleCopyLinkDown(index, 'rightLinkUrl')
-                                    }}
-                                    disabled={!slice.rightLinkUrl.trim() || index === slices.length - 1 || processing}
-                                    className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                                    aria-label="Copy this link to empty sections below"
-                                  >
-                                    <Copy className="h-3.5 w-3.5" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  Copy to empty links below
-                                </TooltipContent>
-                              </Tooltip>
-                            </div>
                           </div>
-                          {showValidation && !slice.rightLinkUrl.trim() && (
-                            <p className="mt-1 text-xs text-destructive">Required</p>
-                          )}
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Alt text</Label>
-                          <Input
-                            type="text"
-                            value={slice.rightAltText}
-                            onChange={(e) => updateSliceField(slice.id, 'rightAltText', e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            placeholder="Right column"
-                            className="h-8"
-                            disabled={processing}
-                          />
-                        </div>
-                      </div>
+                        </TabsContent>
+                      </Tabs>
+                    </div>
+                  )}
+
+                  {slice.type === 'third' && (
+                    <div className="ml-8 mt-1" onClick={e => e.stopPropagation()}>
+                      <Tabs
+                        value={activeColumnTabBySliceId[slice.id] ?? 'left'}
+                        onValueChange={v =>
+                          setSliceColumnTab(slice.id, v as SlicerColumnTab)
+                        }
+                        className="w-full"
+                      >
+                        <TabsList className="grid h-8 w-full grid-cols-3 gap-0.5 p-0.5">
+                          <TabsTrigger value="left" className="px-1 text-xs">
+                            Left
+                          </TabsTrigger>
+                          <TabsTrigger value="center" className="px-1 text-xs">
+                            Center
+                          </TabsTrigger>
+                          <TabsTrigger value="right" className="px-1 text-xs">
+                            Right
+                          </TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="left" className="mt-2 space-y-2 focus-visible:outline-none">
+                          <div>
+                            <Label className="mb-1 block text-xs text-muted-foreground">Link URL</Label>
+                            <div className="relative">
+                              <Input
+                                type="text"
+                                value={slice.leftLinkUrl}
+                                onChange={(e) => updateSliceField(slice.id, 'leftLinkUrl', e.target.value)}
+                                onBlur={(e) => updateSliceField(slice.id, 'leftLinkUrl', normalizeUrl(e.target.value))}
+                                placeholder="google.com or https://..."
+                                className={cn(
+                                  'h-8 pr-16',
+                                  showValidation && !slice.leftLinkUrl.trim() && 'border-destructive focus-visible:ring-destructive'
+                                )}
+                                disabled={processing}
+                              />
+                              <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApplyDomainToAll(slice.leftLinkUrl)}
+                                      disabled={!slice.leftLinkUrl.trim() || processing}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                                      aria-label="Apply this link domain to all sections"
+                                    >
+                                      <Globe className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">Apply this domain to all links</TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyLinkDown(index, 'leftLinkUrl')}
+                                      disabled={!slice.leftLinkUrl.trim() || index === slices.length - 1 || processing}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                                      aria-label="Copy this link to empty sections below"
+                                    >
+                                      <Copy className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">Copy to empty links below</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </div>
+                            {showValidation && !slice.leftLinkUrl.trim() && (
+                              <p className="mt-1 text-xs text-destructive">Required</p>
+                            )}
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Alt text</Label>
+                            <Input
+                              type="text"
+                              value={slice.leftAltText}
+                              onChange={(e) => updateSliceField(slice.id, 'leftAltText', e.target.value)}
+                              placeholder="Left column"
+                              className="h-8"
+                              disabled={processing}
+                            />
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="center" className="mt-2 space-y-2 focus-visible:outline-none">
+                          <div>
+                            <Label className="mb-1 block text-xs text-muted-foreground">Link URL</Label>
+                            <div className="relative">
+                              <Input
+                                type="text"
+                                value={slice.centerLinkUrl}
+                                onChange={(e) => updateSliceField(slice.id, 'centerLinkUrl', e.target.value)}
+                                onBlur={(e) => updateSliceField(slice.id, 'centerLinkUrl', normalizeUrl(e.target.value))}
+                                placeholder="google.com or https://..."
+                                className={cn(
+                                  'h-8 pr-16',
+                                  showValidation && !slice.centerLinkUrl.trim() && 'border-destructive focus-visible:ring-destructive'
+                                )}
+                                disabled={processing}
+                              />
+                              <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApplyDomainToAll(slice.centerLinkUrl)}
+                                      disabled={!slice.centerLinkUrl.trim() || processing}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                                      aria-label="Apply this link domain to all sections"
+                                    >
+                                      <Globe className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">Apply this domain to all links</TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyLinkDown(index, 'centerLinkUrl')}
+                                      disabled={!slice.centerLinkUrl.trim() || index === slices.length - 1 || processing}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                                      aria-label="Copy this link to empty sections below"
+                                    >
+                                      <Copy className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">Copy to empty links below</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </div>
+                            {showValidation && !slice.centerLinkUrl.trim() && (
+                              <p className="mt-1 text-xs text-destructive">Required</p>
+                            )}
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Alt text</Label>
+                            <Input
+                              type="text"
+                              value={slice.centerAltText}
+                              onChange={(e) => updateSliceField(slice.id, 'centerAltText', e.target.value)}
+                              placeholder="Center column"
+                              className="h-8"
+                              disabled={processing}
+                            />
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="right" className="mt-2 space-y-2 focus-visible:outline-none">
+                          <div>
+                            <Label className="mb-1 block text-xs text-muted-foreground">Link URL</Label>
+                            <div className="relative">
+                              <Input
+                                type="text"
+                                value={slice.rightLinkUrl}
+                                onChange={(e) => updateSliceField(slice.id, 'rightLinkUrl', e.target.value)}
+                                onBlur={(e) => updateSliceField(slice.id, 'rightLinkUrl', normalizeUrl(e.target.value))}
+                                placeholder="google.com or https://..."
+                                className={cn(
+                                  'h-8 pr-16',
+                                  showValidation && !slice.rightLinkUrl.trim() && 'border-destructive focus-visible:ring-destructive'
+                                )}
+                                disabled={processing}
+                              />
+                              <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApplyDomainToAll(slice.rightLinkUrl)}
+                                      disabled={!slice.rightLinkUrl.trim() || processing}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                                      aria-label="Apply this link domain to all sections"
+                                    >
+                                      <Globe className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">Apply this domain to all links</TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyLinkDown(index, 'rightLinkUrl')}
+                                      disabled={!slice.rightLinkUrl.trim() || index === slices.length - 1 || processing}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                                      aria-label="Copy this link to empty sections below"
+                                    >
+                                      <Copy className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">Copy to empty links below</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </div>
+                            {showValidation && !slice.rightLinkUrl.trim() && (
+                              <p className="mt-1 text-xs text-destructive">Required</p>
+                            )}
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Alt text</Label>
+                            <Input
+                              type="text"
+                              value={slice.rightAltText}
+                              onChange={(e) => updateSliceField(slice.id, 'rightAltText', e.target.value)}
+                              placeholder="Right column"
+                              className="h-8"
+                              disabled={processing}
+                            />
+                          </div>
+                        </TabsContent>
+                      </Tabs>
                     </div>
                   )}
                 </div>

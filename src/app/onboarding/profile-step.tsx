@@ -7,12 +7,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { UserAvatar } from '@/components/user-avatar'
 import { Camera, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface ProfileStepProps {
   onComplete: () => void
+  /** Static UI preview — skips API calls. */
+  isPreview?: boolean
 }
 
-export function ProfileStep({ onComplete }: ProfileStepProps) {
+export function ProfileStep({ onComplete, isPreview = false }: ProfileStepProps) {
   const [fullName, setFullName] = useState('')
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
@@ -25,6 +28,11 @@ export function ProfileStep({ onComplete }: ProfileStepProps) {
   const supabase = createClient()
 
   useEffect(() => {
+    if (isPreview) {
+      setInitialLoading(false)
+      return
+    }
+
     const loadProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
@@ -55,7 +63,7 @@ export function ProfileStep({ onComplete }: ProfileStepProps) {
     }
 
     loadProfile()
-  }, [supabase])
+  }, [supabase, isPreview])
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -76,6 +84,13 @@ export function ProfileStep({ onComplete }: ProfileStepProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (isPreview) {
+      toast.message('Preview mode', {
+        description: 'Saving profile is disabled on this static preview page.',
+      })
+      return
+    }
 
     if (!fullName.trim()) {
       setError('Full name is required')

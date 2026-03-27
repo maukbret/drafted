@@ -1,5 +1,10 @@
-import { redirect } from 'next/navigation'
+import { AuthSplitLayout } from '@/components/auth/auth-split-layout'
+import { SignupForm } from '@/components/auth/signup-form'
 
 export default function SignupPage() {
-  redirect('/onboarding')
+  return (
+    <AuthSplitLayout>
+      <SignupForm />
+    </AuthSplitLayout>
+  )
 }

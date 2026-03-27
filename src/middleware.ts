@@ -38,9 +38,9 @@ export async function middleware(request: NextRequest) {
   const isAuthPage = request.nextUrl.pathname === '/login' ||
                      request.nextUrl.pathname === '/signup'
 
-  const isPublicPage = request.nextUrl.pathname === '/' ||
-                       isAuthPage ||
+  const isPublicPage = isAuthPage ||
                        request.nextUrl.pathname === '/onboarding' ||
+                       request.nextUrl.pathname.startsWith('/onboarding/preview') ||
                        request.nextUrl.pathname.startsWith('/api/auth') ||
                        request.nextUrl.pathname.startsWith('/invite')
 
@@ -48,17 +48,8 @@ export async function middleware(request: NextRequest) {
   const isBillingPage = request.nextUrl.pathname === '/billing'
   const isApiRoute = request.nextUrl.pathname.startsWith('/api/')
   const isWebhookRoute = request.nextUrl.pathname.startsWith('/api/webhooks/')
-  const isLocalhost = request.nextUrl.hostname === 'localhost' || request.nextUrl.hostname === '127.0.0.1'
-  const allowOnboardingForce = isOnboardingPage && isLocalhost && process.env.NODE_ENV === 'development' &&
-    request.nextUrl.searchParams.has('force')
-
   // Allow webhook routes without auth check
   if (isWebhookRoute) {
-    return supabaseResponse
-  }
-
-  // Allow dev-only forced onboarding step on localhost
-  if (allowOnboardingForce) {
     return supabaseResponse
   }
 

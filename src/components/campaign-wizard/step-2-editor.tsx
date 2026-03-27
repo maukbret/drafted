@@ -25,6 +25,10 @@ import {
 import { CampaignEmailPreview } from './campaign-email-preview'
 import { Copy, Globe, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  isThreeColumnFrameWidth,
+  isTwoColumnFrameWidth,
+} from '@/lib/email/frame-rows-html'
 
 interface Frame {
   id: string
@@ -36,9 +40,6 @@ interface Frame {
   link_url: string | null
   display_order: number
 }
-
-// Half-width threshold: 50% of 600px email width
-const HALF_WIDTH_THRESHOLD = 300
 
 interface Step2EditorProps {
   frames: Frame[]
@@ -328,9 +329,14 @@ export function Step2Editor({ frames: initialFrames, defaultLinkPlaceholder, onC
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
-                        {(frame.width ?? 600) <= HALF_WIDTH_THRESHOLD && (
+                        {isThreeColumnFrameWidth(frame.width) && (
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
-                            50%
+                            3-col
+                          </Badge>
+                        )}
+                        {isTwoColumnFrameWidth(frame.width) && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
+                            2-col
                           </Badge>
                         )}
                         <button

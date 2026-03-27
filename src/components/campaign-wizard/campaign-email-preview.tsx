@@ -4,6 +4,10 @@ import DOMPurify from 'dompurify'
 import { getFrameDisplayUrl } from '@/lib/frame-url'
 import { cn } from '@/lib/utils'
 import { normalizeFooterHtmlForExport } from '@/lib/email/footer-normalize'
+import {
+  isThreeColumnFrameWidth,
+  isTwoColumnFrameWidth,
+} from '@/lib/email/frame-rows-html'
 
 export interface CampaignPreviewFrame {
   id: string
@@ -36,26 +40,40 @@ interface CampaignEmailPreviewProps {
   emptyMessage?: string
 }
 
-const HALF_WIDTH_THRESHOLD = 300
+type PreviewLayoutRow =
+  | CampaignPreviewFrame
+  | [CampaignPreviewFrame, CampaignPreviewFrame]
+  | [CampaignPreviewFrame, CampaignPreviewFrame, CampaignPreviewFrame]
 
-function groupFramesForLayout(frames: CampaignPreviewFrame[]): (CampaignPreviewFrame | [CampaignPreviewFrame, CampaignPreviewFrame])[] {
-  const result: (CampaignPreviewFrame | [CampaignPreviewFrame, CampaignPreviewFrame])[] = []
+function groupFramesForLayout(frames: CampaignPreviewFrame[]): PreviewLayoutRow[] {
+  const result: PreviewLayoutRow[] = []
   let i = 0
 
   while (i < frames.length) {
     const current = frames[i]
     const next = frames[i + 1]
+    const next2 = frames[i + 2]
 
-    const currentIsHalf = (current.width ?? 600) <= HALF_WIDTH_THRESHOLD
-    const nextIsHalf = next && (next.width ?? 600) <= HALF_WIDTH_THRESHOLD
+    if (
+      next &&
+      next2 &&
+      isThreeColumnFrameWidth(current.width) &&
+      isThreeColumnFrameWidth(next.width) &&
+      isThreeColumnFrameWidth(next2.width)
+    ) {
+      result.push([current, next, next2])
+      i += 3
+      continue
+    }
 
-    if (currentIsHalf && nextIsHalf) {
+    if (next && isTwoColumnFrameWidth(current.width) && isTwoColumnFrameWidth(next.width)) {
       result.push([current, next])
       i += 2
-    } else {
-      result.push(current)
-      i += 1
+      continue
     }
+
+    result.push(current)
+    i += 1
   }
 
   return result
@@ -149,16 +167,17 @@ export function CampaignEmailPreview({
     <div className="max-w-[600px] mx-auto bg-background shadow-sm-sm">
       {groupedFrames.map((item, index) => {
         if (Array.isArray(item)) {
-          const [left, right] = item
+          const colClass = item.length === 3 ? 'w-1/3' : 'w-1/2'
           return (
-            <div key={`row-${index}`} className="flex">
-              {[left, right].map((frame) => {
+            <div key={`row-${item.map(f => f.id).join('-')}`} className="flex">
+              {item.map((frame) => {
                 const frameImageUrl = getFrameDisplayUrl(frame)
                 return (
                   <div
                     key={frame.id}
                     className={cn(
-                      'relative transition-all w-1/2',
+                      'relative transition-all',
+                      colClass,
                       isInteractive && 'cursor-pointer',
                       activeFrameId === frame.id && 'outline outline-2 outline-primary -outline-offset-2'
                     )}

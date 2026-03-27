@@ -5,20 +5,32 @@ import { createClient } from '@/lib/supabase/client'
 import { startFigmaOAuth } from '@/lib/oauth'
 import { Button } from '@/components/ui/button'
 import { Loader2, CheckCircle2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface FigmaConnectStepProps {
   onComplete: () => void
   onSkip: () => void
   initialSuccess?: boolean
+  isPreview?: boolean
 }
 
-export function FigmaConnectStep({ onComplete, onSkip, initialSuccess = false }: FigmaConnectStepProps) {
+export function FigmaConnectStep({
+  onComplete,
+  onSkip,
+  initialSuccess = false,
+  isPreview = false,
+}: FigmaConnectStepProps) {
   const [loading, setLoading] = useState(true)
   const [isConnected, setIsConnected] = useState(false)
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
+    if (isPreview) {
+      setLoading(false)
+      return
+    }
+
     const checkConnection = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
@@ -41,7 +53,7 @@ export function FigmaConnectStep({ onComplete, onSkip, initialSuccess = false }:
     }
 
     checkConnection()
-  }, [supabase])
+  }, [supabase, isPreview])
 
   if (loading) {
     return (
@@ -90,12 +102,31 @@ export function FigmaConnectStep({ onComplete, onSkip, initialSuccess = false }:
       </div>
 
       <div className="space-y-3">
-        <Button onClick={startFigmaOAuth} className="w-full">
+        <Button
+          onClick={() => {
+            if (isPreview) {
+              toast.message('Preview mode', {
+                description: 'OAuth is disabled on this static preview page.',
+              })
+              return
+            }
+            startFigmaOAuth()
+          }}
+          className="w-full"
+        >
           Connect Figma
         </Button>
         <button
           type="button"
-          onClick={onSkip}
+          onClick={() => {
+            if (isPreview) {
+              toast.message('Preview mode', {
+                description: 'Skip is disabled on this static preview page.',
+              })
+              return
+            }
+            onSkip()
+          }}
           className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           Skip for now

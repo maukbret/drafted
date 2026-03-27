@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
-import { getFrameDisplayUrl } from '@/lib/frame-url'
 import { ensureKlaviyoAccountId, getValidKlaviyoToken } from '@/lib/klaviyo'
 import { normalizeFooterHtmlForExport, normalizeFooterCssForExport } from '@/lib/email/footer-normalize'
+import { buildEmailFrameRowsHtml } from '@/lib/email/frame-rows-html'
 import { generateProductFeedHtml } from '@/lib/email/product-feed-html'
 import type { ProductFeedPreset, ProductFeedSettings } from '@/lib/email/product-feed-html'
 import { NextRequest } from 'next/server'
@@ -873,9 +873,6 @@ export async function POST(
   })
 }
 
-// Half-width threshold: 50% of 600px email width
-const HALF_WIDTH_THRESHOLD = 300
-
 function generateEmailHtml(frames: Array<{
   name: string
   width: number | null
@@ -883,68 +880,7 @@ function generateEmailHtml(frames: Array<{
   klaviyo_image_url: string | null
   link_url: string | null
 }>, footerHtml: string = '', previewText: string = '', productFeedHtml: string = '', footerCss: string = ''): string {
-  // Group frames for side-by-side layout
-  const rows: string[] = []
-  let i = 0
-
-  while (i < frames.length) {
-    const current = frames[i]
-    const next = frames[i + 1]
-    const currentImageUrl = normalizeImageUrl(getFrameDisplayUrl(current))
-    if (!currentImageUrl) {
-      i += 1
-      continue
-    }
-    const nextImageUrl = next ? normalizeImageUrl(getFrameDisplayUrl(next)) : null
-
-    const currentIsHalf = (current.width ?? 600) <= HALF_WIDTH_THRESHOLD
-    const nextIsHalf = !!next && !!nextImageUrl && (next.width ?? 600) <= HALF_WIDTH_THRESHOLD
-
-    if (currentIsHalf && nextIsHalf) {
-      // Two-column row using nested table for reliable rendering
-      const leftImg = `<img src="${currentImageUrl}" alt="${current.name}" width="300" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
-      const rightImg = `<img src="${nextImageUrl}" alt="${next.name}" width="300" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
-
-      const leftContent = current.link_url
-        ? `<a href="${current.link_url}" target="_blank" style="display: block; text-decoration: none;">${leftImg}</a>`
-        : leftImg
-      const rightContent = next.link_url
-        ? `<a href="${next.link_url}" target="_blank" style="display: block; text-decoration: none;">${rightImg}</a>`
-        : rightImg
-
-      rows.push(`      <tr>
-        <td align="center" valign="top" style="padding: 0;">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width: 100%; max-width: 600px;">
-            <tr>
-              <td width="300" valign="top" style="width: 50%;">
-                ${leftContent}
-              </td>
-              <td width="300" valign="top" style="width: 50%;">
-                ${rightContent}
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>`)
-      i += 2
-    } else {
-      // Single full-width frame
-      const imgTag = `<img src="${currentImageUrl}" alt="${current.name}" width="600" style="display: block; width: 100%; height: auto; border: 0; outline: none; text-decoration: none;" />`
-
-      const content = current.link_url
-        ? `<a href="${current.link_url}" target="_blank" style="display: block; text-decoration: none;">${imgTag}</a>`
-        : imgTag
-
-      rows.push(`      <tr>
-        <td align="center" valign="top" style="padding: 0;">
-          ${content}
-        </td>
-      </tr>`)
-      i += 1
-    }
-  }
-
-  const frameRows = rows.join('\n')
+  const frameRows = buildEmailFrameRowsHtml(frames)
 
   const productFeedSection = productFeedHtml || ''
 
@@ -990,6 +926,7 @@ ${normalizedFooter}
       .email-container { width: 100% !important; }
       .email-container table[width="600"] { width: 100% !important; }
       .email-container td[width="300"] { width: 50% !important; display: inline-block !important; }
+      .email-container td[width="200"] { width: 33.33% !important; display: inline-block !important; }
     }
 ${normalizedCss ? `    /* Preserved Klaviyo footer styles */\n${normalizedCss}` : ''}
     /* iOS blue link fix */

@@ -38,8 +38,7 @@ export const TIER_CONFIGS: Record<SubscriptionTier, TierConfig> = {
     features: [
       '1 Klaviyo account',
       'Unlimited campaigns',
-      'Figma to Klaviyo export',
-      'Unlimited team members',
+      '1 team member',
     ],
   },
   advanced: {
@@ -52,7 +51,6 @@ export const TIER_CONFIGS: Record<SubscriptionTier, TierConfig> = {
     features: [
       'Up to 5 Klaviyo accounts',
       'Unlimited campaigns',
-      'Figma to Klaviyo export',
       'Unlimited team members',
       'Priority support',
     ],
@@ -67,7 +65,6 @@ export const TIER_CONFIGS: Record<SubscriptionTier, TierConfig> = {
     features: [
       'Up to 20 Klaviyo accounts',
       'Unlimited campaigns',
-      'Figma to Klaviyo export',
       'Unlimited team members',
       'Priority support',
     ],
