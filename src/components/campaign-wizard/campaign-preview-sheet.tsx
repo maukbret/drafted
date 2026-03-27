@@ -40,12 +40,16 @@ export function CampaignPreviewSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-sm">
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-[min(92vw,min(42rem,max(20rem,30vw)))]"
+      >
         <div className="h-full overflow-hidden flex flex-col">
           <SheetHeader className="pr-8">
             <SheetTitle>Preview email</SheetTitle>
             <SheetDescription>
-              Check subject, preview text, and content before sending.
+              Check subject, preview text, and content before sending. Hover a
+              section in the email to see its link URL.
             </SheetDescription>
           </SheetHeader>
 
@@ -97,6 +101,7 @@ export function CampaignPreviewSheet({
                   frames={frames}
                   footerHtml={useCustomFooter && !footerLoading && !footerError ? footerHtml : null}
                   productFeedPreview={productFeedPreview}
+                  showSectionLinkTooltips
                 />
               </div>
             </div>

@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { Check, ChevronDown, ChevronsUpDown, Eye, HelpCircle, Loader2, Sparkles } from 'lucide-react'
 import { AudienceSelector } from '../audience-selector'
-import { CampaignPreviewSheet } from './campaign-preview-sheet'
 import type { ProductFeedPreviewData } from './campaign-email-preview'
+import { CampaignPreviewSheet } from './campaign-preview-sheet'
 import type { ExportSettings } from '@/lib/campaign-export'
 import {
   AlertDialog,
@@ -630,7 +630,8 @@ export function Step3Settings({
   const minDate = formatLocalDate(now)
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <>
+      <div className="space-y-6 max-w-2xl">
       <div className="space-y-2">
         <Label htmlFor="campaign-name">Campaign name</Label>
         <Input
@@ -1088,6 +1089,7 @@ export function Step3Settings({
           variant="outline"
           onClick={onBack}
           disabled={saving}
+          className="min-w-0 flex-1"
         >
           Back
         </Button>
@@ -1095,7 +1097,7 @@ export function Step3Settings({
           type="button"
           onClick={handleSubmit}
           disabled={saving}
-          className="flex-1"
+          className="min-w-0 flex-1"
         >
           {saving
             ? 'Processing...'
@@ -1103,15 +1105,6 @@ export function Step3Settings({
               ? 'Save Draft to Klaviyo'
               : 'Schedule Campaign'
           }
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setIsPreviewOpen(true)}
-          disabled={saving}
-        >
-          <Eye className="h-4 w-4 mr-2" />
-          Preview email
         </Button>
       </div>
 
@@ -1150,6 +1143,20 @@ export function Step3Settings({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        size="default"
+        className="fixed bottom-6 right-6 z-40 md:bottom-8 md:right-8"
+        onClick={() => setIsPreviewOpen(true)}
+        disabled={saving}
+        aria-label="Preview email"
+      >
+        <Eye className="h-4 w-4 shrink-0" aria-hidden />
+        Preview email
+      </Button>
+    </>
   )
 }
