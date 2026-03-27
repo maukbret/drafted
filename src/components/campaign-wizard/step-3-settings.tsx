@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, ChevronDown, ChevronsUpDown, Eye, HelpCircle, Loader2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronsUpDown, Eye, HelpCircle, Loader2, Sparkles } from 'lucide-react'
 import { AudienceSelector } from '../audience-selector'
 import { CampaignPreviewSheet } from './campaign-preview-sheet'
 import type { ProductFeedPreviewData } from './campaign-email-preview'
@@ -105,6 +105,15 @@ interface FooterResponse {
   footer?: {
     footer_html?: string | null
   } | null
+  error?: string
+}
+
+interface GenerateEmailCopyResponse {
+  subjectLine?: string
+  previewText?: string
+  frameName?: string | null
+  textNodeCount?: number
+  model?: string | null
   error?: string
 }
 
@@ -266,6 +275,8 @@ export function Step3Settings({
   const [utmTerm, setUtmTerm] = useState(initialUtmSettings?.term ?? '')
   const [utmOpen, setUtmOpen] = useState(initialUtmSettings?.enabled ?? false)
   const [productFeedPreview, setProductFeedPreview] = useState<ProductFeedPreviewData | null>(null)
+  const [isGeneratingEmailCopy, setIsGeneratingEmailCopy] = useState(false)
+  const [emailCopyError, setEmailCopyError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!onConceptDraftChange) return
@@ -579,6 +590,41 @@ export function Step3Settings({
     }
   }
 
+  const handleGenerateEmailCopy = async () => {
+    if (isGeneratingEmailCopy) return
+
+    setIsGeneratingEmailCopy(true)
+    setEmailCopyError(null)
+
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/email-copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaignName: name.trim() || null,
+        }),
+      })
+
+      let data: GenerateEmailCopyResponse = {}
+      try {
+        data = (await response.json()) as GenerateEmailCopyResponse
+      } catch {
+        data = {}
+      }
+
+      if (!response.ok || data.error || !data.subjectLine || !data.previewText) {
+        throw new Error(data.error || 'Failed to generate email copy.')
+      }
+
+      setSubjectLine(data.subjectLine)
+      setPreviewText(data.previewText)
+    } catch (error) {
+      setEmailCopyError((error as Error)?.message || 'Failed to generate email copy.')
+    } finally {
+      setIsGeneratingEmailCopy(false)
+    }
+  }
+
   // Prevent selecting past calendar dates in the manual date picker.
   const now = new Date()
   const minDate = formatLocalDate(now)
@@ -600,7 +646,22 @@ export function Step3Settings({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="subject-line">Subject line</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="subject-line">Subject line</Label>
+          <button
+            type="button"
+            onClick={() => void handleGenerateEmailCopy()}
+            disabled={saving || isGeneratingEmailCopy}
+            className="inline-flex shrink-0 items-center gap-1.5 border-0 bg-transparent p-0 text-sm text-muted-foreground shadow-none transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+          >
+            {isGeneratingEmailCopy ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            )}
+            {isGeneratingEmailCopy ? 'Generating...' : 'Generate subject line & preview text'}
+          </button>
+        </div>
         <Input
           id="subject-line"
           type="text"
@@ -633,6 +694,11 @@ export function Step3Settings({
           onChange={(e) => setPreviewText(e.target.value)}
           placeholder="Preview text shown in inbox"
         />
+        {emailCopyError && (
+          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {emailCopyError}
+          </p>
+        )}
       </div>
 
       <div className="border-t pt-6">
