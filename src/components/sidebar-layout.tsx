@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { UserSettingsModal } from './user-settings-modal'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/user-avatar'
-import { Mail, Image, Link2, Settings, LogOut, Users, CreditCard, FileText, Shield } from 'lucide-react'
+import { Mail, Link2, Settings, LogOut, Users, CreditCard, FileText, Shield } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface UserProfile {
@@ -43,7 +43,6 @@ export function SidebarLayout({
       items: [
         { href: '/campaigns', label: 'Campaigns', icon: Mail },
         ...(canAccessReports ? [{ href: '/reports', label: 'Reports', icon: FileText }] : []),
-        { href: '/images', label: 'Upload images', icon: Image },
       ],
     },
     {

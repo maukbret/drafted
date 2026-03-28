@@ -30,7 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { MoreVertical, Shield, UserMinus, Loader2 } from 'lucide-react'
+import { MoreVertical, Shield, UserMinus } from 'lucide-react'
 import type { TeamMemberWithProfile } from '@/types/database'
 
 interface MemberListProps {
@@ -38,6 +38,14 @@ interface MemberListProps {
   teamId: string
   isAdmin: boolean
   currentUserId: string
+}
+
+function formatJoinedAt(iso: string) {
+  return new Date(iso).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
 export function MemberList({ members, teamId, isAdmin, currentUserId }: MemberListProps) {
@@ -50,7 +58,7 @@ export function MemberList({ members, teamId, isAdmin, currentUserId }: MemberLi
   const getMemberDisplayName = (member: TeamMemberWithProfile) => {
     if (member.profiles?.full_name) return member.profiles.full_name
     if (member.email) return member.email
-    return 'Team Member'
+    return 'Team member'
   }
 
   const handleRemove = async () => {
@@ -107,10 +115,11 @@ export function MemberList({ members, teamId, isAdmin, currentUserId }: MemberLi
     <>
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead>Member</TableHead>
-            <TableHead>Joined</TableHead>
-            {isAdmin && <TableHead className="w-[50px]" />}
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[40%]">Name</TableHead>
+            <TableHead className="w-[20%]">Role</TableHead>
+            <TableHead className="w-[28%] text-muted-foreground">Joined</TableHead>
+            {isAdmin && <TableHead className="w-12 p-2 text-right" />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -125,48 +134,58 @@ export function MemberList({ members, teamId, isAdmin, currentUserId }: MemberLi
                     <UserAvatar
                       name={getMemberDisplayName(member)}
                       imageUrl={member.profiles?.avatar_url}
-                      className="h-8 w-8"
+                      className="size-9"
                       fallbackClassName="text-xs"
                     />
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate text-sm font-medium leading-none">
                         {getMemberDisplayName(member)}
+                        {isCurrentUser && (
+                          <span className="ml-1.5 font-normal text-muted-foreground">(you)</span>
+                        )}
                       </span>
-                      {isCurrentUser && (
-                        <span className="text-xs text-muted-foreground">(you)</span>
-                      )}
-                      {member.role === 'admin' && (
-                        <Badge variant="secondary" className="h-5 text-xs">
-                          Admin
-                        </Badge>
-                      )}
                     </div>
                   </div>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {new Date(member.joined_at).toLocaleDateString('en-GB')}
+                <TableCell>
+                  {member.role === 'admin' ? (
+                    <Badge variant="secondary" className="font-normal">
+                      Admin
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="font-normal text-muted-foreground">
+                      Member
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm tabular-nums text-muted-foreground">
+                  <time dateTime={member.joined_at}>{formatJoinedAt(member.joined_at)}</time>
                 </TableCell>
                 {isAdmin && (
-                  <TableCell>
+                  <TableCell className="p-2 text-right">
                     {showActions && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreVertical className="h-4 w-4" />
+                          <Button variant="ghost" size="icon" className="size-8">
+                            <MoreVertical data-icon="inline-start" />
                             <span className="sr-only">Open menu</span>
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setConfirmTransfer(member)}>
-                            <Shield className="mr-1.5 h-4 w-4" />
-                            Make admin
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
+                          {member.role !== 'admin' && (
+                            <>
+                              <DropdownMenuItem onClick={() => setConfirmTransfer(member)}>
+                                <Shield data-icon="inline-start" />
+                                Make admin
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={() => setConfirmRemove(member)}
                           >
-                            <UserMinus className="mr-1.5 h-4 w-4" />
+                            <UserMinus data-icon="inline-start" />
                             Remove from team
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -180,7 +199,6 @@ export function MemberList({ members, teamId, isAdmin, currentUserId }: MemberLi
         </TableBody>
       </Table>
 
-      {/* Transfer admin confirmation */}
       <AlertDialog open={!!confirmTransfer} onOpenChange={(open) => !open && setConfirmTransfer(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -195,17 +213,13 @@ export function MemberList({ members, teamId, isAdmin, currentUserId }: MemberLi
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={!!transferringId}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleTransferAdmin}
-              disabled={!!transferringId}
-            >
+            <AlertDialogAction onClick={handleTransferAdmin} disabled={!!transferringId}>
               {transferringId ? 'Transferring...' : 'Transfer admin'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Remove member confirmation */}
       <AlertDialog open={!!confirmRemove} onOpenChange={(open) => !open && setConfirmRemove(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

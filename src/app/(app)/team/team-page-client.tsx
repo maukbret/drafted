@@ -66,14 +66,13 @@ export function TeamPageClient({ team, role, currentUserId }: TeamPageClientProp
   // If user has a team, show team settings
   if (team && role) {
     return (
-      <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">Team</h1>
-        <p className="text-muted-foreground text-sm">
-          Manage your team and invite members
-        </p>
-      </div>
-
+      <div className="flex w-full max-w-3xl flex-col gap-8 p-8">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
+          <p className="text-sm text-muted-foreground">
+            Your workspace, people, and invitations
+          </p>
+        </div>
         <TeamSettings team={team} role={role} currentUserId={currentUserId} />
       </div>
     )
@@ -81,28 +80,31 @@ export function TeamPageClient({ team, role, currentUserId }: TeamPageClientProp
 
   // User is not in a team, show create team option
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">Team</h1>
-        <p className="text-muted-foreground text-sm">
+    <div className="flex w-full max-w-3xl flex-col gap-8 p-8">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
+        <p className="text-sm text-muted-foreground">
           Create or join a team to collaborate with others
         </p>
       </div>
 
-      <div className="max-w-md">
-        <Card>
-          <CardHeader className="text-center pb-2">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-              <Users className="h-7 w-7 text-muted-foreground" />
+      <div className="w-full max-w-md">
+        <Card className="border-0 bg-transparent p-0 shadow-none">
+          <CardHeader className="flex flex-col gap-4 p-0 pb-6">
+            <div className="flex size-14 items-center justify-center rounded-full bg-muted">
+              <Users className="text-muted-foreground" />
             </div>
-            <CardTitle>Create a Team</CardTitle>
-            <CardDescription className="text-balance">
-              Start a team and invite others to collaborate. Team members can access shared Klaviyo connections and see each other&apos;s campaigns.
-            </CardDescription>
+            <div className="flex flex-col gap-1.5">
+              <CardTitle>Create a team</CardTitle>
+              <CardDescription className="text-balance">
+                Invite others to collaborate. Members can use shared Klaviyo connections and see
+                team campaigns.
+              </CardDescription>
+            </div>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleCreateTeam} className="space-y-6">
-              <div className="grid gap-2">
+          <CardContent className="p-0">
+            <form onSubmit={handleCreateTeam} className="flex flex-col gap-6">
+              <div className="flex flex-col gap-2">
                 <Label htmlFor="team-name">Team name</Label>
                 <Input
                   id="team-name"
@@ -120,15 +122,15 @@ export function TeamPageClient({ team, role, currentUserId }: TeamPageClientProp
               )}
 
               <Button type="submit" disabled={isCreating} className="w-full">
-                {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create Team
+                {isCreating && <Loader2 className="animate-spin" data-icon="inline-start" />}
+                Create team
               </Button>
             </form>
           </CardContent>
-          <CardFooter className="flex-col border-t pt-6">
-            <Separator className="mb-4" />
-            <p className="text-center text-sm text-muted-foreground">
-              Have an invite link? Just open the link while logged in to join a team.
+          <CardFooter className="flex flex-col gap-4 p-0 pt-6">
+            <Separator />
+            <p className="text-sm text-muted-foreground">
+              Have an invite link? Open it while logged in to join.
             </p>
           </CardFooter>
         </Card>
