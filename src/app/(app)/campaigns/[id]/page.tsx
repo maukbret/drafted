@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { userCanUseKlaviyoConnection } from '@/lib/klaviyo-connection-access'
 import { klaviyoFetch } from '@/lib/klaviyo'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
@@ -7,7 +8,6 @@ import { EditScheduledCampaignButton } from '@/components/edit-scheduled-campaig
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChevronLeft } from 'lucide-react'
-import { canAccessProductFeed } from '@/lib/feature-access'
 
 interface CampaignPageProps {
   params: Promise<{ id: string }>
@@ -26,7 +26,7 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
   // Fetch the campaign first
   const { data: campaign, error } = await supabase
     .from('campaigns')
-    .select('id, user_id, klaviyo_connection_id, klaviyo_account_id, project_id, name, subject_line, preview_text, included_audiences, excluded_audiences, klaviyo_campaign_id, klaviyo_template_id, status, scheduled_at, send_in_recipient_timezone, wizard_step, figma_url, slice_mode, utm_settings, is_hidden, product_feed_settings, created_at, updated_at')
+    .select('id, user_id, klaviyo_connection_id, klaviyo_account_id, project_id, name, subject_line, preview_text, included_audiences, excluded_audiences, klaviyo_campaign_id, klaviyo_template_id, status, scheduled_at, send_in_recipient_timezone, wizard_step, figma_url, slice_mode, utm_settings, is_hidden, created_at, updated_at')
     .eq('id', id)
     .single()
 
@@ -34,38 +34,20 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     notFound()
   }
 
-  // Verify access: owner or team admin connection
   let hasAccess = campaign.user_id === user.id
-  let teamMembership: { team_id: string } | null = null
 
-  if (!hasAccess) {
-    const { data: membership } = await supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('user_id', user.id)
+  if (!hasAccess && campaign.klaviyo_connection_id) {
+    const { data: kcRow } = await supabase
+      .from('klaviyo_connections')
+      .select('user_id')
+      .eq('id', campaign.klaviyo_connection_id)
       .single()
 
-    teamMembership = membership
-
-    if (teamMembership) {
-      const { data: adminMembers } = await supabase
-        .from('team_members')
-        .select('user_id')
-        .eq('team_id', teamMembership.team_id)
-        .eq('role', 'admin')
-
-      if (adminMembers && adminMembers.length > 0) {
-        const { data: teamConnection } = await supabase
-          .from('klaviyo_connections')
-          .select('id')
-          .eq('id', campaign.klaviyo_connection_id)
-          .in('user_id', adminMembers.map(m => m.user_id))
-          .single()
-
-        if (teamConnection) {
-          hasAccess = true
-        }
-      }
+    if (
+      kcRow &&
+      (await userCanUseKlaviyoConnection(supabase, user.id, kcRow.user_id))
+    ) {
+      hasAccess = true
     }
   }
 
@@ -278,18 +260,12 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     )
   }
 
-  // Fetch Klaviyo connections for the wizard
-  if (!teamMembership) {
-    const { data: membership } = await supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('user_id', user.id)
-      .single()
+  const { data: teamMembership } = await supabase
+    .from('team_members')
+    .select('team_id, role')
+    .eq('user_id', user.id)
+    .single()
 
-    teamMembership = membership
-  }
-
-  // Get team name for shared connection labeling
   const { data: team } = teamMembership
     ? await supabase
         .from('teams')
@@ -303,33 +279,54 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
     .select('id, account_name, store_url')
     .eq('user_id', user.id)
 
-  // Get team admin's connections (if user is in a team)
-  // Note: teamMembership is already fetched above
   let teamConnections: { id: string; account_name: string | null; store_url?: string | null; owner_name?: string }[] = []
   if (teamMembership) {
-    // Get admin members
-    const { data: adminMembers } = await supabase
-      .from('team_members')
-      .select('user_id')
-      .eq('team_id', teamMembership.team_id)
-      .eq('role', 'admin')
+    const fallbackTeamName = team?.name || 'Team'
 
-    if (adminMembers && adminMembers.length > 0) {
-      const adminUserIds = adminMembers.map(m => m.user_id).filter(id => id !== user.id)
+    if (teamMembership.role === 'admin') {
+      const { data: teammates } = await supabase
+        .from('team_members')
+        .select('user_id')
+        .eq('team_id', teamMembership.team_id)
+        .neq('user_id', user.id)
 
-      if (adminUserIds.length > 0) {
-        const { data: adminConnections } = await supabase
+      const teammateIds = teammates?.map((m) => m.user_id) || []
+      if (teammateIds.length > 0) {
+        const { data: teammateConns } = await supabase
           .from('klaviyo_connections')
           .select('id, account_name, store_url, user_id')
-          .in('user_id', adminUserIds)
+          .in('user_id', teammateIds)
 
-        const fallbackTeamName = team?.name || 'Team'
-        teamConnections = (adminConnections || []).map(conn => ({
+        teamConnections = (teammateConns || []).map((conn) => ({
           id: conn.id,
           account_name: conn.account_name,
           store_url: conn.store_url,
           owner_name: fallbackTeamName,
         }))
+      }
+    } else {
+      const { data: adminMembers } = await supabase
+        .from('team_members')
+        .select('user_id')
+        .eq('team_id', teamMembership.team_id)
+        .eq('role', 'admin')
+
+      if (adminMembers && adminMembers.length > 0) {
+        const adminUserIds = adminMembers.map((m) => m.user_id).filter((id) => id !== user.id)
+
+        if (adminUserIds.length > 0) {
+          const { data: adminConnections } = await supabase
+            .from('klaviyo_connections')
+            .select('id, account_name, store_url, user_id')
+            .in('user_id', adminUserIds)
+
+          teamConnections = (adminConnections || []).map((conn) => ({
+            id: conn.id,
+            account_name: conn.account_name,
+            store_url: conn.store_url,
+            owner_name: fallbackTeamName,
+          }))
+        }
       }
     }
   }
@@ -358,7 +355,6 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
         klaviyoConnections={klaviyoConnections || []}
         teamConnections={teamConnections}
         hasFigmaConnection={!!figmaConnection}
-        canUseProductFeed={canAccessProductFeed(user.id)}
         campaignName={campaign.name === 'Untitled Campaign' ? 'New Campaign' : campaign.name}
       />
     </div>

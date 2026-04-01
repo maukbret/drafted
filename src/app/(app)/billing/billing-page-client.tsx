@@ -213,7 +213,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
               <div>
                 <p className="font-medium">Your subscription is {subscription.status}</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Please update your subscription to continue using Drafted.
+                  Please update your subscription to continue using the software.
                 </p>
               </div>
             </div>
@@ -230,7 +230,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
               <div>
                 <p className="font-medium">No active subscription</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Subscribe to access all features of Drafted.
+                  Subscribe to access all features of Mauk.
                 </p>
               </div>
             </div>

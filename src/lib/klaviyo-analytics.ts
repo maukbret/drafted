@@ -7,7 +7,7 @@ const REPORTING_GAP_MS = 1200
 const NAME_CACHE_TTL_MS = 60 * 60 * 1000
 const ACTIVE_PROFILES_CACHE_TTL_MS = 10 * 60 * 1000
 const MAX_NAME_HYDRATIONS_PER_REPORT = 10
-const MANAGED_SEGMENT_NAME = 'Drafted Reporting Segment'
+const MANAGED_SEGMENT_NAME = 'Mauk.ai Reporting Segment'
 const MANAGED_SEGMENT_COUNT_RETRY_ATTEMPTS = 4
 const MANAGED_SEGMENT_COUNT_RETRY_DELAY_MS = 1500
 const MANAGED_SEGMENT_ID_CACHE_TTL_MS = 6 * 60 * 60 * 1000
@@ -737,7 +737,7 @@ async function ensureManagedSegmentId(
     if (!createdId) {
       throw new AnalyticsFetchError(
         'managed_segment_unavailable',
-        `Drafted could not prepare "${MANAGED_SEGMENT_NAME}" in Klaviyo. Please try reconnecting this account from Connections.`,
+        `Mauk.ai could not prepare "${MANAGED_SEGMENT_NAME}" in Klaviyo. Please try reconnecting this account from Connections.`,
         '/connections'
       )
     }
@@ -1300,7 +1300,7 @@ async function fetchActiveProfiles(
 
   throw new AnalyticsFetchError(
     'managed_segment_unavailable',
-    `Drafted could not read profile count from "${MANAGED_SEGMENT_NAME}". Please reconnect this account from Connections and try again.`,
+    `Mauk.ai could not read profile count from "${MANAGED_SEGMENT_NAME}". Please reconnect this account from Connections and try again.`,
     '/connections'
   )
 }

@@ -61,7 +61,7 @@ export function startKlaviyoOAuth(accountName: string, storeUrl: string, isShare
       response_type: 'code',
       client_id: process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID!,
       redirect_uri: process.env.NEXT_PUBLIC_KLAVIYO_REDIRECT_URI!,
-      scope: 'accounts:read profiles:read images:write templates:read templates:write lists:read segments:read segments:write campaigns:write campaigns:read flows:read metrics:read forms:read web-feeds:read',
+      scope: 'accounts:read profiles:read images:write templates:read templates:write lists:read segments:read segments:write campaigns:write campaigns:read flows:read metrics:read forms:read',
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
       state,
@@ -71,4 +71,29 @@ export function startKlaviyoOAuth(accountName: string, storeUrl: string, isShare
   })
 
   return null // no error
+}
+
+/** Re-authorize an existing integration (new tokens / scopes). Callback reads connection id from cookie and updates that row. */
+export function startKlaviyoReconnectOAuth(connectionId: string): void {
+  document.cookie = `klaviyo_reconnect_connection_id=${connectionId}; path=/; max-age=600; SameSite=Lax`
+
+  const codeVerifier = generateCodeVerifier()
+  document.cookie = `klaviyo_code_verifier=${codeVerifier}; path=/; max-age=600; SameSite=Lax`
+
+  void generateCodeChallenge(codeVerifier).then((codeChallenge) => {
+    const state = crypto.randomUUID()
+    document.cookie = `klaviyo_oauth_state=${state}; path=/; max-age=600; SameSite=Lax`
+
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID!,
+      redirect_uri: process.env.NEXT_PUBLIC_KLAVIYO_REDIRECT_URI!,
+      scope: 'accounts:read profiles:read images:write templates:read templates:write lists:read segments:read segments:write campaigns:write campaigns:read flows:read metrics:read forms:read',
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      state,
+    })
+
+    window.location.href = `https://www.klaviyo.com/oauth/authorize?${params.toString()}`
+  })
 }

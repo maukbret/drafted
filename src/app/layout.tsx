@@ -12,7 +12,7 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'Drafted - Figma to Klaviyo',
+  title: 'Mauk.ai - Figma to Klaviyo',
   description: 'Transform Figma designs into Klaviyo email drafts',
 }
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { AlertCircle } from 'lucide-react'
-import { CampaignEmailPreview, CampaignPreviewFrame, ProductFeedPreviewData } from './campaign-email-preview'
+import { CampaignEmailPreview, CampaignPreviewFrame } from './campaign-email-preview'
 import {
   Sheet,
   SheetContent,
@@ -20,7 +20,6 @@ interface CampaignPreviewSheetProps {
   footerHtml: string | null
   footerLoading: boolean
   footerError: string | null
-  productFeedPreview?: ProductFeedPreviewData | null
 }
 
 export function CampaignPreviewSheet({
@@ -33,7 +32,6 @@ export function CampaignPreviewSheet({
   footerHtml,
   footerLoading,
   footerError,
-  productFeedPreview,
 }: CampaignPreviewSheetProps) {
   const trimmedSubject = subjectLine.trim()
   const trimmedPreviewText = previewText.trim()
@@ -100,7 +98,6 @@ export function CampaignPreviewSheet({
                 <CampaignEmailPreview
                   frames={frames}
                   footerHtml={useCustomFooter && !footerLoading && !footerError ? footerHtml : null}
-                  productFeedPreview={productFeedPreview}
                   showSectionLinkTooltips
                 />
               </div>

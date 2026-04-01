@@ -879,7 +879,7 @@ export function ReportsPageClient({ connections, initialReports }: ReportsPageCl
                   Include list growth
                 </Label>
                  <p className="text-xs text-muted-foreground">
-                Drafted automatically finds or creates a Klaviyo segment named &quot;Drafted Reporting Segment&quot; and uses its profile count.
+                Mauk.ai automatically finds or creates a Klaviyo segment named &quot;Mauk.ai Reporting Segment&quot; and uses its profile count.
               </p>
               </div>
               </div>

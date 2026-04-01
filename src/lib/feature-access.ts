@@ -1,4 +1,4 @@
-export type FeatureKey = 'reports' | 'productFeed'
+export type FeatureKey = 'reports'
 
 const LEGACY_ALLOWED_USER_ID = '72e77673-28bc-4b99-9ce6-da239b50cd4c'
 
@@ -10,11 +10,6 @@ const FEATURE_CONFIG: Record<FeatureKey, {
   reports: {
     enabledEnv: 'FEATURE_REPORTS_ENABLED',
     allowedUsersEnv: 'FEATURE_REPORTS_ALLOWED_USER_IDS',
-    defaultAllowedUsers: [LEGACY_ALLOWED_USER_ID],
-  },
-  productFeed: {
-    enabledEnv: 'FEATURE_PRODUCT_FEED_ENABLED',
-    allowedUsersEnv: 'FEATURE_PRODUCT_FEED_ALLOWED_USER_IDS',
     defaultAllowedUsers: [LEGACY_ALLOWED_USER_ID],
   },
 }
@@ -62,10 +57,6 @@ export function canAccessFeature(feature: FeatureKey, userId?: string | null): b
 
 export function canAccessReports(userId?: string | null): boolean {
   return canAccessFeature('reports', userId)
-}
-
-export function canAccessProductFeed(userId?: string | null): boolean {
-  return canAccessFeature('productFeed', userId)
 }
 
 export function isAdmin(userId?: string | null): boolean {

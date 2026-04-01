@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { userCanManageKlaviyoConnectionSettings, userCanUseKlaviyoConnection } from '@/lib/klaviyo-connection-access'
 import { ensureKlaviyoAccountId } from '@/lib/klaviyo'
 import { createServiceClient } from '@/lib/supabase/service'
 import { KlaviyoAudience } from '@/types/database'
@@ -57,61 +58,6 @@ function formatPreset(row: StoredPreset) {
   }
 }
 
-async function userCanReadConnection(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  connectionOwnerId: string
-) {
-  if (connectionOwnerId === userId) {
-    return true
-  }
-
-  const { data: memberships } = await supabase
-    .from('team_members')
-    .select('team_id')
-    .eq('user_id', userId)
-
-  const teamIds = (memberships || []).map((membership) => membership.team_id)
-  if (teamIds.length === 0) {
-    return false
-  }
-
-  const { data: ownerAdminMembership } = await supabase
-    .from('team_members')
-    .select('team_id')
-    .eq('user_id', connectionOwnerId)
-    .eq('role', 'admin')
-    .in('team_id', teamIds)
-    .maybeSingle()
-
-  return !!ownerAdminMembership
-}
-
-async function userIsTeamAdminOf(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  targetUserId: string
-) {
-  // Check if userId is an admin of a team that targetUserId also belongs to
-  const { data: adminMembership } = await supabase
-    .from('team_members')
-    .select('team_id')
-    .eq('user_id', userId)
-    .eq('role', 'admin')
-
-  const adminTeamIds = (adminMembership || []).map((m) => m.team_id)
-  if (adminTeamIds.length === 0) return false
-
-  const { data: targetMembership } = await supabase
-    .from('team_members')
-    .select('team_id')
-    .eq('user_id', targetUserId)
-    .in('team_id', adminTeamIds)
-    .limit(1)
-
-  return (targetMembership || []).length > 0
-}
-
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -138,7 +84,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
-    const canRead = await userCanReadConnection(supabase, user.id, connection.user_id)
+    const canRead = await userCanUseKlaviyoConnection(supabase, user.id, connection.user_id)
     if (!canRead) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -222,8 +168,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
-    // Allow if user owns the connection or is a team admin with access
-    const canWrite = connection.user_id === user.id || await userIsTeamAdminOf(supabase, user.id, connection.user_id)
+    const canWrite = await userCanManageKlaviyoConnectionSettings(supabase, user.id, connection.user_id)
     if (!canWrite) {
       return NextResponse.json({ error: 'Not authorized to manage presets for this connection' }, { status: 403 })
     }
@@ -340,7 +285,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
-    const canWrite = connection.user_id === user.id || await userIsTeamAdminOf(supabase, user.id, connection.user_id)
+    const canWrite = await userCanManageKlaviyoConnectionSettings(supabase, user.id, connection.user_id)
     if (!canWrite) {
       return NextResponse.json({ error: 'Not authorized to manage presets for this connection' }, { status: 403 })
     }

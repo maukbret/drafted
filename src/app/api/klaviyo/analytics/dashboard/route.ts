@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { userCanUseKlaviyoConnection } from '@/lib/klaviyo-connection-access'
 import { AnalyticsFetchError, discoverMetricIds, fetchAccountOverview, fetchPeriodData } from '@/lib/klaviyo-analytics'
 import { NextRequest, NextResponse } from 'next/server'
 import { SupabaseClient } from '@supabase/supabase-js'
@@ -25,45 +26,18 @@ async function verifyAnalyticsAccess(
   userId: string,
   connectionId: string
 ): Promise<{ hasAccess: boolean; scope: string | null }> {
-  const { data: ownConnection } = await supabase
+  const { data: row } = await supabase
     .from('klaviyo_connections')
-    .select('id, scope')
+    .select('scope, user_id')
     .eq('id', connectionId)
-    .eq('user_id', userId)
     .single()
 
-  if (ownConnection) {
-    return { hasAccess: true, scope: ownConnection.scope }
+  if (!row) {
+    return { hasAccess: false, scope: null }
   }
 
-  const { data: teamMembership } = await supabase
-    .from('team_members')
-    .select('team_id, role')
-    .eq('user_id', userId)
-    .single()
-
-  if (teamMembership?.role === 'admin') {
-    const { data: adminMembers } = await supabase
-      .from('team_members')
-      .select('user_id')
-      .eq('team_id', teamMembership.team_id)
-      .eq('role', 'admin')
-
-    if (adminMembers && adminMembers.length > 0) {
-      const { data: teamConnection } = await supabase
-        .from('klaviyo_connections')
-        .select('id, scope')
-        .eq('id', connectionId)
-        .in('user_id', adminMembers.map((m) => m.user_id))
-        .single()
-
-      if (teamConnection) {
-        return { hasAccess: true, scope: teamConnection.scope }
-      }
-    }
-  }
-
-  return { hasAccess: false, scope: null }
+  const allowed = await userCanUseKlaviyoConnection(supabase, userId, row.user_id)
+  return { hasAccess: allowed, scope: allowed ? row.scope : null }
 }
 
 function parseDateInput(raw: string | null): Date | null {

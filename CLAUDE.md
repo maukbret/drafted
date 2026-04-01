@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Drafted** transforms Figma email designs into Klaviyo email campaign drafts. It's a full-stack SaaS app with team collaboration, Stripe billing, and AI-powered analytics.
+**Mauk.AI** transforms Figma email designs into Klaviyo email campaign drafts. It's a full-stack SaaS app with team collaboration, Stripe billing, and AI-powered analytics.
 
 ## Commands
 
@@ -73,7 +73,7 @@ Orchestrated by `index.tsx` which manages step state and campaign data.
 `src/lib/feature-access.ts` — environment-variable-based feature gating:
 - `FEATURE_*_ENABLED=true` enables for all users
 - `FEATURE_*_ALLOWED_USER_IDS` enables for specific UUIDs (comma-separated)
-- Features: `REPORTS`, `PRODUCT_FEED`, `ANALYTICS`
+- Features: `REPORTS`, `ANALYTICS`
 
 ### Realtime
 

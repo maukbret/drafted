@@ -7,7 +7,7 @@
  * our own template, we must supply these CSS rules or the footer renders broken.
  *
  * All selectors are prefixed with .email-footer so they only apply inside the
- * footer cell and cannot interfere with our frame images or product feed.
+ * footer cell and cannot interfere with our frame images or other body content.
  */
 export const KLAVIYO_FOOTER_CSS = `
   /* Klaviyo footer resets */

@@ -12,13 +12,12 @@ async function getEditableOwnerIds(supabase: Awaited<ReturnType<typeof createCli
     .single()
 
   if (membership?.role === 'admin') {
-    const { data: adminMembers } = await supabase
+    const { data: teamMembers } = await supabase
       .from('team_members')
       .select('user_id')
       .eq('team_id', membership.team_id)
-      .eq('role', 'admin')
 
-    adminMembers?.forEach((member) => ownerIds.add(member.user_id))
+    teamMembers?.forEach((member) => ownerIds.add(member.user_id))
   }
 
   return [...ownerIds]

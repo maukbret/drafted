@@ -1,4 +1,4 @@
-# Drafted - Figma to Klaviyo
+# Mauk.ai - Figma to Klaviyo
 
 Transform Figma email designs into Klaviyo drafts.
 
@@ -55,9 +55,6 @@ FEATURE_ANALYTICS_ALLOWED_USER_IDS=your-user-uuid,another-user-uuid
 
 FEATURE_REPORTS_ENABLED=false
 FEATURE_REPORTS_ALLOWED_USER_IDS=your-user-uuid,another-user-uuid
-
-FEATURE_PRODUCT_FEED_ENABLED=false
-FEATURE_PRODUCT_FEED_ALLOWED_USER_IDS=your-user-uuid,another-user-uuid
 ```
 
 Rules:

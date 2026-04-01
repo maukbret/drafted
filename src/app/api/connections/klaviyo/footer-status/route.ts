@@ -10,72 +10,67 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's own Klaviyo connections
     const { data: ownConnections } = await supabase
       .from('klaviyo_connections')
       .select('id, account_name, klaviyo_account_id')
       .eq('user_id', user.id)
 
-    // Get user's team membership
     const { data: teamMembership } = await supabase
       .from('team_members')
       .select('team_id, role')
       .eq('user_id', user.id)
       .single()
 
-    // Get team admin connections (if user is in a team)
-    let teamAdminConnections: typeof ownConnections = []
+    let teammateConnections: {
+      id: string
+      account_name: string | null
+      klaviyo_account_id: string | null
+      user_id: string
+    }[] = []
+
+    let footerOwnerIds: string[] = [user.id]
+
     if (teamMembership) {
-      const { data: adminMembers } = await supabase
+      const { data: roster } = await supabase
         .from('team_members')
-        .select('user_id')
+        .select('user_id, role')
         .eq('team_id', teamMembership.team_id)
-        .eq('role', 'admin')
 
-      if (adminMembers && adminMembers.length > 0) {
-        const adminUserIds = adminMembers.map(m => m.user_id).filter(id => id !== user.id)
-        if (adminUserIds.length > 0) {
-          const { data: adminConns } = await supabase
+      const members = roster || []
+
+      if (teamMembership.role === 'admin') {
+        footerOwnerIds = [...new Set(members.map((m) => m.user_id))]
+        const otherIds = members.map((m) => m.user_id).filter((id) => id !== user.id)
+        if (otherIds.length > 0) {
+          const { data } = await supabase
             .from('klaviyo_connections')
-            .select('id, account_name, klaviyo_account_id')
-            .in('user_id', adminUserIds)
-
-          teamAdminConnections = adminConns || []
+            .select('id, account_name, klaviyo_account_id, user_id')
+            .in('user_id', otherIds)
+          teammateConnections = data ?? []
+        }
+      } else {
+        const adminIds = members.filter((m) => m.role === 'admin').map((m) => m.user_id)
+        footerOwnerIds = [...new Set([user.id, ...adminIds])]
+        const otherAdminIds = adminIds.filter((id) => id !== user.id)
+        if (otherAdminIds.length > 0) {
+          const { data } = await supabase
+            .from('klaviyo_connections')
+            .select('id, account_name, klaviyo_account_id, user_id')
+            .in('user_id', otherAdminIds)
+          teammateConnections = data ?? []
         }
       }
     }
 
-    // Get all footers for this user
     const { data: footers } = await supabase
       .from('klaviyo_footers')
-      .select('klaviyo_account_id')
-      .eq('user_id', user.id)
+      .select('klaviyo_account_id, user_id')
+      .in('user_id', footerOwnerIds)
 
-    // Also get team admin footers
-    let teamFooters: typeof footers = []
-    if (teamMembership) {
-      const { data: adminMembers } = await supabase
-        .from('team_members')
-        .select('user_id')
-        .eq('team_id', teamMembership.team_id)
-        .eq('role', 'admin')
+    const accountsWithFooters = new Set(
+      (footers || []).map((f) => `${f.user_id}:${f.klaviyo_account_id}`)
+    )
 
-      if (adminMembers && adminMembers.length > 0) {
-        const { data: adminFooters } = await supabase
-          .from('klaviyo_footers')
-          .select('klaviyo_account_id')
-          .in('user_id', adminMembers.map(m => m.user_id))
-
-        teamFooters = adminFooters || []
-      }
-    }
-
-    const accountsWithFooters = new Set([
-      ...(footers?.map(f => f.klaviyo_account_id) || []),
-      ...(teamFooters?.map(f => f.klaviyo_account_id) || []),
-    ])
-
-    // Find connections without footers
     const connectionsWithoutFooter: {
       id: string
       account_name: string | null
@@ -84,15 +79,22 @@ export async function GET() {
     }[] = []
 
     for (const conn of ownConnections || []) {
-      if (!conn.klaviyo_account_id || !accountsWithFooters.has(conn.klaviyo_account_id)) {
+      const key = `${user.id}:${conn.klaviyo_account_id}`
+      if (!conn.klaviyo_account_id || !accountsWithFooters.has(key)) {
         connectionsWithoutFooter.push({ ...conn, isOwn: true })
       }
     }
 
     const isTeamAdmin = teamMembership?.role === 'admin'
-    for (const conn of teamAdminConnections || []) {
-      if (!conn.klaviyo_account_id || !accountsWithFooters.has(conn.klaviyo_account_id)) {
-        connectionsWithoutFooter.push({ ...conn, isOwn: false })
+    for (const conn of teammateConnections) {
+      const key = `${conn.user_id}:${conn.klaviyo_account_id}`
+      if (!conn.klaviyo_account_id || !accountsWithFooters.has(key)) {
+        connectionsWithoutFooter.push({
+          id: conn.id,
+          account_name: conn.account_name,
+          klaviyo_account_id: conn.klaviyo_account_id,
+          isOwn: false,
+        })
       }
     }
 

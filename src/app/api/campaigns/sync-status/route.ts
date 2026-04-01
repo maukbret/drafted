@@ -135,7 +135,7 @@ async function fetchKlaviyoStatusesFromList(
   }
 
   if (pageCount >= MAX_CAMPAIGN_LIST_PAGES && !allFound()) {
-    console.warn('Klaviyo campaign list: max pages reached before all Drafted ids were found')
+    console.warn('Klaviyo campaign list: max pages reached before all Mauk.ai ids were found')
   }
 
   return byId
@@ -202,22 +202,38 @@ export async function POST(request: NextRequest) {
 
     const ownConnectionIds = ownConnections?.map(c => c.id) || []
 
-    // Get team admin's connections if user is in a team
     let teamConnectionIds: string[] = []
     if (teamMembership) {
-      const { data: adminMembers } = await supabase
-        .from('team_members')
-        .select('user_id')
-        .eq('team_id', teamMembership.team_id)
-        .eq('role', 'admin')
+      if (teamMembership.role === 'admin') {
+        const { data: teammates } = await supabase
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', teamMembership.team_id)
 
-      if (adminMembers && adminMembers.length > 0) {
-        const { data: teamConnections } = await supabase
-          .from('klaviyo_connections')
-          .select('id')
-          .in('user_id', adminMembers.map(m => m.user_id))
+        const teammateIds = teammates?.map((m) => m.user_id) || []
+        if (teammateIds.length > 0) {
+          const { data: teamConnections } = await supabase
+            .from('klaviyo_connections')
+            .select('id')
+            .in('user_id', teammateIds)
 
-        teamConnectionIds = teamConnections?.map(c => c.id) || []
+          teamConnectionIds = teamConnections?.map((c) => c.id) || []
+        }
+      } else {
+        const { data: adminMembers } = await supabase
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', teamMembership.team_id)
+          .eq('role', 'admin')
+
+        if (adminMembers && adminMembers.length > 0) {
+          const { data: teamConnections } = await supabase
+            .from('klaviyo_connections')
+            .select('id')
+            .in('user_id', adminMembers.map((m) => m.user_id))
+
+          teamConnectionIds = teamConnections?.map((c) => c.id) || []
+        }
       }
     }
 

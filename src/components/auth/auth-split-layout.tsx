@@ -20,7 +20,7 @@ function BrandMark({ className }: { className?: string }) {
       {/* Native img avoids next/image SVG hydration quirks in split layouts */}
       <img
         src="/assets/logo-black.svg"
-        alt="Drafted"
+        alt="Mauk.ai"
         width={410}
         height={96}
         className="h-8 w-auto"

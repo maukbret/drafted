@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { userCanManageKlaviyoConnectionSettings, userCanUseKlaviyoConnection } from '@/lib/klaviyo-connection-access'
 import { ensureKlaviyoAccountId } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -30,31 +31,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
-    // Allow if user owns the connection or shares a team with the owner (admin only)
-    let footerOwnerId = connection.user_id
-    if (connection.user_id !== user.id) {
-      const { data: memberships } = await supabase
-        .from('team_members')
-        .select('team_id')
-        .eq('user_id', user.id)
-
-      const teamIds = (memberships || []).map(m => m.team_id)
-      if (teamIds.length === 0) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
-
-      const { data: adminMembership } = await supabase
-        .from('team_members')
-        .select('team_id')
-        .eq('user_id', connection.user_id)
-        .eq('role', 'admin')
-        .in('team_id', teamIds)
-        .maybeSingle()
-
-      if (!adminMembership) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
+    const canRead = await userCanUseKlaviyoConnection(supabase, user.id, connection.user_id)
+    if (!canRead) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    const footerOwnerId = connection.user_id
 
     const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
     if (!klaviyoAccountId) {
@@ -97,50 +79,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get the connection to find the Klaviyo account ID
-    // First try own connection, then fall back to team admin access
-    let { data: connection } = await supabase
+    const { data: connection } = await supabase
       .from('klaviyo_connections')
       .select('klaviyo_account_id, user_id')
       .eq('id', connectionId)
-      .eq('user_id', user.id)
       .single()
 
     if (!connection) {
-      // Check if user is an admin in a team that shares this connection's owner
-      const { data: sharedConnection } = await supabase
-        .from('klaviyo_connections')
-        .select('klaviyo_account_id, user_id')
-        .eq('id', connectionId)
-        .single()
-
-      if (sharedConnection) {
-        const { data: memberships } = await supabase
-          .from('team_members')
-          .select('team_id, role')
-          .eq('user_id', user.id)
-
-        const adminTeamIds = (memberships || [])
-          .filter(m => m.role === 'admin')
-          .map(m => m.team_id)
-
-        if (adminTeamIds.length > 0) {
-          const { data: ownerInTeam } = await supabase
-            .from('team_members')
-            .select('team_id')
-            .eq('user_id', sharedConnection.user_id)
-            .in('team_id', adminTeamIds)
-            .maybeSingle()
-
-          if (ownerInTeam) {
-            connection = sharedConnection
-          }
-        }
-      }
+      return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
-    if (!connection) {
-      return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
+    const canWrite = await userCanManageKlaviyoConnectionSettings(supabase, user.id, connection.user_id)
+    if (!canWrite) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)
@@ -196,49 +147,19 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get the connection to find the Klaviyo account ID
-    // First try own connection, then fall back to team admin access
-    let { data: connection } = await supabase
+    const { data: connection } = await supabase
       .from('klaviyo_connections')
       .select('klaviyo_account_id, user_id')
       .eq('id', connectionId)
-      .eq('user_id', user.id)
       .single()
 
     if (!connection) {
-      const { data: sharedConnection } = await supabase
-        .from('klaviyo_connections')
-        .select('klaviyo_account_id, user_id')
-        .eq('id', connectionId)
-        .single()
-
-      if (sharedConnection) {
-        const { data: memberships } = await supabase
-          .from('team_members')
-          .select('team_id, role')
-          .eq('user_id', user.id)
-
-        const adminTeamIds = (memberships || [])
-          .filter(m => m.role === 'admin')
-          .map(m => m.team_id)
-
-        if (adminTeamIds.length > 0) {
-          const { data: ownerInTeam } = await supabase
-            .from('team_members')
-            .select('team_id')
-            .eq('user_id', sharedConnection.user_id)
-            .in('team_id', adminTeamIds)
-            .maybeSingle()
-
-          if (ownerInTeam) {
-            connection = sharedConnection
-          }
-        }
-      }
+      return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
 
-    if (!connection) {
-      return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
+    const canWrite = await userCanManageKlaviyoConnectionSettings(supabase, user.id, connection.user_id)
+    if (!canWrite) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const klaviyoAccountId = connection.klaviyo_account_id || await ensureKlaviyoAccountId(supabase, connectionId)

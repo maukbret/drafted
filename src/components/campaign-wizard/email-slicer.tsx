@@ -13,7 +13,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -25,7 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   EMAIL_LAYOUT_THREE_COL_CELL_WIDTH,
 } from '@/lib/email/frame-rows-html'
-import { Plus, GripHorizontal, X, Loader2, Copy, Globe, ShoppingBag, Search, CheckCircle2, XCircle } from 'lucide-react'
+import { Plus, GripHorizontal, X, Loader2, Copy, Globe } from 'lucide-react'
 
 interface Frame {
   id: string
@@ -82,24 +81,12 @@ function defaultSliceContentFields(): Pick<
   }
 }
 
-interface ProductFeedToggleProps {
-  connectionId: string
-  hasProductFeedPreset: boolean | null
-  useProductFeed: boolean
-  onUseProductFeedChange: (checked: boolean) => void
-  feedName: string
-  onFeedNameChange: (value: string) => void
-  productCount: string
-  onProductCountChange: (value: string) => void
-}
-
 interface EmailSlicerProps {
   campaignId: string
   projectId: string
   frames: Frame[]
   onComplete: (frames: Frame[]) => void
   onBack: () => void
-  productFeed?: ProductFeedToggleProps
 }
 
 const MIN_SLICE_HEIGHT = 20
@@ -108,110 +95,7 @@ function generateId() {
   return Math.random().toString(36).substring(2, 9)
 }
 
-function ProductFeedFields({ productFeed }: { productFeed: ProductFeedToggleProps }) {
-  const [verifyStatus, setVerifyStatus] = useState<'idle' | 'loading' | 'found' | 'not_found' | 'error'>('idle')
-  const [lastVerifiedName, setLastVerifiedName] = useState('')
-
-  const verifyFeed = async () => {
-    const name = productFeed.feedName.trim()
-    if (!name) return
-
-    setVerifyStatus('loading')
-    try {
-      const res = await fetch(
-        `/api/klaviyo/web-feeds?connectionId=${productFeed.connectionId}&feedName=${encodeURIComponent(name)}`
-      )
-      if (!res.ok) {
-        setVerifyStatus('error')
-        return
-      }
-      const data = await res.json()
-      setVerifyStatus(data.found ? 'found' : 'not_found')
-      setLastVerifiedName(name)
-    } catch {
-      setVerifyStatus('error')
-    }
-  }
-
-  // Reset verification when feed name changes from what was verified
-  const nameChanged = productFeed.feedName.trim() !== lastVerifiedName
-
-  return (
-    <div className="mt-3 space-y-3 pl-6">
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Feed name (as shown in Klaviyo)</Label>
-        <div className="flex gap-1.5">
-          <Input
-            placeholder="e.g. New Arrivals"
-            value={productFeed.feedName}
-            onChange={e => {
-              productFeed.onFeedNameChange(e.target.value)
-              if (verifyStatus !== 'idle' && verifyStatus !== 'loading') {
-                // Keep status visible until name actually differs from verified name
-              }
-            }}
-            className="h-8 flex-1"
-          />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0 flex-shrink-0"
-                disabled={!productFeed.feedName.trim() || verifyStatus === 'loading'}
-                onClick={verifyFeed}
-              >
-                {verifyStatus === 'loading' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : verifyStatus === 'found' && !nameChanged ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-                ) : verifyStatus === 'not_found' && !nameChanged ? (
-                  <XCircle className="h-3.5 w-3.5 text-destructive" />
-                ) : (
-                  <Search className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Check if feed exists in Klaviyo</TooltipContent>
-          </Tooltip>
-        </div>
-        {verifyStatus === 'found' && !nameChanged && (
-          <p className="text-xs text-green-600 flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" />
-            Feed found in your Klaviyo account
-          </p>
-        )}
-        {verifyStatus === 'not_found' && !nameChanged && (
-          <p className="text-xs text-destructive flex items-center gap-1">
-            <XCircle className="h-3 w-3" />
-            Feed not found. Make sure the name is spelled exactly as it appears in Klaviyo.
-          </p>
-        )}
-        {verifyStatus === 'error' && !nameChanged && (
-          <p className="text-xs text-muted-foreground">
-            Could not verify feed. You can still continue.
-          </p>
-        )}
-      </div>
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Number of products</Label>
-        <Select value={productFeed.productCount} onValueChange={productFeed.onProductCountChange}>
-          <SelectTrigger className="h-8 w-24">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Array.from({ length: 9 }, (_, i) => i + 1).map(n => (
-              <SelectItem key={n} value={String(n)}>{n}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    </div>
-  )
-}
-
-export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack, productFeed }: EmailSlicerProps) {
+export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack }: EmailSlicerProps) {
   // The full email image is the first (and only) frame in slice mode
   const fullImage = frames[0]
   const imageUrl = fullImage?.image_url || ''
@@ -1559,44 +1443,6 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack,
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               {progressMessage}
-            </div>
-          )}
-
-          {productFeed && productFeed.hasProductFeedPreset !== null && (
-            <div className={cn(
-              'border rounded-lg p-3',
-              !productFeed.hasProductFeedPreset && 'opacity-60'
-            )}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="use-product-feed"
-                      checked={productFeed.useProductFeed}
-                      onCheckedChange={(checked) => productFeed.onUseProductFeedChange(checked as boolean)}
-                      disabled={!productFeed.hasProductFeedPreset}
-                    />
-                    <label
-                      htmlFor="use-product-feed"
-                      className={cn(
-                        'flex items-center gap-1.5 text-sm font-medium',
-                        productFeed.hasProductFeedPreset ? 'cursor-pointer' : 'cursor-not-allowed'
-                      )}
-                    >
-                      <ShoppingBag className="h-4 w-4 text-muted-foreground" />
-                      Add product feed
-                    </label>
-                  </div>
-                </TooltipTrigger>
-                {!productFeed.hasProductFeedPreset && (
-                  <TooltipContent side="top">
-                    Set up a product feed style in the Connections page first
-                  </TooltipContent>
-                )}
-              </Tooltip>
-              {productFeed.useProductFeed && productFeed.hasProductFeedPreset && (
-                <ProductFeedFields productFeed={productFeed} />
-              )}
             </div>
           )}
 

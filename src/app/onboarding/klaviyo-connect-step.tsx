@@ -88,7 +88,7 @@ export function KlaviyoConnectStep({
 
     setFormError('Connection failed. Add your organization country in Klaviyo Settings and try reconnecting.')
     toast.error('Klaviyo connection failed', {
-      description: 'Drafted could not read your Klaviyo account details. Adding your organization country in Klaviyo Settings can fix this.',
+      description: 'Mauk.ai could not read your Klaviyo account details. Adding your organization country in Klaviyo Settings can fix this.',
     })
 
     const url = new URL(window.location.href)

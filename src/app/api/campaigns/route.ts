@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { userCanUseKlaviyoConnection } from '@/lib/klaviyo-connection-access'
 import { ensureKlaviyoAccountId } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -83,49 +84,18 @@ export async function POST(request: NextRequest) {
       connection = fallback
     }
 
-    // First, check if it's the user's own connection
     if (!connection) {
-      const { data: ownConnection } = await supabase
+      const { data: row } = await supabase
         .from('klaviyo_connections')
-        .select('id, klaviyo_account_id')
+        .select('id, klaviyo_account_id, user_id')
         .eq('id', resolvedConnectionId)
-        .eq('user_id', user.id)
         .single()
 
-      if (ownConnection) {
-        connection = ownConnection
-      } else {
-        // Check if user is in a team and can use admin's connection
-        const { data: membership } = await supabase
-          .from('team_members')
-          .select('team_id')
-          .eq('user_id', user.id)
-          .single()
-
-        if (membership) {
-          // Get team admins
-          const { data: adminMembers } = await supabase
-            .from('team_members')
-            .select('user_id')
-            .eq('team_id', membership.team_id)
-            .eq('role', 'admin')
-
-          if (adminMembers && adminMembers.length > 0) {
-            const adminUserIds = adminMembers.map(m => m.user_id)
-
-            // Check if the connection belongs to a team admin
-            const { data: teamConnection } = await supabase
-              .from('klaviyo_connections')
-              .select('id, klaviyo_account_id')
-              .eq('id', resolvedConnectionId)
-              .in('user_id', adminUserIds)
-              .single()
-
-            if (teamConnection) {
-              connection = teamConnection
-            }
-          }
-        }
+      if (
+        row &&
+        (await userCanUseKlaviyoConnection(supabase, user.id, row.user_id))
+      ) {
+        connection = { id: row.id, klaviyo_account_id: row.klaviyo_account_id }
       }
     }
 

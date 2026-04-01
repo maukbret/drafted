@@ -2,8 +2,8 @@ const SCOPE_SELECTOR = '.email-footer'
 
 /**
  * Prefix every CSS selector with a scope selector so that preserved
- * Klaviyo styles don't leak into the rest of the email (e.g. frames,
- * product feed). Handles both top-level rules and rules inside @media blocks.
+ * Klaviyo styles don't leak into the rest of the email (e.g. frame rows).
+ * Handles both top-level rules and rules inside @media blocks.
  *
  * Uses brace-depth counting to correctly handle @media blocks that contain
  * multiple rules with nested braces.

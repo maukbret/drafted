@@ -3,8 +3,6 @@ import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
 import { ensureKlaviyoAccountId, getValidKlaviyoToken } from '@/lib/klaviyo'
 import { normalizeFooterHtmlForExport, normalizeFooterCssForExport } from '@/lib/email/footer-normalize'
 import { buildEmailFrameRowsHtml } from '@/lib/email/frame-rows-html'
-import { generateProductFeedHtml } from '@/lib/email/product-feed-html'
-import type { ProductFeedPreset, ProductFeedSettings } from '@/lib/email/product-feed-html'
 import { NextRequest } from 'next/server'
 
 // Helper to get timezone offset as a string (e.g., "+01:00" or "-05:00")
@@ -99,7 +97,7 @@ export async function POST(
         // Get Klaviyo connection
         const { data: klaviyoConnection } = await supabase
           .from('klaviyo_connections')
-          .select('id, klaviyo_account_id, access_token, refresh_token, expires_at')
+          .select('id, user_id, klaviyo_account_id, access_token, refresh_token, expires_at')
           .eq('id', existingCampaign.klaviyo_connection_id)
           .single()
 
@@ -273,15 +271,25 @@ export async function POST(
         let footerCss = ''
 
         if (useCustomFooter && klaviyoAccountId) {
-          // First try to get user's own footer
+          const connectionOwnerId = klaviyoConnection.user_id
+
           let { data: footer } = await supabase
             .from('klaviyo_footers')
             .select('footer_html, footer_css')
-            .eq('user_id', user.id)
+            .eq('user_id', connectionOwnerId)
             .eq('klaviyo_account_id', klaviyoAccountId)
-            .single()
+            .maybeSingle()
 
-          // If no own footer, check for team admin footer
+          if (!footer && connectionOwnerId !== user.id) {
+            const { data: ownFooter } = await supabase
+              .from('klaviyo_footers')
+              .select('footer_html, footer_css')
+              .eq('user_id', user.id)
+              .eq('klaviyo_account_id', klaviyoAccountId)
+              .maybeSingle()
+            footer = ownFooter
+          }
+
           if (!footer) {
             const { data: teamMembership } = await supabase
               .from('team_members')
@@ -302,7 +310,7 @@ export async function POST(
                   .select('footer_html, footer_css')
                   .eq('klaviyo_account_id', klaviyoAccountId)
                   .in('user_id', adminMembers.map(m => m.user_id))
-                  .single()
+                  .maybeSingle()
 
                 footer = teamFooter
               }
@@ -326,55 +334,6 @@ export async function POST(
             </tr>
           </table>`
           console.log('Using simple unsubscribe tag instead of custom footer')
-        }
-
-        // Fetch product feed preset if campaign has product feed settings
-        let productFeedHtml = ''
-        const campaignProductFeedSettings = campaign.product_feed_settings as ProductFeedSettings | null
-        if (campaignProductFeedSettings?.feedName && klaviyoAccountId) {
-          // First try user's own preset
-          let { data: preset } = await supabase
-            .from('product_feed_presets')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('klaviyo_account_id', klaviyoAccountId)
-            .single()
-
-          // If no own preset, check for team admin preset
-          if (!preset) {
-            const { data: pfTeamMembership } = await supabase
-              .from('team_members')
-              .select('team_id')
-              .eq('user_id', user.id)
-              .single()
-
-            if (pfTeamMembership) {
-              const { data: pfAdminMembers } = await supabase
-                .from('team_members')
-                .select('user_id')
-                .eq('team_id', pfTeamMembership.team_id)
-                .eq('role', 'admin')
-
-              if (pfAdminMembers && pfAdminMembers.length > 0) {
-                const { data: teamPreset } = await supabase
-                  .from('product_feed_presets')
-                  .select('*')
-                  .eq('klaviyo_account_id', klaviyoAccountId)
-                  .in('user_id', pfAdminMembers.map(m => m.user_id))
-                  .single()
-
-                preset = teamPreset
-              }
-            }
-          }
-
-          if (preset) {
-            productFeedHtml = generateProductFeedHtml(
-              preset as unknown as ProductFeedPreset,
-              campaignProductFeedSettings
-            )
-            console.log('Generated product feed HTML, length:', productFeedHtml.length)
-          }
         }
 
         // Step 2: Upload images to Klaviyo (skip if already uploaded)
@@ -465,7 +424,7 @@ export async function POST(
         // Step 3: Create or update template in Klaviyo
         send({ step: 'template', status: 'in_progress', label: isUpdate ? 'Updating template' : 'Creating template' })
 
-        const html = generateEmailHtml(uploadedFrames, footerHtml, campaign.preview_text || '', productFeedHtml, footerCss)
+        const html = generateEmailHtml(uploadedFrames, footerHtml, campaign.preview_text || '', footerCss)
 
         let templateId = campaign.klaviyo_template_id
         let klaviyoCampaignId = campaign.klaviyo_campaign_id
@@ -611,7 +570,7 @@ export async function POST(
               console.error('Klaviyo campaign update error:', errorText)
               const detail = formatKlaviyoErrorMessage(errorText)
               await endExportWithError(
-                `Klaviyo could not update the linked campaign (no new campaign was created). ${detail} If you already scheduled or sent this email from Klaviyo, continue there instead of exporting again from Drafted.`,
+                `Klaviyo could not update the linked campaign (no new campaign was created). ${detail} If you already scheduled or sent this email from Klaviyo, continue there instead of exporting again from Mauk.ai.`,
               )
               return
             }
@@ -879,10 +838,8 @@ function generateEmailHtml(frames: Array<{
   image_url?: string | null
   klaviyo_image_url: string | null
   link_url: string | null
-}>, footerHtml: string = '', previewText: string = '', productFeedHtml: string = '', footerCss: string = ''): string {
+}>, footerHtml: string = '', previewText: string = '', footerCss: string = ''): string {
   const frameRows = buildEmailFrameRowsHtml(frames)
-
-  const productFeedSection = productFeedHtml || ''
 
   const normalizedFooter = normalizeFooterHtmlForExport(footerHtml)
   const normalizedCss = footerCss ? normalizeFooterCssForExport(footerCss) : ''
@@ -951,7 +908,6 @@ ${previewBlock}
         <!-- Email content table (images/sections from Figma) -->
         <table class="email-container" role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; background-color: #ffffff;">
 ${frameRows}
-${productFeedSection}
 ${footerSection}
         </table>
         <!--[if mso]>

@@ -51,18 +51,18 @@ export default async function ReportsPage() {
       .eq('id', teamMembership.team_id)
       .single()
 
-    const { data: adminMembers } = await supabase
+    const { data: teammates } = await supabase
       .from('team_members')
       .select('user_id')
       .eq('team_id', teamMembership.team_id)
-      .eq('role', 'admin')
       .neq('user_id', user.id)
 
-    if (adminMembers && adminMembers.length > 0) {
+    const teammateIds = teammates?.map((m) => m.user_id) || []
+    if (teammateIds.length > 0) {
       const { data: tc } = await supabase
         .from('klaviyo_connections')
         .select('id, account_name, store_url, scope')
-        .in('user_id', adminMembers.map((m) => m.user_id))
+        .in('user_id', teammateIds)
         .order('created_at', { ascending: false })
 
       const ownerName = team?.name || 'Team'

@@ -13,7 +13,6 @@ import {
 } from '@tanstack/react-table'
 import { FooterSetup } from './footer-setup'
 import { DefaultAudienceSetup } from './default-audience-setup'
-import { ProductFeedSetup } from './product-feed-setup'
 import { UpgradePrompt } from './upgrade-prompt'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,9 +51,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { normalizeStoreUrl, validateStoreUrl } from '@/lib/store-url'
-import { startFigmaOAuth as startFigmaOAuthShared, startKlaviyoOAuth as startKlaviyoOAuthShared } from '@/lib/oauth'
+import {
+  startFigmaOAuth as startFigmaOAuthShared,
+  startKlaviyoOAuth as startKlaviyoOAuthShared,
+  startKlaviyoReconnectOAuth as startKlaviyoReconnectOAuthShared,
+} from '@/lib/oauth'
 import { BrandIcon } from '@/components/brand-icon'
-import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, MoreVertical, Plus, Users, Settings, Share2, Search, ShoppingBag, Monitor, Smartphone } from 'lucide-react'
+import { RefreshCw, Loader2, Trash2, AlertCircle, Eye, Pencil, MoreVertical, Plus, Users, Settings, Share2, Search, Monitor, Smartphone } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,7 +73,6 @@ interface KlaviyoConnection {
   klaviyo_account_id: string | null
   hasFooter: boolean
   hasDefaultAudience: boolean
-  hasProductFeedPreset: boolean
   created_at: string
   user_id: string
   is_shared: boolean
@@ -143,7 +145,6 @@ export function ConnectionsTabs({
   const [isBulkSharing, setIsBulkSharing] = useState(false)
   const [footerSetupConnection, setFooterSetupConnection] = useState<KlaviyoConnection | null>(null)
   const [defaultAudienceConnection, setDefaultAudienceConnection] = useState<KlaviyoConnection | null>(null)
-  const [productFeedConnection, setProductFeedConnection] = useState<KlaviyoConnection | null>(null)
   const [footerPreviewConnection, setFooterPreviewConnection] = useState<KlaviyoConnection | null>(null)
   const [footerPreviewHtml, setFooterPreviewHtml] = useState<string | null>(null)
   const [footerPreviewCss, setFooterPreviewCss] = useState<string | null>(null)
@@ -189,13 +190,36 @@ export function ConnectionsTabs({
       setShowAddForm(true)
       setAddFormError('Connection failed. Add your organization country in Klaviyo Settings and try reconnecting.')
       toast.error('Klaviyo connection failed', {
-        description: 'Drafted could not read your Klaviyo account details. Adding your organization country in Klaviyo Settings can fix this.',
+        description: 'Mauk.ai could not read your Klaviyo account details. Adding your organization country in Klaviyo Settings can fix this.',
+      })
+      const url = new URL(window.location.href)
+      url.searchParams.delete('error')
+      window.history.replaceState({}, '', url.toString())
+    }
+    if (error === 'reconnect_forbidden' || error === 'reconnect_not_found') {
+      toast.error('Could not reconnect', {
+        description: error === 'reconnect_not_found'
+          ? 'That connection was not found.'
+          : 'You do not have permission to reconnect this integration.',
       })
       const url = new URL(window.location.href)
       url.searchParams.delete('error')
       window.history.replaceState({}, '', url.toString())
     }
   }, [searchParams])
+
+  useEffect(() => {
+    const success = searchParams.get('success')
+    if (success === 'klaviyo_reconnected') {
+      toast.success('Klaviyo reconnected', {
+        description: 'Tokens and permissions are up to date.',
+      })
+      const url = new URL(window.location.href)
+      url.searchParams.delete('success')
+      window.history.replaceState({}, '', url.toString())
+      router.refresh()
+    }
+  }, [searchParams, router])
 
   // Auto-trigger footer setup after successful OAuth connection
   useEffect(() => {
@@ -641,6 +665,7 @@ export function ConnectionsTabs({
       cell: ({ row }) => {
         const conn = row.original
         const canEdit = conn.isOwn || isTeamAdmin
+        const canReconnect = conn.isOwn || isTeamAdmin
         return (
           <div className="flex items-center justify-center">
             <DropdownMenu>
@@ -680,10 +705,20 @@ export function ConnectionsTabs({
                     {conn.hasDefaultAudience ? 'Manage audience presets' : 'Set audience presets'}
                   </DropdownMenuItem>
                 )}
-                {canEdit && (
-                  <DropdownMenuItem onClick={() => setProductFeedConnection(conn)}>
-                    <ShoppingBag className="h-4 w-4 mr-1.5" />
-                    {conn.hasProductFeedPreset ? 'Edit product feed style' : 'Set up product feed'}
+                {canReconnect && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      if (!conn.store_url?.trim()) {
+                        toast.error('Add a store URL first', {
+                          description: 'Open General settings for this connection and save a valid store URL, then reconnect.',
+                        })
+                        return
+                      }
+                      startKlaviyoReconnectOAuthShared(conn.id)
+                    }}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-1.5" />
+                    Reconnect Klaviyo
                   </DropdownMenuItem>
                 )}
                 {conn.isOwn && isTeamAdmin && (
@@ -1274,20 +1309,6 @@ export function ConnectionsTabs({
           }}
           onCancel={() => {
             setDefaultAudienceConnection(null)
-          }}
-        />
-      )}
-
-      {productFeedConnection && (
-        <ProductFeedSetup
-          connectionId={productFeedConnection.id}
-          hasPreset={productFeedConnection.hasProductFeedPreset}
-          onComplete={() => {
-            setProductFeedConnection(null)
-            router.refresh()
-          }}
-          onCancel={() => {
-            setProductFeedConnection(null)
           }}
         />
       )}

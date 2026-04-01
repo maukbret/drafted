@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { fetchKlaviyoAccountId } from '@/lib/klaviyo'
+import { userCanManageKlaviyoConnectionSettings } from '@/lib/klaviyo-connection-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { validateStoreUrl } from '@/lib/store-url'
@@ -82,19 +83,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
-    // Get account details from cookies (set by client before redirect)
-    const accountNameCookie = decodeCookieValue(cookieStore.get('klaviyo_account_name')?.value)
-    const accountName = accountNameCookie || 'Klaviyo Account'
-    const storeUrlCookie = decodeCookieValue(cookieStore.get('klaviyo_store_url')?.value)
-    const isSharedCookie = cookieStore.get('klaviyo_is_shared')?.value
-    const isShared = isSharedCookie === '1'
-    const storeUrlValidation = validateStoreUrl(storeUrlCookie)
+    const reconnectConnectionId = cookieStore.get('klaviyo_reconnect_connection_id')?.value
 
-    if (!storeUrlValidation.valid) {
-      return NextResponse.redirect(new URL('/connections?error=invalid_store_url', request.url))
-    }
-
-    // Check onboarding status
     const { data: profile } = await supabase
       .from('profiles')
       .select('onboarding_completed')
@@ -105,11 +95,71 @@ export async function GET(request: NextRequest) {
     const failedLookupPath = isOnboarding
       ? '/onboarding?step=klaviyo&error=klaviyo_account_lookup_failed'
       : '/connections?error=klaviyo_account_lookup_failed'
+
     const klaviyoAccountId = await fetchKlaviyoAccountId(tokens.access_token)
 
     if (!klaviyoAccountId) {
       console.error('Failed to fetch Klaviyo account ID during OAuth callback')
       return NextResponse.redirect(new URL(failedLookupPath, request.url))
+    }
+
+    if (reconnectConnectionId) {
+      const { data: existing } = await supabase
+        .from('klaviyo_connections')
+        .select('id, user_id, store_url')
+        .eq('id', reconnectConnectionId)
+        .single()
+
+      if (!existing) {
+        return NextResponse.redirect(new URL('/connections?error=reconnect_not_found', request.url))
+      }
+
+      const allowed = await userCanManageKlaviyoConnectionSettings(supabase, user.id, existing.user_id)
+      if (!allowed) {
+        return NextResponse.redirect(new URL('/connections?error=reconnect_forbidden', request.url))
+      }
+
+      const reconnectStoreValidation = validateStoreUrl(existing.store_url || '')
+      if (!reconnectStoreValidation.valid) {
+        return NextResponse.redirect(new URL('/connections?error=invalid_store_url', request.url))
+      }
+
+      const { error: updateError } = await supabase
+        .from('klaviyo_connections')
+        .update({
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+          scope: tokens.scope,
+          klaviyo_account_id: klaviyoAccountId,
+        })
+        .eq('id', reconnectConnectionId)
+
+      if (updateError) {
+        console.error('Klaviyo reconnect update error:', updateError)
+        return NextResponse.redirect(new URL('/connections?error=klaviyo_auth_failed', request.url))
+      }
+
+      const reconnectResponse = NextResponse.redirect(new URL('/connections?success=klaviyo_reconnected', request.url))
+      reconnectResponse.cookies.delete('klaviyo_code_verifier')
+      reconnectResponse.cookies.delete('klaviyo_oauth_state')
+      reconnectResponse.cookies.delete('klaviyo_reconnect_connection_id')
+      reconnectResponse.cookies.delete('klaviyo_account_name')
+      reconnectResponse.cookies.delete('klaviyo_store_url')
+      reconnectResponse.cookies.delete('klaviyo_is_shared')
+      return reconnectResponse
+    }
+
+    // Get account details from cookies (set by client before redirect)
+    const accountNameCookie = decodeCookieValue(cookieStore.get('klaviyo_account_name')?.value)
+    const accountName = accountNameCookie || 'Klaviyo Account'
+    const storeUrlCookie = decodeCookieValue(cookieStore.get('klaviyo_store_url')?.value)
+    const isSharedCookie = cookieStore.get('klaviyo_is_shared')?.value
+    const isShared = isSharedCookie === '1'
+    const storeUrlValidation = validateStoreUrl(storeUrlCookie)
+
+    if (!storeUrlValidation.valid) {
+      return NextResponse.redirect(new URL('/connections?error=invalid_store_url', request.url))
     }
 
     // Check subscription tier and connection limits

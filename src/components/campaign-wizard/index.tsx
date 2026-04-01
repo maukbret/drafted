@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { WizardProgress } from './wizard-progress'
 import { Step1Import } from './step-1-import'
@@ -32,11 +32,6 @@ interface Frame {
   display_order: number
 }
 
-interface ProductFeedSettings {
-  feedName: string
-  productCount: number
-}
-
 interface CampaignWizardProps {
   campaign: Campaign & {
     klaviyo_connections?: { account_name: string | null; store_url?: string | null } | null
@@ -47,7 +42,6 @@ interface CampaignWizardProps {
   klaviyoConnections: KlaviyoConnection[]
   teamConnections?: KlaviyoConnection[]
   hasFigmaConnection: boolean
-  canUseProductFeed: boolean
   campaignName: string
 }
 
@@ -62,7 +56,6 @@ export function CampaignWizard({
   klaviyoConnections,
   teamConnections = [],
   hasFigmaConnection,
-  canUseProductFeed,
   campaignName,
 }: CampaignWizardProps) {
   const router = useRouter()
@@ -80,31 +73,6 @@ export function CampaignWizard({
   const [conceptUpdates, setConceptUpdates] = useState<Record<string, unknown> | null>(null)
   const [exportParams, setExportParams] = useState<{ settings: ExportSettings; asDraft: boolean } | null>(null)
   const wasResumed = (initialCampaign.wizard_step || 1) >= 2
-  const [productFeedSettings, setProductFeedSettings] = useState<ProductFeedSettings | null>(
-    (initialCampaign as any).product_feed_settings || null
-  )
-  const [hasProductFeedPreset, setHasProductFeedPreset] = useState<boolean | null>(null)
-  const [useProductFeed, setUseProductFeed] = useState(!!((initialCampaign as any).product_feed_settings))
-  const [feedName, setFeedName] = useState((initialCampaign as any).product_feed_settings?.feedName || '')
-  const [productCount, setProductCount] = useState(String((initialCampaign as any).product_feed_settings?.productCount || 3))
-
-  // Fetch product feed preset status whenever connectionId changes
-  const checkProductFeedPreset = useCallback(async (connId: string) => {
-    try {
-      const response = await fetch(`/api/klaviyo/product-feed-preset?connectionId=${connId}`)
-      if (!response.ok) throw new Error('Failed to check preset')
-      const data = await response.json()
-      setHasProductFeedPreset(!!data.preset)
-    } catch {
-      setHasProductFeedPreset(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (connectionId && canUseProductFeed) {
-      checkProductFeedPreset(connectionId)
-    }
-  }, [connectionId, canUseProductFeed, checkProductFeedPreset])
 
   // Update wizard step in database when it changes (skip step 4 — export is transient)
   useEffect(() => {
@@ -140,25 +108,9 @@ export function CampaignWizard({
     setStep(2)
   }
 
-  const saveProductFeedSettings = useCallback(() => {
-    if (!canUseProductFeed) return productFeedSettings
-
-    const pfSettings = useProductFeed && feedName.trim()
-      ? { feedName: feedName.trim(), productCount: parseInt(productCount, 10) || 3 }
-      : null
-    setProductFeedSettings(pfSettings)
-    fetch(`/api/campaigns/${campaign.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ product_feed_settings: pfSettings }),
-    })
-    return pfSettings
-  }, [canUseProductFeed, productFeedSettings, useProductFeed, feedName, productCount, campaign.id])
-
   const handleStep2Complete = (updatedFrames: Frame[]) => {
     setFrames(updatedFrames)
     if (sliceMode) setSlicesFinalized(true)
-    saveProductFeedSettings()
     setStep(3)
   }
 
@@ -255,16 +207,6 @@ export function CampaignWizard({
             frames={frames}
             onComplete={handleStep2Complete}
             onBack={goBack}
-            productFeed={canUseProductFeed ? {
-              connectionId: connectionId,
-              hasProductFeedPreset: hasProductFeedPreset,
-              useProductFeed: useProductFeed,
-              onUseProductFeedChange: setUseProductFeed,
-              feedName: feedName,
-              onFeedNameChange: setFeedName,
-              productCount: productCount,
-              onProductCountChange: setProductCount,
-            } : undefined}
           />
         )}
 
@@ -291,7 +233,6 @@ export function CampaignWizard({
             initialScheduledAt={campaign.scheduled_at || null}
             initialUseRecipientTimezone={campaign.send_in_recipient_timezone || false}
             initialUtmSettings={campaign.utm_settings}
-            initialProductFeedSettings={productFeedSettings}
             isUpdate={!!(campaign.klaviyo_template_id && campaign.klaviyo_campaign_id)}
             onConceptDraftChange={setConceptUpdates}
             onComplete={handleStep3Complete}
