@@ -42,7 +42,8 @@ export async function middleware(request: NextRequest) {
                        request.nextUrl.pathname === '/onboarding' ||
                        request.nextUrl.pathname.startsWith('/onboarding/preview') ||
                        request.nextUrl.pathname.startsWith('/api/auth') ||
-                       request.nextUrl.pathname.startsWith('/invite')
+                       request.nextUrl.pathname.startsWith('/invite') ||
+                       request.nextUrl.pathname.startsWith('/legal')
 
   const isOnboardingPage = request.nextUrl.pathname === '/onboarding'
   const isBillingPage = request.nextUrl.pathname === '/billing'
