@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { profileSeedFromOAuthUser } from '@/lib/auth/profile-seed'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -46,17 +47,21 @@ export function ProfileStep({ onComplete, isPreview = false }: ProfileStepProps)
         .eq('id', user.id)
         .single()
 
-      // Pre-fill name if available from auth metadata
-      if (user.user_metadata?.full_name) {
-        setFullName(user.user_metadata.full_name)
-      } else if (profile?.full_name) {
+      const seed = profileSeedFromOAuthUser(user)
+
+      if (profile?.full_name) {
         setFullName(profile.full_name)
+      } else if (seed.full_name) {
+        setFullName(seed.full_name)
       }
 
-      // Pre-fill avatar if available
+      // Pre-fill avatar: DB first, then OAuth (metadata + identities)
       if (profile?.avatar_url) {
         setAvatarPreview(profile.avatar_url)
         setExistingAvatarUrl(profile.avatar_url)
+      } else if (seed.avatar_url) {
+        setAvatarPreview(seed.avatar_url)
+        setExistingAvatarUrl(seed.avatar_url)
       }
 
       setInitialLoading(false)

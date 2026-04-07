@@ -6,6 +6,7 @@ import { Eye, EyeOff, Loader2, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { createClient } from '@/lib/supabase/client'
+import { GoogleSignInButton } from '@/components/auth/google-sign-in-button'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -104,6 +105,17 @@ export function SignupForm({
         </p>
       </div>
       <div className="grid gap-6">
+        <GoogleSignInButton supabase={supabase} isPreview={isPreview} />
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-background px-2 text-muted-foreground">
+              Or continue with email
+            </span>
+          </div>
+        </div>
         <div className="grid gap-2">
           <Label htmlFor="signup-email">Email</Label>
           <Input

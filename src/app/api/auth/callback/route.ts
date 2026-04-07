@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { sanitizeAuthNextParam } from '@/lib/auth/auth-callback-url'
+import { profileSeedFromOAuthUser } from '@/lib/auth/profile-seed'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
@@ -11,12 +13,15 @@ export async function GET(request: Request) {
     const { error, data } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error && data.user) {
-      // Check if user has a profile and if onboarding is completed
+      const seeds = profileSeedFromOAuthUser(data.user)
+
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('onboarding_completed')
+        .select('onboarding_completed, full_name, avatar_url')
         .eq('id', data.user.id)
         .single()
+
+      const safeNext = sanitizeAuthNextParam(next)
 
       // If no profile exists, create one with onboarding_completed = false
       if (profileError || !profile) {
@@ -26,6 +31,8 @@ export async function GET(request: Request) {
           id: data.user.id,
           onboarding_completed: false,
           onboarding_step: 1,
+          ...(seeds.full_name ? { full_name: seeds.full_name } : {}),
+          ...(seeds.avatar_url ? { avatar_url: seeds.avatar_url } : {}),
         })
 
         if (insertError) {
@@ -37,10 +44,31 @@ export async function GET(request: Request) {
         return NextResponse.redirect(`${origin}/onboarding`)
       }
 
+      const patch: {
+        full_name?: string
+        avatar_url?: string
+        updated_at: string
+      } = { updated_at: new Date().toISOString() }
+      if (!profile.full_name && seeds.full_name) {
+        patch.full_name = seeds.full_name
+      }
+      if (!profile.avatar_url && seeds.avatar_url) {
+        patch.avatar_url = seeds.avatar_url
+      }
+      if (patch.full_name !== undefined || patch.avatar_url !== undefined) {
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update(patch)
+          .eq('id', data.user.id)
+        if (updateError) {
+          console.error('Failed to enrich profile from OAuth:', updateError)
+        }
+      }
+
       // Redirect to onboarding if not completed, otherwise to requested page or campaigns
       const redirectPath = !profile.onboarding_completed
         ? '/onboarding'
-        : (next ?? '/campaigns')
+        : (safeNext ?? '/campaigns')
 
       return NextResponse.redirect(`${origin}${redirectPath}`)
     }

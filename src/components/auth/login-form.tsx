@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase/client'
+import { GoogleSignInButton } from '@/components/auth/google-sign-in-button'
+import { sanitizeAuthNextParam } from '@/lib/auth/auth-callback-url'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,7 +18,8 @@ export function LoginForm({
   ...props
 }: React.ComponentPropsWithoutRef<'form'>) {
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect')
+  const redirectTo = sanitizeAuthNextParam(searchParams.get('redirect'))
+  const authError = searchParams.get('error')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -37,7 +40,7 @@ export function LoginForm({
       })
       if (signInError) throw signInError
 
-      router.push(redirectTo || '/campaigns')
+      router.push(redirectTo ?? '/campaigns')
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
@@ -58,7 +61,23 @@ export function LoginForm({
           Enter your email below to sign in
         </p>
       </div>
+      {authError === 'auth_failed' ? (
+        <p className="text-center text-sm text-destructive" role="alert">
+          Sign-in didn&apos;t complete. Please try again.
+        </p>
+      ) : null}
       <div className="grid gap-6">
+        <GoogleSignInButton supabase={supabase} nextPath={redirectTo} />
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-background px-2 text-muted-foreground">
+              Or continue with email
+            </span>
+          </div>
+        </div>
         <div className="grid gap-2">
           <Label htmlFor="login-email">Email</Label>
           <Input
