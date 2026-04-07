@@ -26,7 +26,7 @@ export function KlaviyoConnectStep({
   newConnectionId = null,
   isPreview = false,
 }: KlaviyoConnectStepProps) {
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!isPreview)
   const [isConnected, setIsConnected] = useState(false)
   const [connectionId, setConnectionId] = useState<string | null>(newConnectionId)
   const [hasFooter, setHasFooter] = useState(false)
@@ -36,12 +36,13 @@ export function KlaviyoConnectStep({
   const [footerDone, setFooterDone] = useState(false)
   const supabase = createClient()
   const searchParams = useSearchParams()
+  const oauthError = searchParams.get('error') === 'klaviyo_account_lookup_failed'
+    ? 'Connection failed. Add your organization country in Klaviyo Settings and try reconnecting.'
+    : null
+  const displayFormError = formError ?? oauthError
 
   useEffect(() => {
-    if (isPreview) {
-      setLoading(false)
-      return
-    }
+    if (isPreview) return
 
     const checkConnection = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -83,10 +84,8 @@ export function KlaviyoConnectStep({
   }, [supabase, initialSuccess, newConnectionId, isPreview])
 
   useEffect(() => {
-    const error = searchParams.get('error')
-    if (error !== 'klaviyo_account_lookup_failed') return
+    if (!oauthError) return
 
-    setFormError('Connection failed. Add your organization country in Klaviyo Settings and try reconnecting.')
     toast.error('Klaviyo connection failed', {
       description: 'Mauk.ai could not read your Klaviyo account details. Adding your organization country in Klaviyo Settings can fix this.',
     })
@@ -94,7 +93,7 @@ export function KlaviyoConnectStep({
     const url = new URL(window.location.href)
     url.searchParams.delete('error')
     window.history.replaceState({}, '', url.toString())
-  }, [searchParams])
+  }, [oauthError])
 
   const handleConnect = () => {
     if (isPreview) {
@@ -238,8 +237,8 @@ export function KlaviyoConnectStep({
           </div>
         </div>
 
-        {formError && (
-          <p className="text-sm text-destructive">{formError}</p>
+        {displayFormError && (
+          <p className="text-sm text-destructive">{displayFormError}</p>
         )}
       </div>
 

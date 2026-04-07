@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createAppUrl } from '@/lib/app-url'
 import { createRouteHandlerClient } from '@/lib/supabase/route'
 import { stripe } from '@/lib/stripe'
 
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
     // Create portal session
     const session = await stripe.billingPortal.sessions.create({
       customer: customer.stripe_customer_id,
-      return_url: `${process.env.NEXT_PUBLIC_APP_URL}/billing`,
+      return_url: createAppUrl('/billing').toString(),
     })
 
     const response = NextResponse.json({ url: session.url })

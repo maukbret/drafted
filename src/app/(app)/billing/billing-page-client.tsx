@@ -74,7 +74,6 @@ const TIER_CONFIGS: Record<SubscriptionTier, TierConfig> = {
 const TIER_ORDER: SubscriptionTier[] = ['starter', 'advanced', 'pro']
 
 type StripeTierPrice = {
-  priceId: string
   unitAmount: number
   currency: string
   productId: string
@@ -134,7 +133,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
     }
   }
 
-  const startSubscription = async (tier: SubscriptionTier = 'starter', priceId?: string) => {
+  const startSubscription = async (tier: SubscriptionTier = 'starter') => {
     setLoading(true)
     setError(null)
 
@@ -144,7 +143,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ tier, priceId }),
+        body: JSON.stringify({ tier }),
       })
 
       const data = await response.json()
@@ -374,7 +373,7 @@ export function BillingPageClient({ subscription, klaviyoConnectionCount }: Bill
                   <div className="mt-2">
                     {!hasActiveSubscription && (
                       <Button
-                        onClick={() => startSubscription(tierKey, tierPrice?.priceId)}
+                        onClick={() => startSubscription(tierKey)}
                         disabled={loading}
                         className="w-full"
                         variant={tierKey === 'advanced' ? 'default' : 'outline'}

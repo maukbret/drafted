@@ -6,15 +6,6 @@ export async function GET(request: NextRequest) {
   try {
     const { supabase, applyCookies } = createRouteHandlerClient(request)
     const { data: { user } } = await supabase.auth.getUser()
-    const { data: sessionData } = await supabase.auth.getSession()
-    const hasAccessToken = !!sessionData.session?.access_token
-    console.log('Team auth check (GET):', {
-      hasUser: !!user,
-      hasAccessToken,
-      userId: user?.id || null,
-      sessionUserId: sessionData.session?.user?.id || null,
-      cookieCount: request.cookies.getAll().length
-    })
 
     if (!user) {
       return applyCookies(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
@@ -87,7 +78,6 @@ export async function GET(request: NextRequest) {
 
 // POST - Create a new team
 export async function POST(request: NextRequest) {
-  console.log('Create team route hit (pre-body)')
   try {
     const { name } = await request.json()
 
@@ -97,15 +87,6 @@ export async function POST(request: NextRequest) {
 
     const { supabase, applyCookies } = createRouteHandlerClient(request)
     const { data: { user } } = await supabase.auth.getUser()
-    const { data: postSessionData } = await supabase.auth.getSession()
-    const postHasAccessToken = !!postSessionData.session?.access_token
-    console.log('Create team auth check (POST):', {
-      hasUser: !!user,
-      hasAccessToken: postHasAccessToken,
-      userId: user?.id || null,
-      sessionUserId: postSessionData.session?.user?.id || null,
-      cookieCount: request.cookies.getAll().length
-    })
 
     if (!user) {
       return applyCookies(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))

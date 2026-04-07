@@ -1,16 +1,12 @@
 export type FeatureKey = 'reports'
 
-const LEGACY_ALLOWED_USER_ID = '72e77673-28bc-4b99-9ce6-da239b50cd4c'
-
 const FEATURE_CONFIG: Record<FeatureKey, {
   enabledEnv: string
   allowedUsersEnv: string
-  defaultAllowedUsers: string[]
 }> = {
   reports: {
     enabledEnv: 'FEATURE_REPORTS_ENABLED',
     allowedUsersEnv: 'FEATURE_REPORTS_ALLOWED_USER_IDS',
-    defaultAllowedUsers: [LEGACY_ALLOWED_USER_ID],
   },
 }
 
@@ -42,11 +38,11 @@ function isFeatureGloballyEnabled(feature: FeatureKey): boolean {
 
 function getFeatureAllowlist(feature: FeatureKey): Set<string> {
   const config = FEATURE_CONFIG[feature]
-  const rawAllowlist = process.env[config.allowedUsersEnv]
-  if (rawAllowlist !== undefined) {
-    return parseUserIdList(rawAllowlist)
-  }
-  return new Set(config.defaultAllowedUsers)
+  return parseUserIdList(process.env[config.allowedUsersEnv])
+}
+
+function getAdminAllowlist(): Set<string> {
+  return parseUserIdList(process.env.ADMIN_USER_IDS)
 }
 
 export function canAccessFeature(feature: FeatureKey, userId?: string | null): boolean {
@@ -60,5 +56,6 @@ export function canAccessReports(userId?: string | null): boolean {
 }
 
 export function isAdmin(userId?: string | null): boolean {
-  return userId === LEGACY_ALLOWED_USER_ID
+  if (!userId) return false
+  return getAdminAllowlist().has(userId)
 }

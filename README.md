@@ -23,6 +23,8 @@ You'll need:
 - **Klaviyo**: Client ID and secret from https://www.klaviyo.com/manage-apps
 - **Figma**: Personal access token from https://www.figma.com/developers/api#access-tokens
 - **Anthropic**: `ANTHROPIC_API_KEY` from https://console.anthropic.com/ (optional override: `ANTHROPIC_MODEL`, default is `claude-sonnet-4-20250514`)
+- **App URL**: `APP_URL` for server-generated redirects and invite links in production (for example `https://app.mauk.ai`)
+- **Admin access**: `ADMIN_USER_IDS` as a comma-separated list of Supabase user UUIDs who may access admin endpoints
 
 ### 3. Set up the database
 
@@ -61,7 +63,7 @@ Rules:
 - If `FEATURE_*_ENABLED=true`, that feature is visible to all users.
 - If `FEATURE_*_ENABLED=false` (or unset), only users in `FEATURE_*_ALLOWED_USER_IDS` can see it.
 - `FEATURE_*_ALLOWED_USER_IDS` is a comma-separated list of Supabase `auth.users.id` UUIDs.
-- If `FEATURE_*_ALLOWED_USER_IDS` is not set at all, it falls back to the legacy owner allowlist in code.
+- If `FEATURE_*_ALLOWED_USER_IDS` is not set, access fails closed.
 
 How to update access:
 1. Local: edit `.env.local`, then restart `npm run dev`.

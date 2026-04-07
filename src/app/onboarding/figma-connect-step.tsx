@@ -20,16 +20,13 @@ export function FigmaConnectStep({
   initialSuccess = false,
   isPreview = false,
 }: FigmaConnectStepProps) {
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!isPreview)
   const [isConnected, setIsConnected] = useState(false)
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
-    if (isPreview) {
-      setLoading(false)
-      return
-    }
+    if (isPreview) return
 
     const checkConnection = async () => {
       const { data: { user } } = await supabase.auth.getUser()

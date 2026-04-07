@@ -84,7 +84,11 @@ export function SidebarLayout({
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="px-5 pt-5 pb-2">
-            <img className="logo-img" src="/assets/logo-black.svg" width="116px" alt="logo" />
+            <img
+              className="logo-img w-[104px] text-left"
+              src="/assets/logo-black.svg"
+              alt="logo"
+            />
           </div>
 
           {/* Navigation */}

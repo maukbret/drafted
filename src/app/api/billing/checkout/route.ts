@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createAppUrl } from '@/lib/app-url'
 import { createRouteHandlerClient } from '@/lib/supabase/route'
-import { stripe, TIER_CONFIGS, SubscriptionTier } from '@/lib/stripe'
+import { getTierFromPriceId, stripe, TIER_CONFIGS, SubscriptionTier } from '@/lib/stripe'
 import type Stripe from 'stripe'
 
 export async function POST(request: NextRequest) {
@@ -37,7 +38,8 @@ export async function POST(request: NextRequest) {
       }
 
       let tierFromStripe: SubscriptionTier | null =
-        (price.metadata?.tier || null) as SubscriptionTier | null
+        getTierFromPriceId(requestedPriceId)
+        || (price.metadata?.tier || null) as SubscriptionTier | null
 
       if (!tierFromStripe && price.product) {
         try {
@@ -54,6 +56,14 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Tier mismatch' }, { status: 400 })
         }
         tier = tierFromStripe
+      }
+
+      const allowedPriceIds = new Set(
+        Object.values(TIER_CONFIGS).map((config) => config.priceId)
+      )
+
+      if (!allowedPriceIds.has(requestedPriceId)) {
+        return NextResponse.json({ error: 'Invalid price' }, { status: 400 })
       }
 
       priceIdToUse = requestedPriceId
@@ -106,11 +116,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Checkout session (no trial, immediate payment)
-    const origin =
-      request.headers.get('origin') ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      'http://localhost:3000'
-
     // Check if user is still onboarding to determine success redirect
     const { data: profile } = await supabase
       .from('profiles')
@@ -119,8 +124,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     const successUrl = profile?.onboarding_completed
-      ? `${origin}/campaigns?checkout=success`
-      : `${origin}/onboarding?step=figma&checkout=success`
+      ? createAppUrl('/campaigns?checkout=success').toString()
+      : createAppUrl('/onboarding?step=figma&checkout=success').toString()
 
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
@@ -140,7 +145,7 @@ export async function POST(request: NextRequest) {
         },
       },
       success_url: successUrl,
-      cancel_url: `${origin}/onboarding?step=plan&checkout=cancelled`,
+      cancel_url: createAppUrl('/onboarding?step=plan&checkout=cancelled').toString(),
       metadata: {
         supabase_user_id: user.id,
         tier: tier,

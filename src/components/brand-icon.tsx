@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { getGoogleFaviconUrl, getStoreDomain } from '@/lib/store-url'
 
 interface BrandIconProps {
@@ -17,12 +17,8 @@ function getInitial(value: string | null | undefined) {
 export function BrandIcon({ accountName, storeUrl, className = 'h-5 w-5' }: BrandIconProps) {
   const domain = getStoreDomain(storeUrl)
   const initial = getInitial(accountName)
-  const [imageFailed, setImageFailed] = useState(false)
-  const hasFavicon = !!domain && !imageFailed
-
-  useEffect(() => {
-    setImageFailed(false)
-  }, [domain])
+  const [failedDomain, setFailedDomain] = useState<string | null>(null)
+  const hasFavicon = !!domain && failedDomain !== domain
 
   return (
     <div
@@ -36,7 +32,7 @@ export function BrandIcon({ accountName, storeUrl, className = 'h-5 w-5' }: Bran
           className="h-full w-full"
           loading="lazy"
           referrerPolicy="no-referrer"
-          onError={() => setImageFailed(true)}
+          onError={() => setFailedDomain(domain)}
         />
       ) : (
         <span>{initial}</span>

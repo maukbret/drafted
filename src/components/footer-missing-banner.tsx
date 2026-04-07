@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -21,26 +21,35 @@ export function FooterMissingBanner({ userId }: { userId: string }) {
   const [footerSetupConnectionId, setFooterSetupConnectionId] = useState<string | null>(null)
   const router = useRouter()
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const response = await fetch('/api/connections/klaviyo/footer-status')
-      if (response.ok) {
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchStatus = async () => {
+      try {
+        const response = await fetch('/api/connections/klaviyo/footer-status')
+        if (!response.ok || !isMounted) return
+
         const data = await response.json()
+        if (!isMounted) return
+
         setConnections(data.connectionsWithoutFooter || [])
         setIsTeamAdmin(data.isTeamAdmin || false)
+      } catch (err) {
+        console.error('Failed to fetch footer status:', err)
       }
-    } catch (err) {
-      console.error('Failed to fetch footer status:', err)
+    }
+
+    void fetchStatus()
+
+    const handleFooterSetup = () => {
+      void fetchStatus()
+    }
+    window.addEventListener('footer-setup-complete', handleFooterSetup)
+    return () => {
+      isMounted = false
+      window.removeEventListener('footer-setup-complete', handleFooterSetup)
     }
   }, [])
-
-  useEffect(() => {
-    fetchStatus()
-
-    const handleFooterSetup = () => fetchStatus()
-    window.addEventListener('footer-setup-complete', handleFooterSetup)
-    return () => window.removeEventListener('footer-setup-complete', handleFooterSetup)
-  }, [fetchStatus])
 
   const handleDismiss = (id: string) => {
     setDismissedIds(prev => new Set(prev).add(id))
@@ -109,7 +118,6 @@ export function FooterMissingBanner({ userId }: { userId: string }) {
           hasFooter={false}
           onComplete={() => {
             setFooterSetupConnectionId(null)
-            fetchStatus()
             router.refresh()
           }}
           onCancel={() => setFooterSetupConnectionId(null)}

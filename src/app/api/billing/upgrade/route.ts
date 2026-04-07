@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createAppUrl } from '@/lib/app-url'
 import { createRouteHandlerClient } from '@/lib/supabase/route'
 import { stripe, TIER_CONFIGS, SubscriptionTier } from '@/lib/stripe'
 
@@ -69,8 +70,8 @@ export async function POST(request: NextRequest) {
           tier: targetTier,
         },
       },
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/billing?upgrade=success`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/billing?upgrade=cancelled`,
+      success_url: createAppUrl('/billing?upgrade=success').toString(),
+      cancel_url: createAppUrl('/billing?upgrade=cancelled').toString(),
       metadata: {
         supabase_user_id: user.id,
         tier: targetTier,

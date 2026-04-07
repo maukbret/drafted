@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { createAppUrl } from '@/lib/app-url'
 
 // GET - Get team invitations
 export async function GET(
@@ -101,13 +102,7 @@ export async function POST(
     }
 
     // Generate invite URL
-    const originHeader = request.headers.get('origin')
-    const host = request.headers.get('host')
-    const proto = request.headers.get('x-forwarded-proto') || 'http'
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ||
-      originHeader ||
-      (host ? `${proto}://${host}` : 'http://localhost:3000')
-    const inviteUrl = `${baseUrl}/invite/${token}`
+    const inviteUrl = createAppUrl(`/invite/${token}`).toString()
 
     return NextResponse.json({
       invitation,
