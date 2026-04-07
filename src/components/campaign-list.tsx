@@ -7,19 +7,16 @@ import type { ColumnDef } from '@tanstack/react-table'
 import {
   flexRender,
   getCoreRowModel,
-  getPaginationRowModel,
   useReactTable,
 } from '@tanstack/react-table'
 
 import { Campaign } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { UserAvatar } from '@/components/user-avatar'
 import { BrandIcon } from '@/components/brand-icon'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select,
   SelectContent,
@@ -58,7 +55,18 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { EditScheduledCampaignDialog } from '@/components/edit-scheduled-campaign-dialog'
-import { MoreVertical, Pencil, Trash2, Mail, ExternalLink, Search, EyeOff, Eye, ChevronLeft, ChevronRight, Clock } from 'lucide-react'
+import {
+  MoreVertical,
+  Pencil,
+  Trash2,
+  Mail,
+  ExternalLink,
+  Search,
+  EyeOff,
+  Eye,
+  Clock,
+  Info,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -80,7 +88,6 @@ interface CampaignListProps {
 }
 
 type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline'
-type StatusFilter = 'active' | 'scheduled' | 'sent' | 'all'
 type SortOption =
   | 'created_desc'
   | 'created_asc'
@@ -153,6 +160,23 @@ const STATUS_CONFIG = {
   string,
   { variant: BadgeVariant; className: string; dotClassName: string; label: string }
 >
+
+function klaviyoPushCountPhrase(count: number): string {
+  switch (count) {
+    case 1:
+      return 'once'
+    case 2:
+      return 'twice'
+    case 3:
+      return 'three times'
+    case 4:
+      return 'four times'
+    case 5:
+      return 'five times'
+    default:
+      return `${count} times`
+  }
+}
 
 function toTimestamp(value: unknown) {
   const date = new Date(String(value ?? ''))
@@ -300,14 +324,48 @@ function getColumns(opts: {
       enableSorting: false,
       header: () => <span>Status</span>,
       cell: ({ row }) => {
-        const status = STATUS_CONFIG[row.original.status] || STATUS_CONFIG.in_progress
+        const campaign = row.original
+        const raw = campaign.status as string
+        const status = STATUS_CONFIG[campaign.status] || STATUS_CONFIG.in_progress
+
+        const pushCount = campaign.klaviyo_push_count ?? 0
+        const hasKlaviyoArtifacts =
+          !!campaign.klaviyo_campaign_id || !!campaign.klaviyo_template_id
+        const effectivePushCount = pushCount > 0 ? pushCount : hasKlaviyoArtifacts ? 1 : 0
+        const showKlaviyoSaveHint =
+          (raw === 'in_progress' || raw === 'draft' || raw === 'concept') &&
+          effectivePushCount > 0
+
+        const tooltipBody =
+          pushCount > 0
+            ? `This campaign has already been saved to Klaviyo ${klaviyoPushCountPhrase(pushCount)}.`
+            : 'This campaign has already been saved to Klaviyo at least once.'
+
         return (
-          <Badge
-            variant={status.variant}
-            className={`font-sans text-[12px] py-0 px-[7px] shadow-none ${status.className}`}
-          >
-            {status.label}
-          </Badge>
+          <div className="flex items-center gap-1">
+            <Badge
+              variant={status.variant}
+              className={`font-sans text-[12px] py-0 px-[7px] shadow-none ${status.className}`}
+            >
+              {status.label}
+            </Badge>
+            {showKlaviyoSaveHint && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label="Klaviyo save history"
+                  >
+                    <Info className="h-3.5 w-3.5" strokeWidth={2} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-left">
+                  {tooltipBody}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         )
       },
     },
@@ -415,104 +473,70 @@ function getColumns(opts: {
   ]
 }
 
-const PAGE_SIZE = 20
+const INITIAL_VISIBLE_COUNT = 10
 
 function DataTable({
   columns,
   data,
+  emptyMessage,
 }: {
   columns: ColumnDef<CampaignWithConnection, any>[]
   data: CampaignWithConnection[]
+  emptyMessage: string
 }) {
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: {
-      pagination: { pageSize: PAGE_SIZE },
-    },
   })
 
-  const pageCount = table.getPageCount()
-
   return (
-    <>
-      <TooltipProvider>
-        <Table className="table-fixed min-w-[760px] sm:min-w-[860px] lg:min-w-[980px]">
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead
-                    key={header.id}
-                    className={cn(
-                      'bg-muted/35 first:rounded-l-md last:rounded-r-md',
-                      COLUMN_WIDTH_CLASSES[header.id] ?? ''
-                    )}
+    <TooltipProvider>
+      <Table className="table-fixed min-w-[760px] sm:min-w-[860px] lg:min-w-[980px]">
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead
+                  key={header.id}
+                  className={cn(
+                    'bg-muted/35 first:rounded-l-md last:rounded-r-md',
+                    COLUMN_WIDTH_CLASSES[header.id] ?? ''
+                  )}
+                >
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(header.column.columnDef.header, header.getContext())}
+                </TableHead>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+
+        <TableBody>
+          {table.getRowModel().rows?.length ? (
+            table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id} className={cn("h-[56px]", row.original.is_hidden && "opacity-50")}>
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell
+                    key={cell.id}
+                    className={cn(COLUMN_WIDTH_CLASSES[cell.column.id] ?? '')}
                   >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
                 ))}
               </TableRow>
-            ))}
-          </TableHeader>
-
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} className={cn("h-[56px]", row.original.is_hidden && "opacity-50")}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      className={cn(COLUMN_WIDTH_CLASSES[cell.column.id] ?? '')}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
-                  No results.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TooltipProvider>
-
-      {pageCount > 1 && (
-        <div className="flex items-center justify-between pt-2 pl-2 pr-2 pb-1">
-          <p className="text-sm text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} of {pageCount}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-    </>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                {emptyMessage}
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+    </TooltipProvider>
   )
 }
 
@@ -524,10 +548,14 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
   const [deleteFromKlaviyo, setDeleteFromKlaviyo] = React.useState(true)
   const [isUnscheduling, setIsUnscheduling] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('active')
   const [sortOption, setSortOption] = React.useState<SortOption>('created_desc')
   const [showHidden, setShowHidden] = React.useState(false)
+  const [visibleCount, setVisibleCount] = React.useState(INITIAL_VISIBLE_COUNT)
   const router = useRouter()
+
+  React.useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_COUNT)
+  }, [searchQuery, sortOption, showHidden])
 
   const handleHide = React.useCallback(async (campaign: CampaignWithConnection) => {
     const newHidden = !campaign.is_hidden
@@ -588,9 +616,6 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
 
     const filtered = campaigns.filter((campaign) => {
       if (!showHidden && campaign.is_hidden) return false
-      if (statusFilter === 'active' && campaign.status === 'sent') return false
-      if (statusFilter === 'scheduled' && campaign.status !== 'scheduled') return false
-      if (statusFilter === 'sent' && campaign.status !== 'sent') return false
 
       if (!normalizedQuery) return true
 
@@ -626,17 +651,18 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
     }
 
     return sorted
-  }, [campaigns, searchQuery, statusFilter, sortOption, showHidden])
+  }, [campaigns, searchQuery, sortOption, showHidden])
 
-  const statusCounts = React.useMemo(() => {
-    const visible = showHidden ? campaigns : campaigns.filter((c) => !c.is_hidden)
-    return {
-      active: visible.filter((campaign) => campaign.status !== 'sent').length,
-      scheduled: visible.filter((campaign) => campaign.status === 'scheduled').length,
-      sent: visible.filter((campaign) => campaign.status === 'sent').length,
-      all: visible.length,
-    }
-  }, [campaigns, showHidden])
+  const tableRows = React.useMemo(
+    () => filteredCampaigns.slice(0, visibleCount),
+    [filteredCampaigns, visibleCount]
+  )
+
+  const emptyTableMessage = React.useMemo(() => {
+    if (filteredCampaigns.length > 0) return 'No results.'
+    if (campaigns.length === 0 && !searchQuery.trim()) return 'No campaigns yet'
+    return 'No results.'
+  }, [filteredCampaigns.length, campaigns.length, searchQuery])
 
   const handleDelete = React.useCallback(async () => {
     if (!deleteModalCampaign) return
@@ -701,85 +727,72 @@ export function CampaignList({ campaigns, currentUserId, isTeamAdmin }: Campaign
     }
   }, [unscheduleModalCampaign, router])
 
-  if (campaigns.length === 0) {
-    return (
-      <Card className="border-dashed">
-        <CardContent className="flex flex-col items-center justify-center py-12">
-          <div className="w-16 h-16 mb-4 bg-muted rounded-full flex items-center justify-center">
-            <Mail className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <h3 className="text-lg font-medium mb-2">No campaigns yet</h3>
-          <p className="text-muted-foreground mb-4">Create your first campaign to get started</p>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
     <>
       <div className="space-y-4">
-        <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-          <TabsList>
-            <TabsTrigger value="active">Active ({statusCounts.active})</TabsTrigger>
-            <TabsTrigger value="scheduled">Scheduled ({statusCounts.scheduled})</TabsTrigger>
-            <TabsTrigger value="sent">Sent ({statusCounts.sent})</TabsTrigger>
-            <TabsTrigger value="all">All ({statusCounts.all})</TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative w-full sm:max-w-md">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by campaign or account"
-                className="pl-9"
-              />
-            </div>
-
-            <div className="flex items-center gap-3">
-              {hasHiddenCampaigns && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setShowHidden((v) => !v)}
-                        className={cn("h-9 w-9", showHidden && "bg-accent")}
-                      >
-                        {showHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {showHidden ? 'Hide hidden campaigns' : 'Show hidden campaigns'}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-
-              <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
-                <SelectTrigger className="w-full sm:w-[260px]">
-                  <SelectValue placeholder="Sort" />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  <SelectItem value="created_desc">Created on (newest)</SelectItem>
-                  <SelectItem value="created_asc">Created on (oldest)</SelectItem>
-                  <SelectItem value="updated_desc">Last updated (newest)</SelectItem>
-                  <SelectItem value="updated_asc">Last updated (oldest)</SelectItem>
-                  <SelectItem value="name_asc">Campaign name (A-Z)</SelectItem>
-                  <SelectItem value="name_desc">Campaign name (Z-A)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:max-w-md">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by campaign or account"
+              className="pl-9"
+            />
           </div>
 
-          <div className="rounded-md border p-2">
-            <DataTable columns={columns} data={filteredCampaigns} />
+          <div className="flex items-center gap-3">
+            {hasHiddenCampaigns && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setShowHidden((v) => !v)}
+                      className={cn("h-9 w-9", showHidden && "bg-accent")}
+                    >
+                      {showHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {showHidden ? 'Hide hidden campaigns' : 'Show hidden campaigns'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
+              <SelectTrigger className="w-full sm:w-[260px]">
+                <SelectValue placeholder="Sort" />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectItem value="created_desc">Created on (newest)</SelectItem>
+                <SelectItem value="created_asc">Created on (oldest)</SelectItem>
+                <SelectItem value="updated_desc">Last updated (newest)</SelectItem>
+                <SelectItem value="updated_asc">Last updated (oldest)</SelectItem>
+                <SelectItem value="name_asc">Campaign name (A-Z)</SelectItem>
+                <SelectItem value="name_desc">Campaign name (Z-A)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
+
+        <div className="rounded-md border p-2">
+          <DataTable columns={columns} data={tableRows} emptyMessage={emptyTableMessage} />
+        </div>
+
+        {visibleCount < filteredCampaigns.length && (
+          <div className="flex justify-center">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setVisibleCount((n) => n + INITIAL_VISIBLE_COUNT)}
+            >
+              Show 10 more
+            </Button>
+          </div>
+        )}
       </div>
 
       <AlertDialog

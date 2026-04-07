@@ -64,6 +64,8 @@ export function Step4Export({
 }: Step4ExportProps) {
   const [steps, setSteps] = useState<ExportStep[]>(() => buildSteps(asDraft, isUpdate))
   const [error, setError] = useState<string | null>(null)
+  /** Shown when Klaviyo must host images and we refused to fall back to temporary storage links */
+  const [showKlaviyoHostingHelp, setShowKlaviyoHostingHelp] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -71,6 +73,7 @@ export function Step4Export({
     // Reset steps on re-run (strict mode remount)
     setSteps(buildSteps(asDraft, isUpdate))
     setError(null)
+    setShowKlaviyoHostingHelp(false)
 
     async function runExport() {
       try {
@@ -136,10 +139,14 @@ export function Step4Export({
       step: string
       status?: string
       message?: string
+      hint?: string
       klaviyoCampaignId?: string
     }) {
       if (data.step === 'error') {
         setError(data.message || 'An error occurred during export')
+        if (data.hint === 'klaviyo_hosting') {
+          setShowKlaviyoHostingHelp(true)
+        }
         setSteps(prev => {
           const updated = [...prev]
           const activeIdx = updated.findIndex(s => s.status === 'active')
@@ -203,7 +210,11 @@ export function Step4Export({
             {asDraft ? 'Saving to Klaviyo' : 'Exporting to Klaviyo'}
           </h2>
           <p className="text-sm text-muted-foreground text-center mb-6">
-            {error ? 'Something went wrong during export.' : 'Please wait while we set up your campaign.'}
+            {error
+              ? showKlaviyoHostingHelp
+                ? 'Export stopped so images are only served from Klaviyo—not temporary Drafted links.'
+                : 'Something went wrong during export.'
+              : 'Please wait while we set up your campaign.'}
           </p>
 
           <div className="space-y-2">
@@ -221,6 +232,40 @@ export function Step4Export({
               <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
                 <p className="text-sm text-destructive">{error}</p>
               </div>
+              {showKlaviyoHostingHelp && (
+                <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground space-y-3">
+                  <div>
+                    <p className="font-medium text-foreground">How this works</p>
+                    <p className="mt-1.5">
+                      Each section image is copied into Klaviyo before we create or update your template. If Klaviyo
+                      cannot host an image, we cancel the export instead of embedding a Drafted storage URL. That keeps
+                      images from breaking in the inbox and avoids runaway traffic on our side.
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">What you can do</p>
+                    <ul className="mt-1.5 list-disc pl-5 space-y-1.5">
+                      <li>
+                        Use <span className="text-foreground">Back to settings</span>, then run export again—many
+                        Klaviyo issues are temporary.
+                      </li>
+                      <li>
+                        Check <span className="text-foreground">Connections</span> and confirm Klaviyo is still
+                        connected (reconnect if the token expired).
+                      </li>
+                      <li>
+                        If the error mentions the footer, edit your footer in Klaviyo so no images use Drafted / Supabase{' '}
+                        <code className="text-xs bg-muted px-1 py-0.5 rounded">frame-images</code> links.
+                      </li>
+                      <li>
+                        If it keeps failing, go back to the <span className="text-foreground">Slice</span> step,
+                        re-save (you can tweak a slice and continue through the wizard), then export again so images are
+                        re-uploaded for Klaviyo to pull.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              )}
               <Button onClick={onError} variant="outline" className="w-full">
                 Back to settings
               </Button>

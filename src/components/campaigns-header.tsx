@@ -4,19 +4,13 @@ import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Plus, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 
 interface CampaignsHeaderProps {
   hasConnections: boolean
-  onCreateCampaign?: () => void
-  isCreating?: boolean
 }
 
-export function CampaignsHeader({
-  hasConnections,
-  onCreateCampaign,
-  isCreating = false,
-}: CampaignsHeaderProps) {
+export function CampaignsHeader({ hasConnections }: CampaignsHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
 
@@ -50,7 +44,7 @@ export function CampaignsHeader({
   }, [isRefreshing, router])
 
   return (
-    <div className="flex items-center justify-between mb-8">
+    <div className="flex items-center justify-between">
       <div>
         <h1 className="text-2xl font-bold">Campaigns</h1>
         <p className="text-muted-foreground text-sm mt-1">
@@ -71,22 +65,7 @@ export function CampaignsHeader({
           <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
         </Button>
 
-        {/* Primary action */}
-        {hasConnections ? (
-          <Button onClick={onCreateCampaign} disabled={isCreating}>
-            {isCreating ? (
-              <span className="inline-flex items-center gap-2">
-                <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
-                Creating
-              </span>
-            ) : (
-              <>
-                <Plus className="h-4 w-4 buttonIcon" />
-                New campaign
-              </>
-            )}
-          </Button>
-        ) : (
+        {hasConnections ? null : (
           <Button variant="outline" asChild>
             <Link href="/connections">
               Connect Klaviyo first

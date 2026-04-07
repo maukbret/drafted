@@ -28,6 +28,8 @@ interface CampaignLeaveGuardProps {
   isActive: boolean
   /** Campaign status — used to determine if auto-save should happen instead of discard prompt. */
   campaignStatus: string
+  /** True when this campaign already has a Klaviyo campaign/template (re-editing after export). */
+  hasKlaviyoExport?: boolean
   /** Optional callback to fetch unsaved step data for concept save. */
   getConceptUpdates?: () => Record<string, unknown> | null
   /** Whether the campaign was resumed from a previously saved state (wizard_step >= 2 at load). */
@@ -39,6 +41,7 @@ export function CampaignLeaveGuard({
   step,
   isActive,
   campaignStatus,
+  hasKlaviyoExport = false,
   getConceptUpdates,
   wasResumed = false,
 }: CampaignLeaveGuardProps) {
@@ -50,7 +53,12 @@ export function CampaignLeaveGuard({
   const skipPopRef = React.useRef(false)
 
   // Campaigns already pushed to Klaviyo should auto-save edits, never show discard option
-  const isExported = campaignStatus === 'klaviyo_draft' || campaignStatus === 'scheduled' || campaignStatus === 'sent' || campaignStatus === 'cancelled'
+  const isExported =
+    campaignStatus === 'klaviyo_draft' ||
+    campaignStatus === 'scheduled' ||
+    campaignStatus === 'sent' ||
+    campaignStatus === 'cancelled' ||
+    (campaignStatus === 'in_progress' && hasKlaviyoExport)
 
   const shouldAutoDelete = isActive && step === 1
   const shouldAutoSave = (isExported && step >= 2) || (wasResumed && step >= 2)

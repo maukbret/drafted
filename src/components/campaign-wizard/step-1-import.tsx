@@ -1,40 +1,41 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type MutableRefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { Loader2, Link as LinkIcon, Check, ChevronsUpDown, Zap } from 'lucide-react'
+import {
+  KlaviyoAccountCombobox,
+  type KlaviyoAccountOption,
+} from '@/components/klaviyo-account-combobox'
+import { Loader2, Link as LinkIcon, Plus, Zap } from 'lucide-react'
 import { toast } from 'sonner'
-
-interface KlaviyoConnection {
-  id: string
-  account_name: string | null
-  owner_name?: string
-}
+import {
+  consumeProcessFigmaStream,
+  ProcessFigmaStreamError,
+} from '@/lib/process-figma-stream-client'
 
 interface Step1ImportProps {
-  klaviyoConnections: KlaviyoConnection[]
-  teamConnections?: KlaviyoConnection[]
+  klaviyoConnections: KlaviyoAccountOption[]
+  teamConnections?: KlaviyoAccountOption[]
   hasFigmaConnection: boolean
   campaignId: string
   initialConnectionId?: string
   initialFigmaUrl?: string
   onComplete: (data: { connectionId: string; figmaUrl: string }) => void
+  /** Horizontal “quick start” layout (Figma + account + button in one row on wide screens). */
+  layout?: 'stacked' | 'inline'
+  /** Hide Klaviyo picker; use {@link initialConnectionId} only (e.g. replace design for an existing campaign). */
+  lockKlaviyoAccount?: boolean
+  /** Label for the locked account row (e.g. account name). */
+  lockedAccountLabel?: string
+  submitLabel?: string
+  /** When set, each submit assigns a new controller; parent may abort to cancel (e.g. dialog close). */
+  abortControllerRef?: MutableRefObject<AbortController | null>
+  onBusyChange?: (busy: boolean) => void
+  /** When true, Figma is always re-fetched (skips same-URL cached frames). */
+  forceRefresh?: boolean
 }
 
 export function Step1Import({
@@ -45,10 +46,24 @@ export function Step1Import({
   initialConnectionId,
   initialFigmaUrl,
   onComplete,
+  layout = 'stacked',
+  lockKlaviyoAccount = false,
+  lockedAccountLabel,
+  submitLabel,
+  abortControllerRef,
+  onBusyChange,
+  forceRefresh = false,
 }: Step1ImportProps) {
   const allConnections = [...klaviyoConnections, ...teamConnections]
-  const [connectionId, setConnectionId] = useState(initialConnectionId || klaviyoConnections[0]?.id || teamConnections[0]?.id || '')
-  const [connectionOpen, setConnectionOpen] = useState(false)
+  const [connectionId, setConnectionId] = useState(
+    initialConnectionId || klaviyoConnections[0]?.id || teamConnections[0]?.id || ''
+  )
+
+  useEffect(() => {
+    if (lockKlaviyoAccount && initialConnectionId) {
+      setConnectionId(initialConnectionId)
+    }
+  }, [lockKlaviyoAccount, initialConnectionId])
   const [figmaUrl, setFigmaUrl] = useState(initialFigmaUrl || '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -83,35 +98,13 @@ export function Step1Import({
     }
   }, [figmaUrl])
 
-  const showStreamErrorToast = (data: Record<string, unknown>) => {
-    const message = typeof data?.message === 'string' ? data.message : 'An error occurred'
-
-    if (data?.code === 'figma_rate_limited') {
-      const description = typeof data?.retryAt === 'string'
-        ? `Try again after ${new Date(data.retryAt).toLocaleString()}.`
-        : undefined
-      const upgradeUrl = typeof data?.upgradeUrl === 'string' ? data.upgradeUrl : ''
-
-      toast.error(message, {
-        description,
-        action: upgradeUrl
-          ? {
-              label: 'Upgrade options',
-              onClick: () => window.open(upgradeUrl, '_blank'),
-            }
-          : undefined,
-      })
-      return
-    }
-
-    toast.error(message)
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!connectionId) {
-      const message = 'Please select a Klaviyo account'
+      const message = lockKlaviyoAccount
+        ? 'This campaign has no Klaviyo account'
+        : 'Please select a Klaviyo account'
       setError(message)
       toast.error(message)
       return
@@ -125,95 +118,43 @@ export function Step1Import({
     }
 
     setLoading(true)
+    onBusyChange?.(true)
     setError(null)
     setProgress('Starting import...')
-    let streamErrorToastShown = false
 
     try {
+      let signal: AbortSignal | undefined
+      if (abortControllerRef) {
+        abortControllerRef.current = new AbortController()
+        signal = abortControllerRef.current.signal
+      }
+
       const response = await fetch(`/api/campaigns/${campaignId}/process-figma`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ figmaUrl }),
+        body: JSON.stringify({ figmaUrl, ...(forceRefresh ? { forceRefresh: true } : {}) }),
+        ...(signal ? { signal } : {}),
       })
 
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      if (!reader) {
-        throw new Error('Failed to read response')
-      }
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (!line.trim()) continue
-
-          try {
-            const data = JSON.parse(line)
-
-            if (data.type === 'progress') {
-              setProgress(data.message)
-            } else if (data.type === 'warning') {
-              if (typeof data.message === 'string') {
-                toast.warning(data.message)
-              }
-            } else if (data.type === 'error') {
-              streamErrorToastShown = true
-              showStreamErrorToast(data)
-              throw new Error(typeof data.message === 'string' ? data.message : 'An error occurred')
-            } else if (data.type === 'done') {
-              setProgress(null)
-              onComplete({ connectionId, figmaUrl })
-              return
-            }
-          } catch (e) {
-            if (e instanceof Error && e.message !== 'Unexpected end of JSON input') {
-              throw e
-            }
-          }
-        }
-      }
-
-      // Process remaining buffer
-      if (buffer.trim()) {
-        try {
-          const data = JSON.parse(buffer)
-          if (data.type === 'warning') {
-            if (typeof data.message === 'string') {
-              toast.warning(data.message)
-            }
-          } else if (data.type === 'error') {
-            streamErrorToastShown = true
-            showStreamErrorToast(data)
-            throw new Error(typeof data.message === 'string' ? data.message : 'An error occurred')
-          } else if (data.type === 'done') {
-            setProgress(null)
-            onComplete({ connectionId, figmaUrl })
-            return
-          }
-        } catch (e) {
-          if (e instanceof Error && e.message !== 'Unexpected end of JSON input') {
-            throw e
-          }
-        }
-      }
-
+      await consumeProcessFigmaStream(response, (message) => setProgress(message ?? null))
+      setProgress(null)
+      onComplete({ connectionId, figmaUrl })
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        setProgress(null)
+        return
+      }
       const message = err instanceof Error ? err.message : 'An error occurred'
       setError(message)
-      if (!streamErrorToastShown) {
+      const already =
+        err instanceof ProcessFigmaStreamError ? err.toastAlreadyShown : false
+      if (!already) {
         toast.error(message)
       }
       setProgress(null)
     } finally {
       setLoading(false)
+      onBusyChange?.(false)
     }
   }
 
@@ -251,96 +192,138 @@ export function Step1Import({
     )
   }
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-2">
-        <Label htmlFor="klaviyo-account">Klaviyo account</Label>
-        <Popover open={connectionOpen} onOpenChange={setConnectionOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              id="klaviyo-account"
-              variant="outline"
-              role="combobox"
-              aria-expanded={connectionOpen}
-              disabled={loading}
-              className="w-full justify-between font-normal"
-            >
-              {connectionId
-                ? (() => {
-                    const conn = allConnections.find((c) => c.id === connectionId)
-                    if (!conn) return 'Select a Klaviyo account'
-                    const name = conn.account_name || 'Unnamed account'
-                    return conn.owner_name ? `${name} (${conn.owner_name})` : name
-                  })()
-                : 'Select a Klaviyo account'}
-              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-            <Command>
-              <CommandInput placeholder="Search accounts..." />
-              <CommandList>
-                <CommandEmpty>No account found.</CommandEmpty>
-                {klaviyoConnections.length > 0 && (
-                  <CommandGroup heading={teamConnections.length > 0 ? "Your accounts" : undefined}>
-                    {klaviyoConnections.map((conn) => (
-                      <CommandItem
-                        key={conn.id}
-                        value={conn.account_name || 'Unnamed account'}
-                        onSelect={() => {
-                          setConnectionId(conn.id)
-                          setConnectionOpen(false)
-                        }}
-                      >
-                        <Check
-                          className={cn(
-                            "mr-2 h-4 w-4",
-                            connectionId === conn.id ? "opacity-100" : "opacity-0"
-                          )}
-                        />
-                        {conn.account_name || 'Unnamed account'}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-                {teamConnections.length > 0 && (
-                  <CommandGroup heading="Team accounts">
-                    {teamConnections.map((conn) => (
-                      <CommandItem
-                        key={conn.id}
-                        value={`${conn.account_name || 'Unnamed account'} ${conn.owner_name || ''}`}
-                        onSelect={() => {
-                          setConnectionId(conn.id)
-                          setConnectionOpen(false)
-                        }}
-                      >
-                        <Check
-                          className={cn(
-                            "mr-2 h-4 w-4",
-                            connectionId === conn.id ? "opacity-100" : "opacity-0"
-                          )}
-                        />
-                        <span>{conn.account_name || 'Unnamed account'}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          ({conn.owner_name || 'Team'})
-                        </span>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
+  const continueLabel = submitLabel ?? 'Continue'
+  const klaviyoRow = lockKlaviyoAccount ? (
+    <div className="w-full space-y-1.5 sm:w-[min(280px,100%)] sm:shrink-0">
+      <span className="block text-xs font-medium text-muted-foreground">Klaviyo account</span>
+      <p className="flex min-h-10 items-center rounded-md border border-input bg-muted/40 px-3 text-sm">
+        {lockedAccountLabel || '—'}
+      </p>
+    </div>
+  ) : (
+    <div className={cn('space-y-2', layout === 'inline' && 'w-full space-y-1.5 sm:w-[min(280px,100%)] sm:shrink-0')}>
+      {layout === 'stacked' && <Label htmlFor="klaviyo-account">Klaviyo account</Label>}
+      {layout === 'inline' && (
+        <span className="block text-xs font-medium text-muted-foreground">Klaviyo account</span>
+      )}
+      <KlaviyoAccountCombobox
+        id={layout === 'inline' ? 'wizard-import-klaviyo-account' : undefined}
+        klaviyoConnections={klaviyoConnections}
+        teamConnections={teamConnections}
+        value={connectionId}
+        onChange={setConnectionId}
+        disabled={loading}
+        triggerClassName={layout === 'inline' ? 'w-full' : undefined}
+      />
+      {layout === 'stacked' && (
         <p className="text-xs text-muted-foreground">
           Select which Klaviyo account to use for this campaign
         </p>
+      )}
+    </div>
+  )
+
+  const figmaFieldIdStacked = 'figma-url'
+  const figmaFieldIdInline = 'wizard-import-figma-url-inline'
+
+  const inlineForm = (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <label htmlFor={figmaFieldIdInline} className="text-xs font-medium text-muted-foreground">
+            Figma URL
+          </label>
+          <Input
+            id={figmaFieldIdInline}
+            type="url"
+            value={figmaUrl}
+            onChange={(e) => setFigmaUrl(e.target.value)}
+            placeholder="https://www.figma.com/design/..."
+            disabled={loading}
+            className="w-full"
+          />
+        </div>
+        {klaviyoRow}
+        <Button
+          type="submit"
+          disabled={loading || !connectionId || !figmaUrl}
+          className="w-full shrink-0 sm:w-auto sm:min-w-[160px]"
+        >
+          {loading ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Working…
+            </span>
+          ) : continueLabel === 'Create campaign' ? (
+            <span className="inline-flex items-center gap-2">
+              <Plus className="h-4 w-4 buttonIcon" />
+              {continueLabel}
+            </span>
+          ) : (
+            continueLabel
+          )}
+        </Button>
       </div>
+      {existingImport ? (
+        <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+          <Zap className="h-3.5 w-3.5" />
+          <span>Previously imported — this will be quick</span>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Include a node-id in the URL. Import runs while this dialog stays open until you reach the
+          slice step.
+        </p>
+      )}
+
+      {error && (
+        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+          <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
+
+      {progress && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+          {progress}
+        </div>
+      )}
+    </form>
+  )
+
+  if (layout === 'inline') {
+    return inlineForm
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {lockKlaviyoAccount ? (
+        <div className="space-y-2">
+          <Label>Klaviyo account</Label>
+          <p className="flex min-h-10 items-center rounded-md border border-input bg-muted/40 px-3 text-sm">
+            {lockedAccountLabel || '—'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <Label htmlFor="klaviyo-account">Klaviyo account</Label>
+          <KlaviyoAccountCombobox
+            klaviyoConnections={klaviyoConnections}
+            teamConnections={teamConnections}
+            value={connectionId}
+            onChange={setConnectionId}
+            disabled={loading}
+          />
+          <p className="text-xs text-muted-foreground">
+            Select which Klaviyo account to use for this campaign
+          </p>
+        </div>
+      )}
 
       <div className="space-y-2">
-        <Label htmlFor="figma-url">Figma URL</Label>
+        <Label htmlFor={figmaFieldIdStacked}>Figma URL</Label>
         <Input
-          id="figma-url"
+          id={figmaFieldIdStacked}
           type="url"
           value={figmaUrl}
           onChange={(e) => setFigmaUrl(e.target.value)}
@@ -374,7 +357,7 @@ export function Step1Import({
 
       <div className="flex justify-end">
         <Button type="submit" disabled={loading || !connectionId || !figmaUrl}>
-          {loading ? 'Processing...' : 'Continue'}
+          {loading ? 'Processing...' : continueLabel}
         </Button>
       </div>
     </form>

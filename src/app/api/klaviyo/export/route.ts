@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
 import { ensureKlaviyoAccountId, getValidKlaviyoToken } from '@/lib/klaviyo'
+import { formatKlaviyoImageApiErrorBody, importProjectFramesToKlaviyo } from '@/lib/klaviyo-import-frame-images'
 import { generateCampaignEmailHtml } from '@/lib/email/campaign-email-html'
+import { emailHtmlContainsSupabaseFrameImageUrls } from '@/lib/frame-url'
 import { normalizeFooterHtmlForExport, normalizeFooterCssForExport } from '@/lib/email/footer-normalize'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -85,90 +86,30 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 1: Upload images to Klaviyo and get hosted URLs
-    const uploadedFrames = []
-    for (const frame of frames) {
-      const sourceImageUrl = normalizeImageUrl(frame.image_url)
-      const existingKlaviyoImageUrl = normalizeImageUrl(frame.klaviyo_image_url)
-      const fallbackImageUrl = existingKlaviyoImageUrl || sourceImageUrl
-      if (!fallbackImageUrl) continue
-      if (existingKlaviyoImageUrl) {
-        const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
-        if (deletedSourceImage) {
-          await supabase
-            .from('frames')
-            .update({ image_url: null })
-            .eq('id', frame.id)
-        }
-
-        uploadedFrames.push({
-          ...frame,
-          image_url: deletedSourceImage ? null : frame.image_url,
-          klaviyo_image_url: existingKlaviyoImageUrl,
-        })
-        continue
-      }
-
-      try {
-        const imageResponse = await fetch('https://a.klaviyo.com/api/images', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${klaviyoToken}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'revision': '2026-01-15',
-          },
-          body: JSON.stringify({
-            data: {
-              type: 'image',
-              attributes: {
-                name: frame.name,
-                import_from_url: sourceImageUrl,
-                hidden: false,
-              },
-            },
-          }),
-        })
-
-        if (!imageResponse.ok) {
-          const errorText = await imageResponse.text()
-          console.error('Klaviyo image upload error:', errorText)
-          // Continue with original URL if upload fails
-          uploadedFrames.push({
-            ...frame,
-            klaviyo_image_url: fallbackImageUrl,
-          })
-        } else {
-          const imageData = await imageResponse.json()
-          const klaviyoImageUrl = normalizeImageUrl(imageData.data?.attributes?.image_url) || fallbackImageUrl
-          const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
-          
-          uploadedFrames.push({
-            ...frame,
-            image_url: deletedSourceImage ? null : frame.image_url,
-            klaviyo_image_url: klaviyoImageUrl,
-          })
-
-          // Update frame in database with Klaviyo URL
-          await supabase
-            .from('frames')
-            .update({
-              image_url: deletedSourceImage ? null : frame.image_url,
-              klaviyo_image_url: klaviyoImageUrl,
-            })
-            .eq('id', frame.id)
-        }
-      } catch (err) {
-        console.error('Image upload error:', err)
-        uploadedFrames.push({
-          ...frame,
-          klaviyo_image_url: fallbackImageUrl,
-        })
-      }
+    // Step 1: Import images into Klaviyo (required — no Supabase URLs in exported template HTML)
+    const importResult = await importProjectFramesToKlaviyo(
+      supabase,
+      frames,
+      klaviyoToken,
+      formatKlaviyoImageApiErrorBody
+    )
+    if (!importResult.ok) {
+      return NextResponse.json({ error: importResult.message }, { status: 502 })
     }
+    const uploadedFrames = importResult.frames
 
     // Step 2: Generate HTML email with footer
     const html = generateCampaignEmailHtml(uploadedFrames, footerHtml, '', footerCss)
+
+    if (emailHtmlContainsSupabaseFrameImageUrls(html)) {
+      return NextResponse.json(
+        {
+          error:
+            'Email HTML still references Drafted storage for at least one image (body or footer). Every image must be hosted by Klaviyo. Fix the footer if it embeds storage links, or re-save slices and export again. We do not fall back to storage URLs, so inboxes and scaling stay safe.',
+        },
+        { status: 422 }
+      )
+    }
 
     // Step 3: Create template in Klaviyo
     const templateName = project.name || `Figma Import - ${new Date().toLocaleDateString('en-GB')}`
@@ -215,11 +156,4 @@ export async function POST(request: NextRequest) {
     console.error('Klaviyo export error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-}
-
-function normalizeImageUrl(url: string | null | undefined): string | null {
-  if (typeof url !== 'string') return null
-  const normalized = url.trim()
-  if (!normalized || normalized === 'null' || normalized === 'undefined') return null
-  return normalized
 }

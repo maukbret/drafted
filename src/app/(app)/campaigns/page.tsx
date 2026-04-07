@@ -15,30 +15,47 @@ export default async function CampaignsPage() {
     .eq('user_id', user.id)
     .single()
 
-  // Get user's own Klaviyo connections
-  const { data: ownConnections } = await supabase
+  const { data: team } = teamMembership
+    ? await supabase
+        .from('teams')
+        .select('name')
+        .eq('id', teamMembership.team_id)
+        .single()
+    : { data: null }
+
+  const { data: klaviyoConnections } = await supabase
     .from('klaviyo_connections')
-    .select('id')
+    .select('id, account_name, store_url')
     .eq('user_id', user.id)
 
-  const ownConnectionIds = ownConnections?.map(c => c.id) || []
+  const ownConnectionIds = klaviyoConnections?.map((c) => c.id) || []
 
+  let teamConnections: { id: string; account_name: string | null; store_url?: string | null; owner_name?: string }[] = []
   let teamConnectionIds: string[] = []
   if (teamMembership) {
+    const fallbackTeamName = team?.name || 'Team'
+
     if (teamMembership.role === 'admin') {
       const { data: teammates } = await supabase
         .from('team_members')
         .select('user_id')
         .eq('team_id', teamMembership.team_id)
+        .neq('user_id', user.id)
 
       const teammateIds = teammates?.map((m) => m.user_id) || []
       if (teammateIds.length > 0) {
-        const { data: teamConnections } = await supabase
+        const { data: teammateConns } = await supabase
           .from('klaviyo_connections')
-          .select('id')
+          .select('id, account_name, store_url, user_id')
           .in('user_id', teammateIds)
 
-        teamConnectionIds = teamConnections?.map((c) => c.id) || []
+        teamConnections = (teammateConns || []).map((conn) => ({
+          id: conn.id,
+          account_name: conn.account_name,
+          store_url: conn.store_url,
+          owner_name: fallbackTeamName,
+        }))
+        teamConnectionIds = teamConnections.map((c) => c.id)
       }
     } else {
       const { data: adminMembers } = await supabase
@@ -48,12 +65,22 @@ export default async function CampaignsPage() {
         .eq('role', 'admin')
 
       if (adminMembers && adminMembers.length > 0) {
-        const { data: teamConnections } = await supabase
-          .from('klaviyo_connections')
-          .select('id')
-          .in('user_id', adminMembers.map((m) => m.user_id))
+        const adminUserIds = adminMembers.map((m) => m.user_id).filter((id) => id !== user.id)
 
-        teamConnectionIds = teamConnections?.map((c) => c.id) || []
+        if (adminUserIds.length > 0) {
+          const { data: adminConnections } = await supabase
+            .from('klaviyo_connections')
+            .select('id, account_name, store_url, user_id')
+            .in('user_id', adminUserIds)
+
+          teamConnections = (adminConnections || []).map((conn) => ({
+            id: conn.id,
+            account_name: conn.account_name,
+            store_url: conn.store_url,
+            owner_name: fallbackTeamName,
+          }))
+          teamConnectionIds = teamConnections.map((c) => c.id)
+        }
       }
     }
   }
@@ -107,6 +134,14 @@ export default async function CampaignsPage() {
 
   const isTeamAdmin = teamMembership?.role === 'admin'
 
+  const { data: figmaConnection } = await supabase
+    .from('figma_connections')
+    .select('id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  const hasFigmaConnection = !!figmaConnection
+
   return (
     <div className="p-8">
       <CampaignsPageClient
@@ -115,6 +150,9 @@ export default async function CampaignsPage() {
         currentUserId={user.id}
         defaultKlaviyoConnectionId={defaultKlaviyoConnectionId}
         isTeamAdmin={isTeamAdmin}
+        klaviyoConnections={klaviyoConnections || []}
+        teamConnections={teamConnections}
+        hasFigmaConnection={hasFigmaConnection}
       />
     </div>
   )

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -93,7 +94,6 @@ interface EmailSlicerProps {
   klaviyoHybridDndSlot: boolean
   onKlaviyoHybridDndSlotChange: (value: boolean) => void
   onComplete: (frames: Frame[]) => void
-  onBack: () => void
 }
 
 const MIN_SLICE_HEIGHT = 20
@@ -111,7 +111,6 @@ export function EmailSlicer({
   klaviyoHybridDndSlot,
   onKlaviyoHybridDndSlotChange,
   onComplete,
-  onBack,
 }: EmailSlicerProps) {
   const fullImage = frames[0]
   const imageUrl = sliceMasterImageUrl || fullImage?.image_url || ''
@@ -779,8 +778,10 @@ export function EmailSlicer({
   if (!imageUrl) {
     return (
       <div className="text-center py-8">
-        <p className="text-muted-foreground">No image available. Please go back and re-import.</p>
-        <Button variant="outline" onClick={onBack} className="mt-4">Back</Button>
+        <p className="text-muted-foreground">No image available. Import a Figma URL from the campaigns page or use Replace design if you are re-editing.</p>
+        <Button variant="outline" asChild className="mt-4">
+          <Link href="/campaigns">Back to campaigns</Link>
+        </Button>
       </div>
     )
   }
@@ -1506,15 +1507,15 @@ export function EmailSlicer({
           )}
 
           <div className="flex gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onBack}
-              disabled={processing}
-              className="flex-1"
-            >
-              Back
-            </Button>
+            {processing ? (
+              <Button type="button" variant="outline" disabled className="flex-1">
+                Back
+              </Button>
+            ) : (
+              <Button type="button" variant="outline" className="flex-1" asChild>
+                <Link href="/campaigns">Back</Link>
+              </Button>
+            )}
             <Button
               type="button"
               onClick={handleContinue}

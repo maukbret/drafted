@@ -3,7 +3,7 @@ import { deleteFrameImagesForProject } from '@/lib/frame-images-server'
 import { klaviyoFetch } from '@/lib/klaviyo'
 import { NextRequest, NextResponse } from 'next/server'
 
-type CancelMode = 'edit_details' | 'edit_design' | 'start_over'
+type CancelMode = 'edit_details' | 'edit_slices' | 'edit_design' | 'start_over'
 
 export async function POST(
   request: NextRequest,
@@ -15,7 +15,7 @@ export async function POST(
     const body = await request.json()
     const mode: CancelMode = body.mode
 
-    if (!['edit_details', 'edit_design', 'start_over'].includes(mode)) {
+    if (!['edit_details', 'edit_slices', 'edit_design', 'start_over'].includes(mode)) {
       return NextResponse.json({ error: 'Invalid mode' }, { status: 400 })
     }
 
@@ -145,41 +145,21 @@ export async function POST(
           .eq('id', campaign.project_id)
       }
 
-      // Delete the old campaign
+      // Delete the old campaign (new drafts start from /campaigns with a Figma URL)
       await supabase
         .from('campaigns')
         .delete()
         .eq('id', id)
 
-      // Create a fresh campaign with the same connection
-      const { data: newCampaign, error: createError } = await supabase
-        .from('campaigns')
-        .insert({
-          user_id: user.id,
-          klaviyo_connection_id: campaign.klaviyo_connection_id,
-          klaviyo_account_id: campaign.klaviyo_account_id,
-          name: 'Untitled Campaign',
-          subject_line: '',
-          status: 'in_progress',
-          wizard_step: 1,
-        })
-        .select()
-        .single()
-
-      if (createError || !newCampaign) {
-        console.error('Failed to create new campaign:', createError)
-        return NextResponse.json({ error: 'Failed to create new campaign' }, { status: 500 })
-      }
-
-      return NextResponse.json({ success: true, mode, redirectTo: newCampaign.id })
-    } else if (mode === 'edit_design') {
+      return NextResponse.json({ success: true, mode, redirectToCampaigns: true })
+    } else if (mode === 'edit_design' || mode === 'edit_slices') {
       // Keep klaviyo_campaign_id and klaviyo_template_id for update flow
       // Keep step 3 data (subject_line, preview_text, audiences, scheduled_at)
       await supabase
         .from('campaigns')
         .update({
           status: 'in_progress',
-          wizard_step: 1,
+          wizard_step: 2,
         })
         .eq('id', id)
     } else {

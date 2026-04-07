@@ -9,12 +9,22 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChevronLeft } from 'lucide-react'
 
-interface CampaignPageProps {
-  params: Promise<{ id: string }>
+function firstQueryValue(v: string | string[] | undefined): string | undefined {
+  if (typeof v === 'string') return v
+  if (Array.isArray(v) && v[0] !== undefined) return v[0]
+  return undefined
 }
 
-export default async function CampaignPage({ params }: CampaignPageProps) {
+interface CampaignPageProps {
+  params: Promise<{ id: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+export default async function CampaignPage({ params, searchParams }: CampaignPageProps) {
   const { id } = await params
+  const sp = await searchParams
+  const initialReimportFocus = firstQueryValue(sp.reimport) === '1'
+  const initialResliceFromFigma = firstQueryValue(sp.reslice) === '1'
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -356,6 +366,8 @@ export default async function CampaignPage({ params }: CampaignPageProps) {
         teamConnections={teamConnections}
         hasFigmaConnection={!!figmaConnection}
         campaignName={campaign.name === 'Untitled Campaign' ? 'New Campaign' : campaign.name}
+        initialReimportFocus={initialReimportFocus}
+        initialResliceFromFigma={initialResliceFromFigma}
       />
     </div>
   )

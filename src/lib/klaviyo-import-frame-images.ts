@@ -1,0 +1,151 @@
+import 'server-only'
+
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+import type { EmailFrameRowInput } from '@/lib/email/frame-rows-html'
+import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
+import { getFrameDisplayUrl, isSupabaseFrameImagesPublicUrl } from '@/lib/frame-url'
+
+export type KlaviyoImportFrameRow = EmailFrameRowInput & { id: string }
+
+const KLAVIYO_IMAGES_API = 'https://a.klaviyo.com/api/images'
+const KLAVIYO_REVISION = '2026-01-15'
+
+export function formatKlaviyoImageApiErrorBody(errorBody: string): string {
+  try {
+    const parsed = JSON.parse(errorBody) as { errors?: Array<{ detail?: string; title?: string }> }
+    const first = parsed.errors?.[0]
+    if (first?.detail) return first.detail
+    if (first?.title) return first.title
+  } catch {
+    /* ignore */
+  }
+  return errorBody.length > 400 ? `${errorBody.slice(0, 400)}…` : errorBody
+}
+
+function normalizeImageUrl(url: string | null | undefined): string | null {
+  if (typeof url !== 'string') return null
+  const normalized = url.trim()
+  if (!normalized || normalized === 'null' || normalized === 'undefined') return null
+  return normalized
+}
+
+/**
+ * Ensures every slice image is hosted by Klaviyo before building send/template HTML.
+ * - If `image_url` is set, always POSTs `import_from_url` so Klaviyo fetches the current asset (then we delete Storage when possible).
+ * - Fails the whole operation if Klaviyo does not return a hosted URL (no fallback to Supabase in email HTML).
+ */
+export async function importProjectFramesToKlaviyo<T extends KlaviyoImportFrameRow>(
+  supabase: SupabaseClient,
+  frames: T[],
+  klaviyoToken: string,
+  formatKlaviyoApiError: (errorBody: string) => string
+): Promise<{ ok: true; frames: T[] } | { ok: false; message: string }> {
+  const results = await Promise.all(
+    frames.map(async (frame): Promise<
+      | { kind: 'empty' }
+      | { kind: 'error'; message: string }
+      | { kind: 'frame'; frame: T }
+    > => {
+      const sourceImageUrl = normalizeImageUrl(frame.image_url)
+      const existingKlaviyoImageUrl = normalizeImageUrl(frame.klaviyo_image_url)
+
+      if (!sourceImageUrl && !existingKlaviyoImageUrl) {
+        return { kind: 'empty' }
+      }
+      if (!sourceImageUrl && existingKlaviyoImageUrl) {
+        return {
+          kind: 'frame',
+          frame: { ...frame, klaviyo_image_url: existingKlaviyoImageUrl } as T,
+        }
+      }
+
+      try {
+        const imageResponse = await fetch(KLAVIYO_IMAGES_API, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${klaviyoToken}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            revision: KLAVIYO_REVISION,
+          },
+          body: JSON.stringify({
+            data: {
+              type: 'image',
+              attributes: {
+                name: frame.name,
+                import_from_url: sourceImageUrl!,
+                hidden: false,
+              },
+            },
+          }),
+        })
+
+        if (!imageResponse.ok) {
+          const errorText = await imageResponse.text()
+          console.error('Klaviyo image import error:', frame.name, errorText)
+          return {
+            kind: 'error',
+            message: `Klaviyo could not import image "${frame.name}": ${formatKlaviyoApiError(errorText)}`,
+          }
+        }
+
+        const imageData = (await imageResponse.json()) as {
+          data?: { attributes?: { image_url?: string } }
+        }
+        const klaviyoImageUrl = normalizeImageUrl(imageData.data?.attributes?.image_url)
+        if (!klaviyoImageUrl) {
+          return {
+            kind: 'error',
+            message: `Klaviyo did not return a hosted image URL for "${frame.name}". Try again.`,
+          }
+        }
+
+        const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
+        await supabase
+          .from('frames')
+          .update({
+            image_url: deletedSourceImage ? null : frame.image_url,
+            klaviyo_image_url: klaviyoImageUrl,
+          })
+          .eq('id', frame.id)
+
+        return {
+          kind: 'frame',
+          frame: {
+            ...frame,
+            image_url: deletedSourceImage ? null : frame.image_url,
+            klaviyo_image_url: klaviyoImageUrl,
+          } as T,
+        }
+      } catch (err) {
+        console.error('Klaviyo image import failed:', frame.name, err)
+        return {
+          kind: 'error',
+          message: `Failed to import image "${frame.name}" to Klaviyo. Check your connection and try again.`,
+        }
+      }
+    })
+  )
+
+  const firstError = results.find((r): r is { kind: 'error'; message: string } => r.kind === 'error')
+  if (firstError) return { ok: false, message: firstError.message }
+
+  const uploadedFrames: T[] = []
+  for (const r of results) {
+    if (r.kind === 'frame') uploadedFrames.push(r.frame)
+  }
+
+  for (const frame of uploadedFrames) {
+    const displayUrl = getFrameDisplayUrl(frame)
+    if (displayUrl && isSupabaseFrameImagesPublicUrl(displayUrl)) {
+      const name = frame.name || 'Section'
+      return {
+        ok: false,
+        message: `Image "${name}" is still on app storage. Klaviyo must host all email images before export.`,
+      }
+    }
+  }
+
+  return { ok: true, frames: uploadedFrames }
+}

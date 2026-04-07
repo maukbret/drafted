@@ -1,9 +1,10 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
 import { CampaignList } from '@/components/campaign-list'
+import { CampaignQuickStart } from '@/components/campaign-quick-start'
 import { CampaignsHeader } from '@/components/campaigns-header'
+import type { KlaviyoAccountOption } from '@/components/klaviyo-account-combobox'
 import type { Campaign } from '@/types/database'
 
 interface CampaignWithConnection extends Campaign {
@@ -20,65 +21,31 @@ export function CampaignsPageClient({
   currentUserId,
   defaultKlaviyoConnectionId,
   isTeamAdmin,
+  klaviyoConnections,
+  teamConnections,
+  hasFigmaConnection,
 }: {
   hasConnections: boolean
   campaigns: CampaignWithConnection[]
   currentUserId?: string
   defaultKlaviyoConnectionId?: string | null
   isTeamAdmin?: boolean
+  klaviyoConnections: KlaviyoAccountOption[]
+  teamConnections: KlaviyoAccountOption[]
+  hasFigmaConnection: boolean
 }) {
-  const [isCreating, setIsCreating] = React.useState(false)
-  const router = useRouter()
-
-  const handleCreateCampaign = React.useCallback(async () => {
-    if (isCreating) return
-    setIsCreating(true)
-    try {
-      const response = await fetch('/api/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ klaviyoConnectionId: defaultKlaviyoConnectionId }),
-      })
-
-      let payload: any = null
-      try {
-        payload = await response.json()
-      } catch {
-        payload = null
-      }
-
-      if (response.ok && payload?.campaign?.id) {
-        router.push(`/campaigns/${payload.campaign.id}`)
-        return
-      }
-
-      if (payload?.code === 'missing_figma_connection' || payload?.code === 'missing_klaviyo_connection') {
-        router.push('/connections')
-        return
-      }
-
-      alert(payload?.error || 'Failed to create campaign')
-    } catch (err) {
-      console.error('Failed to create campaign:', err)
-      alert('Failed to create campaign')
-    } finally {
-      setIsCreating(false)
-    }
-  }, [defaultKlaviyoConnectionId, isCreating, router])
-
   return (
-    <div className="relative">
-      <CampaignsHeader
-        hasConnections={hasConnections}
-        onCreateCampaign={handleCreateCampaign}
-        isCreating={isCreating}
+    <div className="relative flex flex-col gap-6">
+      <CampaignsHeader hasConnections={hasConnections} />
+      <CampaignQuickStart
+        klaviyoConnections={klaviyoConnections}
+        teamConnections={teamConnections}
+        hasFigmaConnection={hasFigmaConnection}
+        hasKlaviyoConnection={hasConnections}
+        defaultKlaviyoConnectionId={defaultKlaviyoConnectionId ?? null}
       />
+      <div className="h-px w-full shrink-0 bg-border" aria-hidden />
       <CampaignList campaigns={campaigns} currentUserId={currentUserId} isTeamAdmin={isTeamAdmin} />
-      {isCreating && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/60">
-          <div className="h-8 w-8 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
-        </div>
-      )}
     </div>
   )
 }

@@ -13,9 +13,9 @@ import {
 } from '@/components/ui/dialog'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Button } from '@/components/ui/button'
-import { Settings, Image, RotateCcw, AlertTriangle, Pencil } from 'lucide-react'
+import { Settings, Image, RotateCcw, AlertTriangle, Pencil, Link2 } from 'lucide-react'
 
-type EditMode = 'edit_details' | 'edit_design' | 'start_over'
+type EditMode = 'edit_details' | 'edit_slices' | 'edit_design' | 'start_over'
 
 interface EditScheduledCampaignDialogProps {
   campaignId: string
@@ -31,13 +31,22 @@ const OPTIONS = [
     value: 'edit_details' as EditMode,
     icon: Settings,
     title: 'Edit details',
-    description: 'Change subject line, preview text, audiences, or schedule. Your email design stays the same.',
+    description:
+      'Change subject line, preview text, audiences, schedule, or send time. The email design stays the same.',
+  },
+  {
+    value: 'edit_slices' as EditMode,
+    icon: Link2,
+    title: 'Edit slices & links',
+    description:
+      'Re-slice the email, update links, or adjust the hybrid block. We refresh the frame from Figma first so assets stay in sync (may take a minute).',
   },
   {
     value: 'edit_design' as EditMode,
     icon: Image,
-    title: 'Edit design',
-    description: 'Re-import from Figma with a new design. Your send settings will be preserved.',
+    title: 'Replace design',
+    description:
+      'Paste a new Figma frame URL when the layout or artwork changed. Send settings stay as they are.',
   },
   {
     value: 'start_over' as EditMode,
@@ -99,8 +108,21 @@ export function EditScheduledCampaignDialog({
       }
 
       handleOpenChange(false)
+
+      if (data.redirectToCampaigns) {
+        router.push('/campaigns')
+        router.refresh()
+        return
+      }
+
       const targetId = data.redirectTo || campaignId
-      router.push(`/campaigns/${targetId}`)
+      const href =
+        mode === 'edit_design'
+          ? `/campaigns/${targetId}?reimport=1`
+          : mode === 'edit_slices'
+            ? `/campaigns/${targetId}?reslice=1`
+            : `/campaigns/${targetId}`
+      router.push(href)
       router.refresh()
     } catch {
       setError('Something went wrong. Please try again.')

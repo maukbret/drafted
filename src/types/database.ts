@@ -170,6 +170,8 @@ export interface Campaign {
 
   klaviyo_campaign_id: string | null
   klaviyo_template_id: string | null
+  /** Incremented on each successful export/send to Klaviyo (draft, schedule, or update). */
+  klaviyo_push_count?: number
 
   status: 'in_progress' | 'klaviyo_draft' | 'scheduled' | 'cancelled' | 'sent' | 'error'
   last_status_synced_at?: string | null

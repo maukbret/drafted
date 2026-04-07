@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
 import { ensureKlaviyoAccountId, getValidKlaviyoToken } from '@/lib/klaviyo'
+import { formatKlaviyoImageApiErrorBody, importProjectFramesToKlaviyo } from '@/lib/klaviyo-import-frame-images'
 import { generateCampaignEmailHtml } from '@/lib/email/campaign-email-html'
+import { emailHtmlContainsSupabaseFrameImageUrls } from '@/lib/frame-url'
 import { NextRequest } from 'next/server'
 
 // Helper to get timezone offset as a string (e.g., "+01:00" or "-05:00")
@@ -88,9 +89,16 @@ export async function POST(
           }
         }
 
-        const endExportWithError = async (message: string) => {
+        const endExportWithError = async (
+          message: string,
+          meta?: { hint?: 'klaviyo_hosting' }
+        ) => {
           await revertStatusAfterFailedExport?.()
-          send({ step: 'error', message })
+          send({
+            step: 'error',
+            message,
+            ...(meta?.hint ? { hint: meta.hint } : {}),
+          })
         }
 
         // Get Klaviyo connection
@@ -123,11 +131,8 @@ export async function POST(
 
         // Determine operation type and what steps are needed
         const isUpdate = !!(existingCampaign.klaviyo_template_id && existingCampaign.klaviyo_campaign_id)
-        const imagesNeedUpload = frames.some((f: any) => {
-          const sourceUrl = normalizeImageUrl(f.image_url)
-          const klaviyoUrl = normalizeImageUrl(f.klaviyo_image_url)
-          return !!sourceUrl && !klaviyoUrl
-        })
+        /** True when any slice still has Storage — we will re-import to Klaviyo so progress UI is accurate */
+        const imagesNeedProcessing = frames.some((f: any) => normalizeImageUrl(f.image_url))
 
         // ============================================================
         // PHASE 2: Process each step (client shows all steps from start)
@@ -335,88 +340,26 @@ export async function POST(
           console.log('Using simple unsubscribe tag instead of custom footer')
         }
 
-        // Step 2: Upload images to Klaviyo (skip if already uploaded)
-        if (imagesNeedUpload) {
+        // Step 2: Import every Storage image into Klaviyo (fail export if any import fails — no Supabase URLs in HTML)
+        if (imagesNeedProcessing) {
           send({ step: 'images', status: 'in_progress' })
         } else {
           send({ step: 'images', status: 'skip' })
         }
 
-        // Upload images in parallel using Promise.all for faster processing
-        const uploadedFramesRaw = await Promise.all(
-          frames.map(async (frame: any) => {
-            const sourceImageUrl = normalizeImageUrl(frame.image_url)
-            const existingKlaviyoImageUrl = normalizeImageUrl(frame.klaviyo_image_url)
-            const fallbackImageUrl = existingKlaviyoImageUrl || sourceImageUrl
-            if (!fallbackImageUrl) return null
-            // Skip upload if image was already uploaded to Klaviyo
-            if (existingKlaviyoImageUrl) {
-              const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
-              if (deletedSourceImage) {
-                await supabase
-                  .from('frames')
-                  .update({ image_url: null })
-                  .eq('id', frame.id)
-              }
-              console.log('Skipping image upload, already exists:', frame.name)
-              return {
-                ...frame,
-                image_url: deletedSourceImage ? null : frame.image_url,
-                klaviyo_image_url: existingKlaviyoImageUrl,
-              }
-            }
-
-            try {
-              const imageResponse = await fetch('https://a.klaviyo.com/api/images', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${klaviyoToken}`,
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json',
-                  'revision': '2026-01-15',
-                },
-                body: JSON.stringify({
-                  data: {
-                    type: 'image',
-                    attributes: {
-                      name: frame.name,
-                      import_from_url: sourceImageUrl,
-                      hidden: false,
-                    },
-                  },
-                }),
-              })
-
-              if (imageResponse.ok) {
-                const imageData = await imageResponse.json()
-                const klaviyoImageUrl = normalizeImageUrl(imageData.data?.attributes?.image_url) || fallbackImageUrl
-                const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
-
-                await supabase
-                  .from('frames')
-                  .update({
-                    image_url: deletedSourceImage ? null : frame.image_url,
-                    klaviyo_image_url: klaviyoImageUrl,
-                  })
-                  .eq('id', frame.id)
-                return {
-                  ...frame,
-                  image_url: deletedSourceImage ? null : frame.image_url,
-                  klaviyo_image_url: klaviyoImageUrl,
-                }
-              } else {
-                console.error('Image upload failed:', frame.name)
-                return { ...frame, klaviyo_image_url: fallbackImageUrl }
-              }
-            } catch (err) {
-              console.error('Image upload error:', err)
-              return { ...frame, klaviyo_image_url: fallbackImageUrl }
-            }
-          })
+        const importResult = await importProjectFramesToKlaviyo(
+          supabase,
+          frames,
+          klaviyoToken,
+          formatKlaviyoImageApiErrorBody
         )
-        const uploadedFrames = uploadedFramesRaw.filter((frame): frame is NonNullable<typeof frame> => Boolean(frame))
+        if (!importResult.ok) {
+          await endExportWithError(importResult.message, { hint: 'klaviyo_hosting' })
+          return
+        }
+        const uploadedFrames = importResult.frames
 
-        if (imagesNeedUpload) {
+        if (imagesNeedProcessing) {
           send({ step: 'images', status: 'complete' })
         }
 
@@ -432,6 +375,14 @@ export async function POST(
           footerCss,
           { includeKlaviyoHybridSlot: useHybridSlot },
         )
+
+        if (emailHtmlContainsSupabaseFrameImageUrls(html)) {
+          await endExportWithError(
+            'Email HTML still references Drafted storage for at least one image (body or footer). Every image must be hosted by Klaviyo before we update your template—fix the footer in Klaviyo if it embeds storage links, or go back to the slice step and re-save sections, then export again.',
+            { hint: 'klaviyo_hosting' }
+          )
+          return
+        }
 
         let templateId = campaign.klaviyo_template_id
         let klaviyoCampaignId = campaign.klaviyo_campaign_id
@@ -801,6 +752,9 @@ export async function POST(
           finalStatus = campaign.scheduled_at ? 'scheduled' : 'sent'
         }
 
+        const previousPushCount =
+          typeof campaign?.klaviyo_push_count === 'number' ? campaign.klaviyo_push_count : 0
+
         // Update campaign in database
         await supabase
           .from('campaigns')
@@ -809,6 +763,7 @@ export async function POST(
             klaviyo_campaign_id: klaviyoCampaignId,
             klaviyo_template_id: templateId,
             last_status_synced_at: new Date().toISOString(),
+            klaviyo_push_count: previousPushCount + 1,
           })
           .eq('id', campaignId)
 
