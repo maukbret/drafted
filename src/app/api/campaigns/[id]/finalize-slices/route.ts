@@ -17,7 +17,10 @@ export async function POST(
   const { id: campaignId } = await params
 
   try {
-    const { slices } = await request.json() as { slices: SliceInput[] }
+    const { slices, sliceLayout } = await request.json() as {
+      slices: SliceInput[]
+      sliceLayout?: unknown
+    }
 
     if (!slices || !Array.isArray(slices) || slices.length === 0) {
       return NextResponse.json({ error: 'Slices array is required' }, { status: 400 })
@@ -43,6 +46,28 @@ export async function POST(
     }
 
     const projectId = campaign.project_id
+
+    const { data: projectRow } = await supabase
+      .from('projects')
+      .select('slice_master_image_url')
+      .eq('id', projectId)
+      .single()
+
+    let sliceMasterImageUrl: string | null =
+      (projectRow?.slice_master_image_url as string | null) || null
+
+    if (!sliceMasterImageUrl) {
+      const { data: oldFrames } = await supabase
+        .from('frames')
+        .select('image_url, width')
+        .eq('project_id', projectId)
+        .order('display_order', { ascending: true })
+
+      const wide =
+        oldFrames?.find(f => (f.width ?? 0) >= 550 && f.image_url)?.image_url ?? null
+      const sole = oldFrames?.length === 1 ? oldFrames[0].image_url : null
+      sliceMasterImageUrl = wide || sole || null
+    }
 
     // Delete existing frames for this project
     await supabase
@@ -76,6 +101,14 @@ export async function POST(
       projectId,
       slices.map(slice => slice.imageUrl)
     )
+
+    await supabase
+      .from('projects')
+      .update({
+        slice_master_image_url: sliceMasterImageUrl,
+        slice_layout_json: sliceLayout ?? null,
+      })
+      .eq('id', projectId)
 
     return NextResponse.json({ frames: frames || [] })
   } catch (err) {

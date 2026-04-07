@@ -133,6 +133,10 @@ export interface Project {
   figma_file_key: string
   figma_node_id: string
   status: 'processing' | 'ready' | 'exported' | 'error'
+  /** Full-bleed image for slice mode (survives finalize) */
+  slice_master_image_url?: string | null
+  /** Serialized slicer state for re-opening step 2 */
+  slice_layout_json?: unknown | null
   created_at: string
   updated_at: string
 }
@@ -172,6 +176,8 @@ export interface Campaign {
   scheduled_at: string | null
   send_in_recipient_timezone: boolean
   slice_mode: boolean
+  /** When true, exported Klaviyo template is hybrid (USER_DRAGGABLE) with a DnD slot above the footer */
+  klaviyo_hybrid_dnd_slot?: boolean
   wizard_step: number
   figma_url: string | null
   utm_settings: {

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -41,7 +42,7 @@ type SliceColumnLayout = 'full' | 'half' | 'third'
 /** Active column tab in the slicer UI (overlay follows this for multi-column rows). */
 type SlicerColumnTab = 'left' | 'center' | 'right'
 
-interface SliceDefinition {
+export interface SliceDefinition {
   id: string
   y: number
   height: number
@@ -85,6 +86,12 @@ interface EmailSlicerProps {
   campaignId: string
   projectId: string
   frames: Frame[]
+  /** Full-bleed source (persists after finalize); falls back to frames[0].image_url */
+  sliceMasterImageUrl?: string | null
+  /** Restore slicer dividers + links from last finalize */
+  initialSliceLayout?: SliceDefinition[] | null
+  klaviyoHybridDndSlot: boolean
+  onKlaviyoHybridDndSlotChange: (value: boolean) => void
   onComplete: (frames: Frame[]) => void
   onBack: () => void
 }
@@ -95,11 +102,21 @@ function generateId() {
   return Math.random().toString(36).substring(2, 9)
 }
 
-export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack }: EmailSlicerProps) {
-  // The full email image is the first (and only) frame in slice mode
+export function EmailSlicer({
+  campaignId,
+  projectId,
+  frames,
+  sliceMasterImageUrl,
+  initialSliceLayout,
+  klaviyoHybridDndSlot,
+  onKlaviyoHybridDndSlotChange,
+  onComplete,
+  onBack,
+}: EmailSlicerProps) {
   const fullImage = frames[0]
-  const imageUrl = fullImage?.image_url || ''
-  const designWidth = fullImage?.width || 600
+  const imageUrl = sliceMasterImageUrl || fullImage?.image_url || ''
+  // After finalize, frame widths are slice cells (300 / 200); master image is always full email width
+  const designWidth = sliceMasterImageUrl ? 600 : (fullImage?.width || 600)
 
   const [imageNaturalHeight, setImageNaturalHeight] = useState(0)
   const [imageNaturalWidth, setImageNaturalWidth] = useState(0)
@@ -130,20 +147,41 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack 
   const imageContainerRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const restoredLayoutRef = useRef(false)
 
-  // Initialize slices once image is loaded
   useEffect(() => {
-    if (imageLoaded && designHeight > 0 && slices.length === 0) {
-      const initialId = generateId()
-      setSlices([{
-        id: initialId,
-        y: 0,
-        height: designHeight,
-        ...defaultSliceContentFields(),
-      }])
-      setActiveSliceId(initialId)
+    restoredLayoutRef.current = false
+  }, [campaignId, projectId])
+
+  // Initialize slices once image is loaded (restore saved layout or single full-height slice)
+  useEffect(() => {
+    if (!imageLoaded || designHeight <= 0 || slices.length > 0) return
+
+    const layout = initialSliceLayout
+    if (layout && layout.length > 0 && !restoredLayoutRef.current) {
+      restoredLayoutRef.current = true
+      const normalized = layout.map(s => ({
+        ...s,
+        y: Math.max(0, Math.min(s.y, designHeight - MIN_SLICE_HEIGHT)),
+        height: Math.max(
+          MIN_SLICE_HEIGHT,
+          Math.min(s.height, designHeight - Math.max(0, s.y)),
+        ),
+      }))
+      setSlices(normalized)
+      setActiveSliceId(normalized[0]?.id ?? null)
+      return
     }
-  }, [imageLoaded, designHeight, slices.length])
+
+    const initialId = generateId()
+    setSlices([{
+      id: initialId,
+      y: 0,
+      height: designHeight,
+      ...defaultSliceContentFields(),
+    }])
+    setActiveSliceId(initialId)
+  }, [imageLoaded, designHeight, initialSliceLayout, slices.length])
 
   const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
@@ -674,7 +712,7 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack 
       const response = await fetch(`/api/campaigns/${campaignId}/finalize-slices`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slices: sliceData }),
+        body: JSON.stringify({ slices: sliceData, sliceLayout: slices }),
       })
 
       if (!response.ok) {
@@ -1431,6 +1469,27 @@ export function EmailSlicer({ campaignId, projectId, frames, onComplete, onBack 
 
         {/* Actions */}
         <div className="mt-4 space-y-3">
+          <div className="rounded-lg border bg-card p-3 space-y-2">
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="klaviyo-hybrid-dnd-slot-slicer"
+                checked={klaviyoHybridDndSlot}
+                onCheckedChange={(v) => onKlaviyoHybridDndSlotChange(v === true)}
+                disabled={processing}
+                className="mt-0.5"
+              />
+              <div className="space-y-1 min-w-0">
+                <Label htmlFor="klaviyo-hybrid-dnd-slot-slicer" className="text-sm font-medium leading-snug cursor-pointer">
+                  Add a Klaviyo drag-and-drop section (above footer)
+                </Label>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Inserts a hybrid editor region between your design and the footer so you can add product feeds,
+                  universal content, or other blocks in Klaviyo after export.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {showValidation && missingLinks.length > 0 && (
             <p className="text-sm text-destructive">
               {missingLinks.length} link{missingLinks.length === 1 ? '' : 's'} missing.

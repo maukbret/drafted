@@ -18,7 +18,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Link as LinkIcon, Check, ChevronsUpDown, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -35,7 +34,7 @@ interface Step1ImportProps {
   campaignId: string
   initialConnectionId?: string
   initialFigmaUrl?: string
-  onComplete: (data: { connectionId: string; figmaUrl: string; sliceMode: boolean }) => void
+  onComplete: (data: { connectionId: string; figmaUrl: string }) => void
 }
 
 export function Step1Import({
@@ -51,7 +50,6 @@ export function Step1Import({
   const [connectionId, setConnectionId] = useState(initialConnectionId || klaviyoConnections[0]?.id || teamConnections[0]?.id || '')
   const [connectionOpen, setConnectionOpen] = useState(false)
   const [figmaUrl, setFigmaUrl] = useState(initialFigmaUrl || '')
-  const [designedWithSections, setDesignedWithSections] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
@@ -135,7 +133,7 @@ export function Step1Import({
       const response = await fetch(`/api/campaigns/${campaignId}/process-figma`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ figmaUrl, sliceMode: !designedWithSections }),
+        body: JSON.stringify({ figmaUrl }),
       })
 
       const reader = response.body?.getReader()
@@ -172,7 +170,7 @@ export function Step1Import({
               throw new Error(typeof data.message === 'string' ? data.message : 'An error occurred')
             } else if (data.type === 'done') {
               setProgress(null)
-              onComplete({ connectionId, figmaUrl, sliceMode: !designedWithSections })
+              onComplete({ connectionId, figmaUrl })
               return
             }
           } catch (e) {
@@ -197,7 +195,7 @@ export function Step1Import({
             throw new Error(typeof data.message === 'string' ? data.message : 'An error occurred')
           } else if (data.type === 'done') {
             setProgress(null)
-            onComplete({ connectionId, figmaUrl, sliceMode: !designedWithSections })
+            onComplete({ connectionId, figmaUrl })
             return
           }
         } catch (e) {
@@ -360,8 +358,6 @@ export function Step1Import({
           </p>
         )}
       </div>
-
-      {/* Slice mode is always enabled — checkbox hidden but logic preserved */}
 
       {error && (
         <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">

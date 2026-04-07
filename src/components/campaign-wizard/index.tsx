@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { WizardProgress } from './wizard-progress'
 import { Step1Import } from './step-1-import'
-import { Step2Editor } from './step-2-editor'
-import { EmailSlicer } from './email-slicer'
+import { EmailSlicer, type SliceDefinition } from './email-slicer'
 import { Step3Settings } from './step-3-settings'
 import { Step4Export } from './step-4-export'
 import { CampaignLeaveGuard } from './leave-campaign-guard'
@@ -32,11 +31,18 @@ interface Frame {
   display_order: number
 }
 
+function parseSliceLayout(raw: unknown): SliceDefinition[] | null {
+  if (!raw || !Array.isArray(raw)) return null
+  return raw as SliceDefinition[]
+}
+
 interface CampaignWizardProps {
   campaign: Campaign & {
     klaviyo_connections?: { account_name: string | null; store_url?: string | null } | null
     projects?: {
       frames?: Frame[]
+      slice_master_image_url?: string | null
+      slice_layout_json?: unknown
     } | null
   }
   klaviyoConnections: KlaviyoConnection[]
@@ -64,15 +70,16 @@ export function CampaignWizard({
   const [frames, setFrames] = useState<Frame[]>(initialCampaign.projects?.frames || [])
   // Track connectionId separately to handle reconnection scenarios
   const [connectionId, setConnectionId] = useState(initialCampaign.klaviyo_connection_id || '')
-  const [sliceMode, setSliceMode] = useState(initialCampaign.slice_mode || false)
-  // Track whether slices have been finalized (so going back shows the link editor, not the slicer)
-  const [slicesFinalized, setSlicesFinalized] = useState(
-    // If resuming a campaign that's already past step 2 in slice mode, slices are finalized
-    initialCampaign.slice_mode && (initialCampaign.wizard_step || 1) > 2
-  )
   const [conceptUpdates, setConceptUpdates] = useState<Record<string, unknown> | null>(null)
   const [exportParams, setExportParams] = useState<{ settings: ExportSettings; asDraft: boolean } | null>(null)
+  const [klaviyoHybridDndSlot, setKlaviyoHybridDndSlot] = useState(
+    initialCampaign.klaviyo_hybrid_dnd_slot ?? false,
+  )
   const wasResumed = (initialCampaign.wizard_step || 1) >= 2
+
+  useEffect(() => {
+    setKlaviyoHybridDndSlot(initialCampaign.klaviyo_hybrid_dnd_slot ?? false)
+  }, [initialCampaign.id, initialCampaign.klaviyo_hybrid_dnd_slot])
 
   // Update wizard step in database when it changes (skip step 4 — export is transient)
   useEffect(() => {
@@ -85,16 +92,13 @@ export function CampaignWizard({
     }
   }, [step, campaign.id, campaign.wizard_step])
 
-  const handleStep1Complete = async (data: { connectionId: string; figmaUrl: string; sliceMode: boolean }) => {
-    // Store the selected connection ID and slice mode in state
+  const handleStep1Complete = async (data: { connectionId: string; figmaUrl: string }) => {
     setConnectionId(data.connectionId)
-    setSliceMode(data.sliceMode)
 
-    // Save the connection ID and slice_mode to the campaign
     await fetch(`/api/campaigns/${campaign.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ klaviyo_connection_id: data.connectionId, slice_mode: data.sliceMode }),
+      body: JSON.stringify({ klaviyo_connection_id: data.connectionId, slice_mode: true }),
     })
 
     // Fetch updated campaign with frames
@@ -103,14 +107,31 @@ export function CampaignWizard({
       const { campaign: updatedCampaign } = await response.json()
       setCampaign(updatedCampaign)
       setFrames(updatedCampaign.projects?.frames || [])
+      setKlaviyoHybridDndSlot(updatedCampaign.klaviyo_hybrid_dnd_slot ?? false)
     }
-    setSlicesFinalized(false)
     setStep(2)
   }
 
-  const handleStep2Complete = (updatedFrames: Frame[]) => {
+  const persistHybridSlot = async () => {
+    await fetch(`/api/campaigns/${campaign.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ klaviyo_hybrid_dnd_slot: klaviyoHybridDndSlot }),
+    })
+    setCampaign((c) => ({ ...c, klaviyo_hybrid_dnd_slot: klaviyoHybridDndSlot }))
+  }
+
+  /** Step 2: slicer + links; finalize writes frames + layout */
+  const handleStep2Complete = async (updatedFrames: Frame[]) => {
     setFrames(updatedFrames)
-    if (sliceMode) setSlicesFinalized(true)
+    await persistHybridSlot()
+    const res = await fetch(`/api/campaigns/${campaign.id}`)
+    if (res.ok) {
+      const { campaign: updated } = await res.json()
+      setCampaign(updated)
+      setFrames(updated.projects?.frames || updatedFrames)
+      setKlaviyoHybridDndSlot(updated.klaviyo_hybrid_dnd_slot ?? false)
+    }
     setStep(3)
   }
 
@@ -139,6 +160,7 @@ export function CampaignWizard({
       if (res.ok) {
         const { campaign: updated } = await res.json()
         setCampaign(updated)
+        setKlaviyoHybridDndSlot(updated.klaviyo_hybrid_dnd_slot ?? false)
       }
     }
     setStep(Math.max(1, step - 1))
@@ -200,20 +222,15 @@ export function CampaignWizard({
           />
         )}
 
-        {step === 2 && sliceMode && !slicesFinalized && (
+        {step === 2 && (
           <EmailSlicer
             campaignId={campaign.id}
             projectId={campaign.project_id!}
             frames={frames}
-            onComplete={handleStep2Complete}
-            onBack={goBack}
-          />
-        )}
-
-        {step === 2 && (!sliceMode || slicesFinalized) && (
-          <Step2Editor
-            frames={frames}
-            defaultLinkPlaceholder={selectedAccount?.store_url || ''}
+            sliceMasterImageUrl={campaign.projects?.slice_master_image_url ?? null}
+            initialSliceLayout={parseSliceLayout(campaign.projects?.slice_layout_json)}
+            klaviyoHybridDndSlot={klaviyoHybridDndSlot}
+            onKlaviyoHybridDndSlotChange={setKlaviyoHybridDndSlot}
             onComplete={handleStep2Complete}
             onBack={goBack}
           />

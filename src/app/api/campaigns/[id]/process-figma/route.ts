@@ -38,7 +38,7 @@ export async function POST(
       }
 
       try {
-        const { figmaUrl, sliceMode, forceRefresh = false } = await request.json()
+        const { figmaUrl, forceRefresh = false } = await request.json()
 
         if (!figmaUrl) {
           send({ type: 'error', message: 'Figma URL is required' })
@@ -90,13 +90,11 @@ export async function POST(
           return
         }
 
-        const normalizedSliceMode = !!sliceMode
         const figmaCooldownKey = `${user.id}:${fileKey}`
         const activeCooldownSec = getFigmaCooldownSeconds(figmaCooldownKey)
         const hasMatchingCachedImport =
           !!campaign.project_id &&
-          campaign.figma_url === figmaUrl &&
-          !!campaign.slice_mode === normalizedSliceMode
+          campaign.figma_url === figmaUrl
 
         let cachedFramesForFallback: Array<Record<string, unknown>> = []
         if (hasMatchingCachedImport) {
@@ -137,7 +135,7 @@ export async function POST(
         if (!forceRefresh) {
           const { data: existingProject } = await supabase
             .from('projects')
-            .select('id, name, figma_url')
+            .select('id, name, figma_url, slice_master_image_url, slice_layout_json')
             .eq('user_id', user.id)
             .eq('figma_file_key', fileKey)
             .eq('figma_node_id', nodeId)
@@ -175,6 +173,8 @@ export async function POST(
                   klaviyo_connection_id: campaign.klaviyo_connection_id,
                   campaign_id: campaignId,
                   status: 'ready',
+                  slice_master_image_url: existingProject.slice_master_image_url ?? null,
+                  slice_layout_json: existingProject.slice_layout_json ?? null,
                 })
                 .select()
                 .single()
@@ -185,7 +185,7 @@ export async function POST(
               } else {
                 // Copy storage image if in slice mode
                 let clonedImageUrl = existingFrames[0].image_url
-                if (normalizedSliceMode && existingFrames[0].image_url) {
+                if (existingFrames[0].image_url) {
                   const supabaseAdmin = createAdminClient(
                     process.env.NEXT_PUBLIC_SUPABASE_URL!,
                     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -228,7 +228,7 @@ export async function POST(
                       project_id: newProject.id,
                       figma_url: figmaUrl,
                       name: campaign.name === 'Untitled Campaign' ? existingProject.name : campaign.name,
-                      slice_mode: normalizedSliceMode,
+                      slice_mode: true,
                     })
                     .eq('id', campaignId)
 
@@ -366,35 +366,13 @@ export async function POST(
         }
 
         const frameName = parentNode.document.name || 'Untitled'
-        const children = parentNode.document.children || []
-        const frameChildren = children
-          .filter((child: any) => child.type === 'FRAME' || child.type === 'SLICE')
-          .map((child: any) => ({
-            id: child.id,
-            name: child.name,
-            type: child.type,
-            width: Math.round(child.absoluteBoundingBox?.width || 0),
-          }))
-
-        let nodesToExport: Array<{ id: string; name: string; type: string; width: number }>
-        if (sliceMode) {
-          // Slice mode: always export the parent frame as a single image
-          nodesToExport = [{
-            id: nodeId,
-            name: parentNode.document.name || 'Main Frame',
-            type: parentNode.document.type,
-            width: Math.round(parentNode.document.absoluteBoundingBox?.width || 600),
-          }]
-        } else if (frameChildren.length > 0) {
-          nodesToExport = frameChildren
-        } else {
-          nodesToExport = [{
-            id: nodeId,
-            name: parentNode.document.name || 'Main Frame',
-            type: parentNode.document.type,
-            width: Math.round(parentNode.document.absoluteBoundingBox?.width || 600),
-          }]
-        }
+        // Slice-only flow: export the parent frame as one image for the slicer
+        const nodesToExport = [{
+          id: nodeId,
+          name: frameName,
+          type: parentNode.document.type,
+          width: Math.round(parentNode.document.absoluteBoundingBox?.width || 600),
+        }]
 
         send({ type: 'progress', message: `Found ${nodesToExport.length} frame(s). Creating images...` })
 
@@ -496,57 +474,48 @@ export async function POST(
           return
         }
 
-        // In slice mode, download the image and upload to Supabase Storage for CORS-safe canvas access
-        let imageUrls: Record<string, string> = {}
-        if (sliceMode) {
-          const supabaseAdmin = createAdminClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE_KEY!
-          )
+        // Download from Figma and upload to Supabase Storage for CORS-safe canvas slicing
+        const imageUrls: Record<string, string> = {}
+        const supabaseAdmin = createAdminClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
 
-          for (const node of nodesToExport) {
-            const figmaImageUrl = images[node.id]
-            if (!figmaImageUrl) continue
+        for (const node of nodesToExport) {
+          const figmaImageUrl = images[node.id]
+          if (!figmaImageUrl) continue
 
-            send({ type: 'progress', message: 'Uploading image to storage...' })
+          send({ type: 'progress', message: 'Uploading image to storage...' })
 
-            const imageResponse = await fetch(figmaImageUrl)
-            if (!imageResponse.ok) {
-              send({ type: 'error', message: 'Failed to download image from Figma' })
-              controller.close()
-              return
-            }
-
-            const imageBlob = await imageResponse.arrayBuffer()
-            const storagePath = `${user.id}/${project.id}/full.png`
-
-            const { error: uploadError } = await supabaseAdmin.storage
-              .from('frame-images')
-              .upload(storagePath, imageBlob, {
-                contentType: 'image/png',
-                upsert: true,
-              })
-
-            if (uploadError) {
-              console.error('Storage upload error:', uploadError)
-              send({ type: 'error', message: 'Failed to upload image to storage' })
-              controller.close()
-              return
-            }
-
-            const { data: publicUrlData } = supabaseAdmin.storage
-              .from('frame-images')
-              .getPublicUrl(storagePath)
-
-            imageUrls[node.id] = publicUrlData.publicUrl
+          const imageResponse = await fetch(figmaImageUrl)
+          if (!imageResponse.ok) {
+            send({ type: 'error', message: 'Failed to download image from Figma' })
+            controller.close()
+            return
           }
-        } else {
-          // Non-slice mode: use Figma URLs directly
-          for (const node of nodesToExport) {
-            if (images[node.id]) {
-              imageUrls[node.id] = images[node.id]
-            }
+
+          const imageBlob = await imageResponse.arrayBuffer()
+          const storagePath = `${user.id}/${project.id}/full.png`
+
+          const { error: uploadError } = await supabaseAdmin.storage
+            .from('frame-images')
+            .upload(storagePath, imageBlob, {
+              contentType: 'image/png',
+              upsert: true,
+            })
+
+          if (uploadError) {
+            console.error('Storage upload error:', uploadError)
+            send({ type: 'error', message: 'Failed to upload image to storage' })
+            controller.close()
+            return
           }
+
+          const { data: publicUrlData } = supabaseAdmin.storage
+            .from('frame-images')
+            .getPublicUrl(storagePath)
+
+          imageUrls[node.id] = publicUrlData.publicUrl
         }
 
         // Create frames
@@ -579,9 +548,20 @@ export async function POST(
             project_id: project.id,
             figma_url: figmaUrl,
             name: campaign.name === 'Untitled Campaign' ? frameName : campaign.name,
-            slice_mode: normalizedSliceMode,
+            slice_mode: true,
           })
           .eq('id', campaignId)
+
+        if (nodesToExport[0]) {
+          const masterUrl = imageUrls[nodesToExport[0].id] || null
+          await supabase
+            .from('projects')
+            .update({
+              slice_master_image_url: masterUrl,
+              slice_layout_json: null,
+            })
+            .eq('id', project.id)
+        }
 
         // Fetch the frames for the response
         const { data: frames } = await supabase

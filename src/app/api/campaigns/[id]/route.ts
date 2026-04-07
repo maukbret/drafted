@@ -87,6 +87,7 @@ export async function PATCH(
       'klaviyo_campaign_id',
       'klaviyo_template_id',
       'slice_mode',
+      'klaviyo_hybrid_dnd_slot',
     ]
 
     const filteredUpdates: Record<string, any> = {}

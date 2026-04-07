@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
         subject_line: '',
         status: 'in_progress',
         wizard_step: 1,
+        slice_mode: true,
       })
       .select()
       .single()

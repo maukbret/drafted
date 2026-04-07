@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase/client'
@@ -15,11 +15,17 @@ import { cn } from '@/lib/utils'
 
 export function LoginForm({
   className,
+  redirectTo: redirectToProp,
+  authError: authErrorProp,
   ...props
-}: React.ComponentPropsWithoutRef<'form'>) {
-  const searchParams = useSearchParams()
-  const redirectTo = sanitizeAuthNextParam(searchParams.get('redirect'))
-  const authError = searchParams.get('error')
+}: React.ComponentPropsWithoutRef<'form'> & {
+  /** From `?redirect=` — pass from server `searchParams` to avoid client searchParams bailout. */
+  redirectTo?: string | null
+  /** From `?error=` (e.g. OAuth callback). */
+  authError?: string | null
+}) {
+  const redirectTo = sanitizeAuthNextParam(redirectToProp ?? null)
+  const authError = authErrorProp ?? null
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)

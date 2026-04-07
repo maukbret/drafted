@@ -57,8 +57,8 @@ The campaign send route (`/api/campaigns/[id]/send`) uses `ReadableStream` to st
 ### Campaign Wizard
 
 The core workflow is a 4-step wizard in `src/components/campaign-wizard/`:
-1. **Import** (`step-1-import.tsx`) — Figma URL input + frame extraction
-2. **Editor** (`step-2-editor.tsx`) — frame/section editing with drag-and-drop
+1. **Import** (`step-1-import.tsx`) — Figma URL + single-frame extract for slicing
+2. **Slice & links** (`email-slicer.tsx`) — cut the email image, set links per section, optional Klaviyo hybrid block
 3. **Settings** (`step-3-settings.tsx`) — audience, scheduling, footer config
 4. **Export** (`step-4-export.tsx`) — final export to Klaviyo
 
