@@ -9,16 +9,26 @@ export type CampaignEmailHtmlOptions = {
 /**
  * Klaviyo hybrid template slot: one region; placeholder text block per
  * https://help.klaviyo.com/hc/en-us/articles/115005254188
+ *
+ * Tall spacer (padding, min-height, many line breaks) gives a larger hit area in
+ * Klaviyo's hybrid editor so blocks are easier to drop above/below the placeholder.
  */
 function buildKlaviyoHybridEditorSectionRow(): string {
+  const brTop = '<br />'.repeat(14)
+  const brBottom = '<br />'.repeat(22)
+  const placeholderCopy =
+    'Add product feeds, universal content, or other blocks in Klaviyo (drag-and-drop). Remove this text when done.'
+
   return `
       <tr>
         <td align="center" valign="top" style="padding: 0;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
             <tr>
               <td align="center" data-klaviyo-region="true" data-klaviyo-region-width-pixels="600">
-                <div class="klaviyo-block klaviyo-text-block">
-                  Add product feeds, universal content, or other blocks in Klaviyo (drag-and-drop). Remove this text when done.
+                <div class="klaviyo-block klaviyo-text-block" style="min-height: 320px; padding: 40px 28px 48px; font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.6; color: #555555;">
+                  ${brTop}
+                  ${placeholderCopy}
+                  ${brBottom}
                 </div>
               </td>
             </tr>
