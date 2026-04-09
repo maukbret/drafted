@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { toast } from 'sonner'
 import { X, Users, Loader2 } from 'lucide-react'
 
 interface Invitation {
@@ -16,7 +17,7 @@ interface Invitation {
   inviter_name: string | null
 }
 
-export function TeamInvitationBanner({ userId }: { userId: string }) {
+export function TeamInvitationBanner({ userId: _userId }: { userId: string }) {
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -38,27 +39,8 @@ export function TeamInvitationBanner({ userId }: { userId: string }) {
     fetchInvitations()
   }, [fetchInvitations])
 
-  const handleAccept = async (invitation: Invitation) => {
-    setProcessingId(invitation.id)
-
-    try {
-      const response = await fetch(`/api/invitations/${invitation.token}/accept`, {
-        method: 'POST',
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to accept invitation')
-      }
-
-      setInvitations(prev => prev.filter(inv => inv.id !== invitation.id))
-      router.refresh()
-      router.push('/team')
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to accept invitation')
-    } finally {
-      setProcessingId(null)
-    }
+  const handleOpenInvite = (invitation: Invitation) => {
+    router.push(`/invite/${invitation.token}`)
   }
 
   const handleDecline = async (invitation: Invitation) => {
@@ -76,7 +58,7 @@ export function TeamInvitationBanner({ userId }: { userId: string }) {
 
       setInvitations(prev => prev.filter(inv => inv.id !== invitation.id))
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to decline invitation')
+      toast.error(err instanceof Error ? err.message : 'Failed to decline invitation')
     } finally {
       setProcessingId(null)
     }
@@ -124,14 +106,9 @@ export function TeamInvitationBanner({ userId }: { userId: string }) {
                     </Button>
                     <Button
                       size="sm"
-                      onClick={() => handleAccept(invitation)}
-                      disabled={processingId === invitation.id}
+                      onClick={() => handleOpenInvite(invitation)}
                     >
-                      {processingId === invitation.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        'Accept'
-                      )}
+                      Review invitation
                     </Button>
                   </div>
                 </div>

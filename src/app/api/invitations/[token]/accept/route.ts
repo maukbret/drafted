@@ -1,6 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
+import { markInvitedMemberOnboardingComplete } from '@/lib/team/complete-invited-member'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+
+function emailsMatch(invitationEmail: string | null, userEmail: string | undefined): boolean {
+  if (!invitationEmail) return true
+  if (!userEmail) return false
+  return invitationEmail.trim().toLowerCase() === userEmail.trim().toLowerCase()
+}
 
 // POST - Accept an invitation
 export async function POST(
@@ -44,7 +51,7 @@ export async function POST(
     }
 
     // If invitation is email-specific, enforce that it matches the current user
-    if (invitation.email && invitation.email !== user.email) {
+    if (invitation.email && !emailsMatch(invitation.email, user.email ?? undefined)) {
       return NextResponse.json({ error: 'This invitation is not for you' }, { status: 403 })
     }
 
@@ -83,6 +90,8 @@ export async function POST(
       console.error('Update invitation error:', updateError)
       // Don't fail the request since the user is already added to the team
     }
+
+    await markInvitedMemberOnboardingComplete(supabaseAdmin, user.id)
 
     return NextResponse.json({
       success: true,

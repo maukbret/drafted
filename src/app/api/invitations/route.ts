@@ -15,11 +15,16 @@ export async function GET(request: NextRequest) {
       return applyCookies(NextResponse.json({ invitations: [] }))
     }
 
-    // Get pending invitations for this user's email
+    const emailLower = user.email.trim().toLowerCase()
+    const emailRaw = user.email.trim()
+    const emailVariants =
+      emailLower === emailRaw ? [emailLower] : [emailLower, emailRaw]
+
+    // Get pending invitations for this user's email (stored lowercase; legacy rows may differ)
     const { data: invitations, error } = await supabase
       .from('team_invitations')
       .select('*, teams(id, name)')
-      .eq('email', user.email)
+      .in('email', emailVariants)
       .eq('status', 'pending')
       .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })

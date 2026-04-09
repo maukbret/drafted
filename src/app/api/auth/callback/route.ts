@@ -40,8 +40,10 @@ export async function GET(request: Request) {
           // Even if insert fails, redirect to onboarding - it will handle profile creation
         }
 
-        // New user - always go to onboarding
-        return NextResponse.redirect(`${origin}/onboarding`)
+        // Invited users: land on invite page first (token in `next`) instead of full onboarding
+        const inviteDest =
+          safeNext && safeNext.startsWith('/invite/') ? safeNext : null
+        return NextResponse.redirect(`${origin}${inviteDest ?? '/onboarding'}`)
       }
 
       const patch: {
@@ -65,9 +67,11 @@ export async function GET(request: Request) {
         }
       }
 
-      // Redirect to onboarding if not completed, otherwise to requested page or campaigns
+      // Incomplete onboarding: honor invite deep-link; otherwise full wizard
       const redirectPath = !profile.onboarding_completed
-        ? '/onboarding'
+        ? safeNext && safeNext.startsWith('/invite/')
+          ? safeNext
+          : '/onboarding'
         : (safeNext ?? '/campaigns')
 
       return NextResponse.redirect(`${origin}${redirectPath}`)

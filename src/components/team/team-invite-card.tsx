@@ -12,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
@@ -29,13 +30,20 @@ interface TeamInviteCardProps {
   teamId: string
 }
 
+interface SentInviteRow {
+  email: string
+  inviteUrl: string
+  authInviteSent: boolean
+  authInviteError: string | null
+}
+
 export function TeamInviteCard({ teamId }: TeamInviteCardProps) {
   const [rows, setRows] = useState<EmailRow[]>(() => [newRow(), newRow()])
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [linkLoading, setLinkLoading] = useState(false)
   const [sendLoading, setSendLoading] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
-  const [sentResults, setSentResults] = useState<{ email: string; url: string }[] | null>(null)
+  const [sentResults, setSentResults] = useState<SentInviteRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const generateShareLink = async () => {
@@ -97,7 +105,8 @@ export function TeamInviteCard({ teamId }: TeamInviteCardProps) {
     setError(null)
     setSentResults(null)
 
-    const results: { email: string; url: string }[] = []
+    const results: SentInviteRow[] = []
+    const failures: string[] = []
 
     try {
       for (const email of targets) {
@@ -108,18 +117,47 @@ export function TeamInviteCard({ teamId }: TeamInviteCardProps) {
         })
         const data = await response.json()
         if (!response.ok) {
-          throw new Error(data.error || `Failed for ${email}`)
+          failures.push(`${email}: ${data.error || 'Request failed'}`)
+          continue
         }
-        results.push({ email, url: data.inviteUrl })
+        results.push({
+          email,
+          inviteUrl: data.inviteUrl as string,
+          authInviteSent: Boolean(data.authInviteSent),
+          authInviteError:
+            typeof data.authInviteError === 'string' ? data.authInviteError : null,
+        })
+      }
+
+      if (results.length === 0) {
+        const message =
+          failures.length > 0 ? failures.join(' ') : 'Could not create invitations'
+        setError(message)
+        toast.error(message)
+        return
       }
 
       setSentResults(results)
       setRows([newRow(), newRow()])
-      toast.success(
-        results.length === 1
-          ? 'Invitation created — copy the link below for that teammate'
-          : `${results.length} invitations created — copy each link below`,
-      )
+
+      if (failures.length > 0) {
+        toast.message('Some invitations failed', {
+          description: failures.slice(0, 3).join(' · '),
+        })
+      }
+
+      const emailed = results.filter((r) => r.authInviteSent).length
+      if (emailed === results.length) {
+        toast.success(
+          results.length === 1
+            ? 'Invitation email sent — they can also use the link below if needed'
+            : `Invitation emails sent (${results.length}) — links below as backup`,
+        )
+      } else {
+        toast.success(
+          `${results.length} invite(s) created. ${emailed} email(s) sent via Supabase; share links for the rest.`,
+        )
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to send invites'
       setError(message)
@@ -133,7 +171,10 @@ export function TeamInviteCard({ teamId }: TeamInviteCardProps) {
     <Card className="overflow-hidden rounded-xl border shadow-sm" id="team-invite">
       <CardHeader className="flex flex-col gap-1.5 pb-4">
         <CardTitle className="text-lg">Invite team</CardTitle>
-        <CardDescription>Add members to your workspace</CardDescription>
+        <CardDescription>
+          We email a Supabase invite to each address (set password / sign in), plus a personal link
+          as backup. Share-only links work for anyone while valid.
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex flex-col gap-3">
@@ -162,21 +203,33 @@ export function TeamInviteCard({ teamId }: TeamInviteCardProps) {
         {sentResults && sentResults.length > 0 && (
           <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-3">
             <p className="text-xs font-medium text-muted-foreground">
-              Personal invite links (each is unique)
+              Invites — email status and personal link
             </p>
             <ul className="flex flex-col gap-3">
               {sentResults.map((r) => (
-                <li key={r.email} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
-                  <span className="w-full max-w-[200px] truncate text-sm font-medium">{r.email}</span>
+                <li key={r.email} className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="truncate text-sm font-medium">{r.email}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {r.authInviteSent
+                        ? 'Invite email sent'
+                        : r.authInviteError
+                          ? 'Email not sent — share link'
+                          : 'Share link only'}
+                    </span>
+                  </div>
+                  {r.authInviteError ? (
+                    <p className="text-xs text-muted-foreground">{r.authInviteError}</p>
+                  ) : null}
                   <div className="flex min-w-0 flex-1 gap-2">
-                    <Input readOnly value={r.url} className="min-w-0 font-mono text-xs" />
+                    <Input readOnly value={r.inviteUrl} className="min-w-0 font-mono text-xs" />
                     <Button
                       type="button"
                       variant="outline"
                       size="icon"
                       className="shrink-0"
                       onClick={async () => {
-                        await navigator.clipboard.writeText(r.url)
+                        await navigator.clipboard.writeText(r.inviteUrl)
                         toast.success('Copied')
                       }}
                     >
@@ -238,11 +291,12 @@ export function TeamInviteCard({ teamId }: TeamInviteCardProps) {
           )}
         </div>
 
-        {error && (
-          <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3">
-            <p className="text-sm text-destructive">{error}</p>
-          </div>
-        )}
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTitle>Something went wrong</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
       </CardContent>
       <CardFooter className="flex flex-col items-start border-t bg-muted/40 px-6 py-4">
         <Button type="button" className="w-fit" disabled={sendLoading} onClick={sendInvites}>

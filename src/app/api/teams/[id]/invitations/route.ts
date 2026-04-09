@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
+import { buildAuthCallbackRedirectUrl } from '@/lib/auth/auth-callback-url'
+import { createAppUrl, getAppUrl } from '@/lib/app-url'
+import { createServiceClient } from '@/lib/supabase/service'
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { createAppUrl } from '@/lib/app-url'
 
 // GET - Get team invitations
 export async function GET(
@@ -55,7 +57,12 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { email } = await request.json()
+    const body = await request.json()
+    const emailRaw = body?.email
+
+    const rawInviteEmail =
+      typeof emailRaw === 'string' && emailRaw.trim() ? emailRaw.trim() : null
+    const storedEmail = rawInviteEmail ? rawInviteEmail.toLowerCase() : null
 
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -87,7 +94,7 @@ export async function POST(
       .from('team_invitations')
       .insert({
         team_id: id,
-        email: email || null,
+        email: storedEmail,
         token,
         invited_by: user.id,
         status: 'pending',
@@ -104,9 +111,46 @@ export async function POST(
     // Generate invite URL
     const inviteUrl = createAppUrl(`/invite/${token}`).toString()
 
+    let authInviteSent = false
+    let authInviteError: string | null = null
+
+    if (rawInviteEmail) {
+      const service = createServiceClient()
+      const redirectTo = buildAuthCallbackRedirectUrl(getAppUrl(), `/invite/${token}`)
+
+      const { error: inviteErr } = await service.auth.admin.inviteUserByEmail(rawInviteEmail, {
+        redirectTo,
+        data: {
+          team_invite_token: token,
+          team_id: id,
+        },
+      })
+
+      if (inviteErr) {
+        const msg = (inviteErr.message ?? '').toLowerCase()
+        const looksLikeExistingUser =
+          msg.includes('already') ||
+          msg.includes('registered') ||
+          (inviteErr as { status?: number }).status === 422
+
+        if (looksLikeExistingUser) {
+          authInviteError =
+            'An account with this email already exists. They can sign in and use the invite link.'
+        } else {
+          console.error('inviteUserByEmail error:', inviteErr)
+          authInviteError =
+            inviteErr.message || 'Could not send the invitation email. They can still use the link.'
+        }
+      } else {
+        authInviteSent = true
+      }
+    }
+
     return NextResponse.json({
       invitation,
-      inviteUrl
+      inviteUrl,
+      authInviteSent,
+      authInviteError,
     })
 
   } catch (err) {
