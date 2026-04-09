@@ -1,5 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import { sanitizeAuthNextParam } from '@/lib/auth/auth-callback-url'
+import {
+  invitePathFromUserMetadata,
+  sanitizeAuthNextParam,
+} from '@/lib/auth/auth-callback-url'
 import { profileSeedFromOAuthUser } from '@/lib/auth/profile-seed'
 import { NextResponse } from 'next/server'
 
@@ -22,6 +25,10 @@ export async function GET(request: Request) {
         .single()
 
       const safeNext = sanitizeAuthNextParam(next)
+      const inviteFromQuery =
+        safeNext && safeNext.startsWith('/invite/') ? safeNext : null
+      const inviteFromMetadata = invitePathFromUserMetadata(data.user)
+      const inviteDest = inviteFromQuery ?? inviteFromMetadata
 
       // If no profile exists, create one with onboarding_completed = false
       if (profileError || !profile) {
@@ -40,9 +47,7 @@ export async function GET(request: Request) {
           // Even if insert fails, redirect to onboarding - it will handle profile creation
         }
 
-        // Invited users: land on invite page first (token in `next`) instead of full onboarding
-        const inviteDest =
-          safeNext && safeNext.startsWith('/invite/') ? safeNext : null
+        // Invited users: `/invite/…` from `next` or from inviteUserByEmail user_metadata
         return NextResponse.redirect(`${origin}${inviteDest ?? '/onboarding'}`)
       }
 
@@ -67,11 +72,9 @@ export async function GET(request: Request) {
         }
       }
 
-      // Incomplete onboarding: honor invite deep-link; otherwise full wizard
+      // Incomplete onboarding: honor invite deep-link (query or metadata); otherwise full wizard
       const redirectPath = !profile.onboarding_completed
-        ? safeNext && safeNext.startsWith('/invite/')
-          ? safeNext
-          : '/onboarding'
+        ? inviteDest ?? '/onboarding'
         : (safeNext ?? '/campaigns')
 
       return NextResponse.redirect(`${origin}${redirectPath}`)

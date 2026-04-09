@@ -114,35 +114,50 @@ export async function POST(
     let authInviteSent = false
     let authInviteError: string | null = null
 
+    /** Extra detail for debugging (UI + logs) when the Supabase Admin API misbehaves. */
+    let authInviteDiagnostic: string | null = null
+
     if (rawInviteEmail) {
-      const service = createServiceClient()
-      const redirectTo = buildAuthCallbackRedirectUrl(getAppUrl(), `/invite/${token}`)
-
-      const { error: inviteErr } = await service.auth.admin.inviteUserByEmail(rawInviteEmail, {
-        redirectTo,
-        data: {
-          team_invite_token: token,
-          team_id: id,
-        },
-      })
-
-      if (inviteErr) {
-        const msg = (inviteErr.message ?? '').toLowerCase()
-        const looksLikeExistingUser =
-          msg.includes('already') ||
-          msg.includes('registered') ||
-          (inviteErr as { status?: number }).status === 422
-
-        if (looksLikeExistingUser) {
-          authInviteError =
-            'An account with this email already exists. They can sign in and use the invite link.'
-        } else {
-          console.error('inviteUserByEmail error:', inviteErr)
-          authInviteError =
-            inviteErr.message || 'Could not send the invitation email. They can still use the link.'
-        }
+      if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+        authInviteError =
+          'Server is missing SUPABASE_SERVICE_ROLE_KEY — cannot send Supabase invite emails.'
+        console.error('inviteUserByEmail skipped: SUPABASE_SERVICE_ROLE_KEY not set')
       } else {
-        authInviteSent = true
+        const service = createServiceClient()
+        const redirectTo = buildAuthCallbackRedirectUrl(getAppUrl(), `/invite/${token}`)
+
+        const { data: inviteData, error: inviteErr } =
+          await service.auth.admin.inviteUserByEmail(rawInviteEmail, {
+            redirectTo,
+            data: {
+              team_invite_token: token,
+              team_id: id,
+            },
+          })
+
+        if (inviteErr) {
+          const msg = (inviteErr.message ?? '').toLowerCase()
+          const looksLikeExistingUser =
+            msg.includes('already') ||
+            msg.includes('registered') ||
+            (inviteErr as { status?: number }).status === 422
+
+          if (looksLikeExistingUser) {
+            authInviteError =
+              'An account with this email already exists. They can sign in and use the invite link.'
+          } else {
+            console.error('inviteUserByEmail error:', inviteErr)
+            authInviteError =
+              inviteErr.message || 'Could not send the invitation email. They can still use the link.'
+          }
+        } else if (inviteData?.user?.id) {
+          authInviteSent = true
+        } else {
+          authInviteSent = false
+          authInviteDiagnostic =
+            'Supabase returned success but no user payload — check Authentication logs and SMTP settings.'
+          console.warn('inviteUserByEmail returned no error but no user', inviteData)
+        }
       }
     }
 
@@ -151,6 +166,7 @@ export async function POST(
       inviteUrl,
       authInviteSent,
       authInviteError,
+      authInviteDiagnostic,
     })
 
   } catch (err) {

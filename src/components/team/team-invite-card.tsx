@@ -35,6 +35,7 @@ interface SentInviteRow {
   inviteUrl: string
   authInviteSent: boolean
   authInviteError: string | null
+  authInviteDiagnostic: string | null
 }
 
 export function TeamInviteCard({ teamId }: TeamInviteCardProps) {
@@ -126,6 +127,8 @@ export function TeamInviteCard({ teamId }: TeamInviteCardProps) {
           authInviteSent: Boolean(data.authInviteSent),
           authInviteError:
             typeof data.authInviteError === 'string' ? data.authInviteError : null,
+          authInviteDiagnostic:
+            typeof data.authInviteDiagnostic === 'string' ? data.authInviteDiagnostic : null,
         })
       }
 
@@ -220,6 +223,9 @@ export function TeamInviteCard({ teamId }: TeamInviteCardProps) {
                   </div>
                   {r.authInviteError ? (
                     <p className="text-xs text-muted-foreground">{r.authInviteError}</p>
+                  ) : null}
+                  {r.authInviteDiagnostic ? (
+                    <p className="text-xs font-medium text-foreground">{r.authInviteDiagnostic}</p>
                   ) : null}
                   <div className="flex min-w-0 flex-1 gap-2">
                     <Input readOnly value={r.inviteUrl} className="min-w-0 font-mono text-xs" />

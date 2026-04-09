@@ -2,6 +2,17 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  // PKCE: Supabase may send users to Site URL (/) with ?code=… — forward to our exchange route
+  // so we don't strip the code via redirect('/login') on the home page.
+  const forwardAuthCode = request.nextUrl.clone()
+  if (
+    forwardAuthCode.searchParams.has('code') &&
+    (forwardAuthCode.pathname === '/' || forwardAuthCode.pathname === '/login')
+  ) {
+    forwardAuthCode.pathname = '/api/auth/callback'
+    return NextResponse.redirect(forwardAuthCode)
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })
