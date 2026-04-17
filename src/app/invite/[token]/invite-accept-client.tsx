@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { clearPendingInviteToken } from '@/lib/auth/pending-invite-token'
 import { InviteOptionalProfileStep } from '@/components/invite/invite-optional-profile-step'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -36,6 +37,8 @@ export function InviteAcceptClient({ token, teamName, inviterName }: InviteAccep
       if (!response.ok) {
         throw new Error(data.error || 'Failed to accept invitation')
       }
+
+      clearPendingInviteToken()
 
       const joinedName =
         data.team && typeof data.team === 'object' && 'name' in data.team

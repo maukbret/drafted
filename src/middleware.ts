@@ -7,7 +7,9 @@ export async function middleware(request: NextRequest) {
   const forwardAuthCode = request.nextUrl.clone()
   if (
     forwardAuthCode.searchParams.has('code') &&
-    (forwardAuthCode.pathname === '/' || forwardAuthCode.pathname === '/login')
+    (forwardAuthCode.pathname === '/' ||
+      forwardAuthCode.pathname === '/login' ||
+      forwardAuthCode.pathname === '/signup')
   ) {
     forwardAuthCode.pathname = '/api/auth/callback'
     return NextResponse.redirect(forwardAuthCode)

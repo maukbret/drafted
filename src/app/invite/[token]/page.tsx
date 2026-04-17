@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
+import { InviteSignupRedirect } from '@/components/invite/invite-signup-redirect'
 import { InviteAcceptClient } from './invite-accept-client'
 
 interface InvitePageProps {
@@ -86,9 +87,9 @@ export default async function InvitePage({ params }: InvitePageProps) {
     )
   }
 
-  // If not logged in, redirect to login with return URL
+  // Unauthenticated: sign-up flow (not login); client persists token for onboarding recovery
   if (!user) {
-    redirect(`/login?redirect=/invite/${token}`)
+    return <InviteSignupRedirect token={token} />
   }
 
   // Check if user is already in a team

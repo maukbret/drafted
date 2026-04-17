@@ -73,7 +73,7 @@ export async function importProjectFramesToKlaviyo<T extends KlaviyoImportFrameR
             data: {
               type: 'image',
               attributes: {
-                name: frame.name,
+                name: (frame.name ?? '').slice(0, 255) || 'Image',
                 import_from_url: sourceImageUrl!,
                 hidden: false,
               },

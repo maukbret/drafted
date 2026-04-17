@@ -1,5 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { buildAuthCallbackRedirectUrl } from '@/lib/auth/auth-callback-url'
+import {
+  getAuthApiErrorCode,
+  isInviteDuplicateAccountError,
+} from '@/lib/auth/invite-email-errors'
 import { createAppUrl, getAppUrl } from '@/lib/app-url'
 import { createServiceClient } from '@/lib/supabase/service'
 import { NextRequest, NextResponse } from 'next/server'
@@ -113,8 +117,9 @@ export async function POST(
 
     let authInviteSent = false
     let authInviteError: string | null = null
+    let authInviteErrorCode: string | null = null
 
-    /** Extra detail for debugging (UI + logs) when the Supabase Admin API misbehaves. */
+    /** Non-fatal hints (e.g. empty user in JSON) — invite may still have been queued. */
     let authInviteDiagnostic: string | null = null
 
     if (rawInviteEmail) {
@@ -136,27 +141,27 @@ export async function POST(
           })
 
         if (inviteErr) {
-          const msg = (inviteErr.message ?? '').toLowerCase()
-          const looksLikeExistingUser =
-            msg.includes('already') ||
-            msg.includes('registered') ||
-            (inviteErr as { status?: number }).status === 422
-
-          if (looksLikeExistingUser) {
+          authInviteErrorCode = getAuthApiErrorCode(inviteErr)
+          if (isInviteDuplicateAccountError(inviteErr)) {
             authInviteError =
               'An account with this email already exists. They can sign in and use the invite link.'
           } else {
             console.error('inviteUserByEmail error:', inviteErr)
-            authInviteError =
+            const base =
               inviteErr.message || 'Could not send the invitation email. They can still use the link.'
+            authInviteError =
+              authInviteErrorCode && !base.toLowerCase().includes(authInviteErrorCode.toLowerCase())
+                ? `${base} (${authInviteErrorCode})`
+                : base
           }
-        } else if (inviteData?.user?.id) {
-          authInviteSent = true
         } else {
-          authInviteSent = false
-          authInviteDiagnostic =
-            'Supabase returned success but no user payload — check Authentication logs and SMTP settings.'
-          console.warn('inviteUserByEmail returned no error but no user', inviteData)
+          // No error from GoTrue — invite email is queued. Some API versions omit `user` in JSON.
+          authInviteSent = true
+          if (!inviteData?.user?.id) {
+            authInviteDiagnostic =
+              'Supabase accepted the invite; if no email arrives, check Authentication → Users and SMTP.'
+            console.warn('inviteUserByEmail: OK but no user in response body', inviteData)
+          }
         }
       }
     }
@@ -166,6 +171,7 @@ export async function POST(
       inviteUrl,
       authInviteSent,
       authInviteError,
+      authInviteErrorCode,
       authInviteDiagnostic,
     })
 

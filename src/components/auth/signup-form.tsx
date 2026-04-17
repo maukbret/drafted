@@ -1,12 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Eye, EyeOff, Loader2, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { createClient } from '@/lib/supabase/client'
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button'
+import {
+  buildAuthCallbackRedirectUrl,
+  sanitizeAuthNextParam,
+} from '@/lib/auth/auth-callback-url'
+import { rememberPendingInviteToken } from '@/lib/auth/pending-invite-token'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,8 +20,18 @@ import { cn } from '@/lib/utils'
 export function SignupForm({
   className,
   isPreview = false,
+  redirectTo: redirectToProp = null,
   ...props
-}: React.ComponentPropsWithoutRef<'form'> & { isPreview?: boolean }) {
+}: React.ComponentPropsWithoutRef<'form'> & {
+  isPreview?: boolean
+  /** From `?redirect=` — safe path only (e.g. `/invite/…`). */
+  redirectTo?: string | null
+}) {
+  const redirectTo = sanitizeAuthNextParam(redirectToProp ?? null)
+  const loginHref = redirectTo
+    ? `/login?redirect=${encodeURIComponent(redirectTo)}`
+    : '/login'
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -25,6 +40,12 @@ export function SignupForm({
   const [signupComplete, setSignupComplete] = useState(false)
 
   const supabase = createClient()
+
+  useEffect(() => {
+    if (!redirectTo?.startsWith('/invite/')) return
+    const token = redirectTo.slice('/invite/'.length)
+    if (/^[a-f0-9]{32,}$/i.test(token)) rememberPendingInviteToken(token)
+  }, [redirectTo])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,7 +64,10 @@ export function SignupForm({
         email: normalizedEmail,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/api/auth/callback`,
+          emailRedirectTo: buildAuthCallbackRedirectUrl(
+            window.location.origin,
+            redirectTo,
+          ),
         },
       })
       if (signUpError) throw signUpError
@@ -82,7 +106,7 @@ export function SignupForm({
         <p className="text-center text-sm text-muted-foreground">
           Already verified?{' '}
           <Link
-            href="/login"
+            href={loginHref}
             className="font-medium text-foreground underline underline-offset-4 hover:underline"
           >
             Sign in
@@ -105,7 +129,11 @@ export function SignupForm({
         </p>
       </div>
       <div className="grid gap-6">
-        <GoogleSignInButton supabase={supabase} isPreview={isPreview} />
+        <GoogleSignInButton
+          supabase={supabase}
+          isPreview={isPreview}
+          nextPath={redirectTo}
+        />
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
             <span className="w-full border-t border-border" />
@@ -180,7 +208,7 @@ export function SignupForm({
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{' '}
         <Link
-          href="/login"
+          href={loginHref}
           className="font-medium text-foreground underline underline-offset-4 hover:underline"
         >
           Sign in

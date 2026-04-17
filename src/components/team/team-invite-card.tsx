@@ -157,8 +157,22 @@ export function TeamInviteCard({ teamId }: TeamInviteCardProps) {
             : `Invitation emails sent (${results.length}) — links below as backup`,
         )
       } else {
-        toast.success(
+        const detailLines = results
+          .filter((r) => !r.authInviteSent)
+          .flatMap((r) => {
+            const parts = [r.authInviteError, r.authInviteDiagnostic].filter(
+              (s): s is string => typeof s === 'string' && s.length > 0,
+            )
+            return parts.length ? [parts.join(' — ')] : []
+          })
+        toast.message(
           `${results.length} invite(s) created. ${emailed} email(s) sent via Supabase; share links for the rest.`,
+          {
+            description:
+              detailLines.length > 0
+                ? detailLines.slice(0, 2).join(' · ')
+                : 'If you expected an email, check Supabase Auth logs and SMTP.',
+          },
         )
       }
     } catch (err) {

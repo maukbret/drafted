@@ -8,6 +8,11 @@ import { Loader2 } from 'lucide-react'
 import { AuthSplitLayout } from '@/components/auth/auth-split-layout'
 import { OnboardingStepLine } from '@/components/onboarding-step-line'
 import { SignupForm } from '@/components/auth/signup-form'
+import { invitePathFromUserMetadata } from '@/lib/auth/auth-callback-url'
+import {
+  pendingInvitePathFromToken,
+  readPendingInviteToken,
+} from '@/lib/auth/pending-invite-token'
 import {
   STEP_NUMBER_TO_SLUG,
   STEP_SLUG_TO_NUMBER,
@@ -70,6 +75,31 @@ function OnboardingContent() {
       if (profile?.onboarding_completed) {
         router.push('/campaigns')
         return
+      }
+
+      // Invited users: never run plan / Figma / Klaviyo here — go accept the invite first.
+      const fromMetadata = user ? invitePathFromUserMetadata(user) : null
+      const fromStorage = pendingInvitePathFromToken(readPendingInviteToken())
+      const resumeInvite = fromMetadata ?? fromStorage
+      if (resumeInvite) {
+        router.replace(resumeInvite)
+        return
+      }
+
+      try {
+        const invRes = await fetch('/api/invitations')
+        if (invRes.ok) {
+          const invData = (await invRes.json()) as {
+            invitations?: { token?: string }[]
+          }
+          const t = invData.invitations?.[0]?.token
+          if (typeof t === 'string' && t.length > 0) {
+            router.replace(`/invite/${t}`)
+            return
+          }
+        }
+      } catch {
+        /* continue with normal onboarding */
       }
 
       const stepParam = searchParams.get('step')
