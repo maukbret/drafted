@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EmailFrameRowInput } from '@/lib/email/frame-rows-html'
 import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
 import { getFrameDisplayUrl, isSupabaseFrameImagesPublicUrl } from '@/lib/frame-url'
+import { fetchWithKlaviyoRateLimitRetry } from '@/lib/klaviyo-rate-limited-fetch'
 
 export type KlaviyoImportFrameRow = EmailFrameRowInput & { id: string }
 
@@ -41,27 +42,33 @@ export async function importProjectFramesToKlaviyo<T extends KlaviyoImportFrameR
   klaviyoToken: string,
   formatKlaviyoApiError: (errorBody: string) => string
 ): Promise<{ ok: true; frames: T[] } | { ok: false; message: string }> {
-  const results = await Promise.all(
-    frames.map(async (frame): Promise<
-      | { kind: 'empty' }
-      | { kind: 'error'; message: string }
-      | { kind: 'frame'; frame: T }
-    > => {
-      const sourceImageUrl = normalizeImageUrl(frame.image_url)
-      const existingKlaviyoImageUrl = normalizeImageUrl(frame.klaviyo_image_url)
+  /** POST /api/images is burst 3/s (Klaviyo); run imports one-at-a-time to stay under burst. */
+  const results: Array<
+    | { kind: 'empty' }
+    | { kind: 'error'; message: string }
+    | { kind: 'frame'; frame: T }
+  > = []
 
-      if (!sourceImageUrl && !existingKlaviyoImageUrl) {
-        return { kind: 'empty' }
-      }
-      if (!sourceImageUrl && existingKlaviyoImageUrl) {
-        return {
-          kind: 'frame',
-          frame: { ...frame, klaviyo_image_url: existingKlaviyoImageUrl } as T,
-        }
-      }
+  for (const frame of frames) {
+    const sourceImageUrl = normalizeImageUrl(frame.image_url)
+    const existingKlaviyoImageUrl = normalizeImageUrl(frame.klaviyo_image_url)
 
-      try {
-        const imageResponse = await fetch(KLAVIYO_IMAGES_API, {
+    if (!sourceImageUrl && !existingKlaviyoImageUrl) {
+      results.push({ kind: 'empty' })
+      continue
+    }
+    if (!sourceImageUrl && existingKlaviyoImageUrl) {
+      results.push({
+        kind: 'frame',
+        frame: { ...frame, klaviyo_image_url: existingKlaviyoImageUrl } as T,
+      })
+      continue
+    }
+
+    try {
+      const imageResponse = await fetchWithKlaviyoRateLimitRetry(
+        KLAVIYO_IMAGES_API,
+        {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${klaviyoToken}`,
@@ -79,54 +86,57 @@ export async function importProjectFramesToKlaviyo<T extends KlaviyoImportFrameR
               },
             },
           }),
-        })
+        },
+        { maxAttempts: 8, logLabel: `Klaviyo image import (${frame.name ?? 'slice'})` }
+      )
 
-        if (!imageResponse.ok) {
-          const errorText = await imageResponse.text()
-          console.error('Klaviyo image import error:', frame.name, errorText)
-          return {
-            kind: 'error',
-            message: `Klaviyo could not import image "${frame.name}": ${formatKlaviyoApiError(errorText)}`,
-          }
-        }
-
-        const imageData = (await imageResponse.json()) as {
-          data?: { attributes?: { image_url?: string } }
-        }
-        const klaviyoImageUrl = normalizeImageUrl(imageData.data?.attributes?.image_url)
-        if (!klaviyoImageUrl) {
-          return {
-            kind: 'error',
-            message: `Klaviyo did not return a hosted image URL for "${frame.name}". Try again.`,
-          }
-        }
-
-        const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
-        await supabase
-          .from('frames')
-          .update({
-            image_url: deletedSourceImage ? null : frame.image_url,
-            klaviyo_image_url: klaviyoImageUrl,
-          })
-          .eq('id', frame.id)
-
-        return {
-          kind: 'frame',
-          frame: {
-            ...frame,
-            image_url: deletedSourceImage ? null : frame.image_url,
-            klaviyo_image_url: klaviyoImageUrl,
-          } as T,
-        }
-      } catch (err) {
-        console.error('Klaviyo image import failed:', frame.name, err)
-        return {
+      if (!imageResponse.ok) {
+        const errorText = await imageResponse.text()
+        console.error('Klaviyo image import error:', frame.name, errorText)
+        results.push({
           kind: 'error',
-          message: `Failed to import image "${frame.name}" to Klaviyo. Check your connection and try again.`,
-        }
+          message: `Klaviyo could not import image "${frame.name}": ${formatKlaviyoApiError(errorText)}`,
+        })
+        continue
       }
-    })
-  )
+
+      const imageData = (await imageResponse.json()) as {
+        data?: { attributes?: { image_url?: string } }
+      }
+      const klaviyoImageUrl = normalizeImageUrl(imageData.data?.attributes?.image_url)
+      if (!klaviyoImageUrl) {
+        results.push({
+          kind: 'error',
+          message: `Klaviyo did not return a hosted image URL for "${frame.name}". Try again.`,
+        })
+        continue
+      }
+
+      const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
+      await supabase
+        .from('frames')
+        .update({
+          image_url: deletedSourceImage ? null : frame.image_url,
+          klaviyo_image_url: klaviyoImageUrl,
+        })
+        .eq('id', frame.id)
+
+      results.push({
+        kind: 'frame',
+        frame: {
+          ...frame,
+          image_url: deletedSourceImage ? null : frame.image_url,
+          klaviyo_image_url: klaviyoImageUrl,
+        } as T,
+      })
+    } catch (err) {
+      console.error('Klaviyo image import failed:', frame.name, err)
+      results.push({
+        kind: 'error',
+        message: `Failed to import image "${frame.name}" to Klaviyo. Check your connection and try again.`,
+      })
+    }
+  }
 
   const firstError = results.find((r): r is { kind: 'error'; message: string } => r.kind === 'error')
   if (firstError) return { ok: false, message: firstError.message }
