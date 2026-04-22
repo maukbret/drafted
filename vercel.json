@@ -1,1 +1,9 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/frame-image-cleanup",
+      "schedule": "0 */12 * * *"
+    }
+  ]
+}
 {}

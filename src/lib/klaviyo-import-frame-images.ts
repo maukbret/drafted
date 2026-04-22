@@ -11,6 +11,8 @@ export type KlaviyoImportFrameRow = EmailFrameRowInput & { id: string }
 
 const KLAVIYO_IMAGES_API = 'https://a.klaviyo.com/api/images'
 const KLAVIYO_REVISION = '2026-01-15'
+const SOURCE_IMAGE_RETENTION_HOURS = 6
+const SOURCE_IMAGE_RETENTION_MS = SOURCE_IMAGE_RETENTION_HOURS * 60 * 60 * 1000
 
 export function formatKlaviyoImageApiErrorBody(errorBody: string): string {
   try {
@@ -31,9 +33,18 @@ function normalizeImageUrl(url: string | null | undefined): string | null {
   return normalized
 }
 
+function shouldDeleteSourceImageNow(frame: { updated_at?: string | null }): boolean {
+  const updatedAt = typeof frame.updated_at === 'string' ? Date.parse(frame.updated_at) : NaN
+  if (!Number.isFinite(updatedAt)) {
+    return false
+  }
+  return Date.now() - updatedAt >= SOURCE_IMAGE_RETENTION_MS
+}
+
 /**
  * Ensures every slice image is hosted by Klaviyo before building send/template HTML.
- * - If `image_url` is set, always POSTs `import_from_url` so Klaviyo fetches the current asset (then we delete Storage when possible).
+ * - If `image_url` is set, always POSTs `import_from_url` so Klaviyo fetches the current asset.
+ * - Source Storage images are retained for a short edit window before we delete them.
  * - Fails the whole operation if Klaviyo does not return a hosted URL (no fallback to Supabase in email HTML).
  */
 export async function importProjectFramesToKlaviyo<T extends KlaviyoImportFrameRow>(
@@ -112,7 +123,10 @@ export async function importProjectFramesToKlaviyo<T extends KlaviyoImportFrameR
         continue
       }
 
-      const deletedSourceImage = await deleteFrameImageByUrl(sourceImageUrl)
+      const canDeleteSourceImage = shouldDeleteSourceImageNow(frame)
+      const deletedSourceImage = canDeleteSourceImage
+        ? await deleteFrameImageByUrl(sourceImageUrl)
+        : false
       await supabase
         .from('frames')
         .update({
