@@ -7,7 +7,7 @@ import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
 import { getFrameDisplayUrl, isSupabaseFrameImagesPublicUrl } from '@/lib/frame-url'
 import { fetchWithKlaviyoRateLimitRetry } from '@/lib/klaviyo-rate-limited-fetch'
 
-export type KlaviyoImportFrameRow = EmailFrameRowInput & { id: string }
+export type KlaviyoImportFrameRow = EmailFrameRowInput & { id: string; updated_at?: string | null }
 
 const KLAVIYO_IMAGES_API = 'https://a.klaviyo.com/api/images'
 const KLAVIYO_REVISION = '2026-01-15'
