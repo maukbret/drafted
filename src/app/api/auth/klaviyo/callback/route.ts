@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
       const tierLimits: Record<string, number> = {
         starter: 1,
         advanced: 5,
-        pro: 20,
+        pro: 40,
       }
       const connectionLimit = subscription?.price_tier
         ? tierLimits[subscription.price_tier] || 0

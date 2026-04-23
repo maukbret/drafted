@@ -60,10 +60,10 @@ export const TIER_CONFIGS: Record<SubscriptionTier, TierConfig> = {
     tier: 'pro',
     price: 99,
     currency: 'EUR',
-    klaviyoAccountLimit: 20,
+    klaviyoAccountLimit: 40,
     priceId: STRIPE_PRICE_PRO,
     features: [
-      'Up to 20 Klaviyo accounts',
+      'Up to 40 Klaviyo accounts',
       'Unlimited campaigns',
       'Unlimited team members',
       'Priority support',

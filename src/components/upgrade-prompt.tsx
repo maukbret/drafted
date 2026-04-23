@@ -33,7 +33,7 @@ const UPGRADE_OPTIONS: TierOption[] = [
     name: 'Pro',
     tier: 'pro',
     price: 99,
-    klaviyoAccountLimit: 20,
+    klaviyoAccountLimit: 40,
   },
 ]
 

@@ -61,9 +61,9 @@ const TIER_CONFIGS: Record<SubscriptionTier, TierConfig> = {
     name: 'Pro',
     tier: 'pro',
     price: 99,
-    klaviyoAccountLimit: 20,
+    klaviyoAccountLimit: 40,
     features: [
-      'Up to 20 Klaviyo accounts',
+      'Up to 40 Klaviyo accounts',
       'Unlimited campaigns',
       'Unlimited team members',
       'Priority support',
