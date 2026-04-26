@@ -99,7 +99,10 @@ export async function POST(
     await deleteFrameImagesForProjectExceptUrls(
       user.id,
       projectId,
-      slices.map(slice => slice.imageUrl)
+      [
+        ...slices.map(slice => slice.imageUrl),
+        sliceMasterImageUrl,
+      ]
     )
 
     await supabase

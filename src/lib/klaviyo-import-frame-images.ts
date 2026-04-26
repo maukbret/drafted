@@ -4,15 +4,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { EmailFrameRowInput } from '@/lib/email/frame-rows-html'
 import { deleteFrameImageByUrl } from '@/lib/frame-images-server'
+import { isPastFrameImageRetention } from '@/lib/frame-image-retention'
 import { getFrameDisplayUrl, isSupabaseFrameImagesPublicUrl } from '@/lib/frame-url'
 import { fetchWithKlaviyoRateLimitRetry } from '@/lib/klaviyo-rate-limited-fetch'
 
-export type KlaviyoImportFrameRow = EmailFrameRowInput & { id: string; updated_at?: string | null }
+export type KlaviyoImportFrameRow = EmailFrameRowInput & { id: string; created_at?: string | null }
 
 const KLAVIYO_IMAGES_API = 'https://a.klaviyo.com/api/images'
 const KLAVIYO_REVISION = '2026-01-15'
-const SOURCE_IMAGE_RETENTION_HOURS = 6
-const SOURCE_IMAGE_RETENTION_MS = SOURCE_IMAGE_RETENTION_HOURS * 60 * 60 * 1000
 
 export function formatKlaviyoImageApiErrorBody(errorBody: string): string {
   try {
@@ -31,14 +30,6 @@ function normalizeImageUrl(url: string | null | undefined): string | null {
   const normalized = url.trim()
   if (!normalized || normalized === 'null' || normalized === 'undefined') return null
   return normalized
-}
-
-function shouldDeleteSourceImageNow(frame: { updated_at?: string | null }): boolean {
-  const updatedAt = typeof frame.updated_at === 'string' ? Date.parse(frame.updated_at) : NaN
-  if (!Number.isFinite(updatedAt)) {
-    return false
-  }
-  return Date.now() - updatedAt >= SOURCE_IMAGE_RETENTION_MS
 }
 
 /**
@@ -123,7 +114,7 @@ export async function importProjectFramesToKlaviyo<T extends KlaviyoImportFrameR
         continue
       }
 
-      const canDeleteSourceImage = shouldDeleteSourceImageNow(frame)
+      const canDeleteSourceImage = isPastFrameImageRetention(frame.created_at)
       const deletedSourceImage = canDeleteSourceImage
         ? await deleteFrameImageByUrl(sourceImageUrl)
         : false
