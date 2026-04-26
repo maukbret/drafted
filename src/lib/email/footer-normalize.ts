@@ -2,6 +2,16 @@ import { scopeCssUnderSelector, scaleCssWidths } from './footer-css'
 
 const TARGET_EMAIL_WIDTH = 600
 
+/**
+ * Klaviyo template-render can leave `href="[unsubscribe_tag]"` in compiled HTML.
+ * In CODE templates Klaviyo expects `{% unsubscribe_link %}` (or `{% unsubscribe %}`) so
+ * sends resolve correctly and compliance detection does not append a second footer.
+ */
+export function normalizeKlaviyoFooterPlaceholders(html: string): string {
+  if (!html) return html
+  return html.replace(/\[unsubscribe_tag\]/gi, '{% unsubscribe_link %}')
+}
+
 function extractWidthFromTag(tag: string): number | null {
   const widthAttrMatch = tag.match(/\swidth\s*=\s*["']?(\d+(?:\.\d+)?)(?:px)?["']?(?=\s|>|\/)/i)
   if (widthAttrMatch) {
@@ -74,7 +84,7 @@ function cleanFooterHtml(html: string): string {
 }
 
 export function normalizeFooterHtmlForExport(html: string, targetWidth = TARGET_EMAIL_WIDTH): string {
-  const cleanedFooter = cleanFooterHtml(html)
+  const cleanedFooter = cleanFooterHtml(normalizeKlaviyoFooterPlaceholders(html))
   if (!cleanedFooter) return ''
 
   const baseWidth = detectFooterBaseWidth(cleanedFooter)

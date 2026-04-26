@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { userCanManageKlaviyoConnectionSettings, userCanUseKlaviyoConnection } from '@/lib/klaviyo-connection-access'
 import { ensureKlaviyoAccountId } from '@/lib/klaviyo'
+import { normalizeKlaviyoFooterPlaceholders } from '@/lib/email/footer-normalize'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET - Retrieve stored footer for a connection
@@ -101,13 +102,15 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    const normalizedFooterHtml = normalizeKlaviyoFooterPlaceholders(footerHtml)
+
     // Upsert the footer (update if exists, insert if not)
     const { data: footer, error: upsertError } = await supabase
       .from('klaviyo_footers')
       .upsert({
         user_id: connection.user_id,
         klaviyo_account_id: klaviyoAccountId,
-        footer_html: footerHtml,
+        footer_html: normalizedFooterHtml,
         footer_css: footerCss || null,
         source_url: sourceUrl || null,
         updated_at: new Date().toISOString(),
