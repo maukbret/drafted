@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { canAccessReports } from '@/lib/feature-access'
 import { KlaviyoAnalyticsData } from '@/types/database'
 import { SavedReportDetail } from '@/types/reports'
@@ -126,11 +127,12 @@ export default async function ReportDetailRoute({ params }: ReportDetailRoutePro
 
   let connectionStoreUrl: string | null = null
   if (row.connection_id) {
-    const { data: conn } = await supabase
+    const serviceSupabase = createServiceClient()
+    const { data: conn } = await serviceSupabase
       .from('klaviyo_connections')
       .select('store_url')
       .eq('id', row.connection_id)
-      .single()
+      .maybeSingle()
     connectionStoreUrl = conn?.store_url || null
   }
 

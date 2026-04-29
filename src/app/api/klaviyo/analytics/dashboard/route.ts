@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import { userCanUseKlaviyoConnection } from '@/lib/klaviyo-connection-access'
+import { createServiceClient } from '@/lib/supabase/service'
+import { userCanAccessKlaviyoConnectionForReporting } from '@/lib/klaviyo-connection-access'
 import { AnalyticsFetchError, discoverMetricIds, fetchAccountOverview, fetchPeriodData } from '@/lib/klaviyo-analytics'
 import { NextRequest, NextResponse } from 'next/server'
 import { SupabaseClient } from '@supabase/supabase-js'
@@ -22,11 +23,12 @@ type ThrottleState = {
 const throttleByUserConnection = new Map<string, ThrottleState>()
 
 async function verifyAnalyticsAccess(
-  supabase: SupabaseClient,
+  userSupabase: SupabaseClient,
+  serviceSupabase: SupabaseClient,
   userId: string,
   connectionId: string
 ): Promise<{ hasAccess: boolean; scope: string | null }> {
-  const { data: row } = await supabase
+  const { data: row } = await serviceSupabase
     .from('klaviyo_connections')
     .select('scope, user_id')
     .eq('id', connectionId)
@@ -36,7 +38,7 @@ async function verifyAnalyticsAccess(
     return { hasAccess: false, scope: null }
   }
 
-  const allowed = await userCanUseKlaviyoConnection(supabase, userId, row.user_id)
+  const allowed = await userCanAccessKlaviyoConnectionForReporting(userSupabase, userId, row.user_id)
   return { hasAccess: allowed, scope: allowed ? row.scope : null }
 }
 
@@ -162,14 +164,20 @@ export async function GET(request: NextRequest) {
       }, { status: 400 })
     }
 
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const userSupabase = await createClient()
+    const serviceSupabase = createServiceClient()
+    const { data: { user } } = await userSupabase.auth.getUser()
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { hasAccess, scope } = await verifyAnalyticsAccess(supabase, user.id, connectionId)
+    const { hasAccess, scope } = await verifyAnalyticsAccess(
+      userSupabase,
+      serviceSupabase,
+      user.id,
+      connectionId
+    )
     if (!hasAccess) {
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 })
     }
@@ -210,7 +218,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const metricIds = await discoverMetricIds(supabase, connectionId)
+    const metricIds = await discoverMetricIds(serviceSupabase, connectionId)
     if (!metricIds.placedOrderMetricId) {
       return NextResponse.json({
         error: 'Could not find Klaviyo Placed Order metric for this account.',
@@ -218,7 +226,7 @@ export async function GET(request: NextRequest) {
     }
 
     const current = await fetchPeriodData(
-      supabase,
+      serviceSupabase,
       connectionId,
       periodStart,
       periodEnd,
@@ -232,7 +240,7 @@ export async function GET(request: NextRequest) {
     )
 
     const comparison = await fetchPeriodData(
-      supabase,
+      serviceSupabase,
       connectionId,
       compStart,
       compEnd,
@@ -249,7 +257,7 @@ export async function GET(request: NextRequest) {
     if (includeAccountOverview && hasScope(scope, 'campaigns:read') && hasScope(scope, 'flows:read')) {
       console.log('[Analytics Dashboard] Fetching account overview, placedOrderMetricId:', metricIds.placedOrderMetricId)
       accountOverview = await fetchAccountOverview(
-        supabase,
+        serviceSupabase,
         connectionId,
         metricIds.placedOrderMetricId
       )

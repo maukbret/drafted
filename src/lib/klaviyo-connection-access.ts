@@ -43,6 +43,46 @@ export async function userCanUseKlaviyoConnection(
   return !!ownerAsAdmin
 }
 
+/**
+ * True when both users belong to the same team (any role). Used for team-wide reporting on
+ * Klaviyo connections without expanding {@link userCanUseKlaviyoConnection} to all proxy APIs.
+ */
+export async function userSharesTeamWith(
+  supabase: SupabaseClient,
+  userId: string,
+  otherUserId: string
+): Promise<boolean> {
+  if (userId === otherUserId) return true
+
+  const { data: myTeams } = await supabase
+    .from('team_members')
+    .select('team_id')
+    .eq('user_id', userId)
+
+  if (!myTeams?.length) return false
+
+  const teamIds = myTeams.map((t) => t.team_id)
+
+  const { data: overlap } = await supabase
+    .from('team_members')
+    .select('team_id')
+    .eq('user_id', otherUserId)
+    .in('team_id', teamIds)
+    .limit(1)
+    .maybeSingle()
+
+  return !!overlap
+}
+
+export async function userCanAccessKlaviyoConnectionForReporting(
+  supabase: SupabaseClient,
+  userId: string,
+  connectionOwnerId: string
+): Promise<boolean> {
+  if (await userCanUseKlaviyoConnection(supabase, userId, connectionOwnerId)) return true
+  return userSharesTeamWith(supabase, userId, connectionOwnerId)
+}
+
 /** Owner-only settings (footers, default audiences): owner or team admin of their team. */
 export async function userCanManageKlaviyoConnectionSettings(
   supabase: SupabaseClient,

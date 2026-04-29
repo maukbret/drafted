@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
+import { userCanAccessKlaviyoConnectionForReporting } from '@/lib/klaviyo-connection-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { KlaviyoAnalyticsData } from '@/types/database'
 import { SavedReportListItem } from '@/types/reports'
@@ -117,6 +119,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     if (!canAccessReports(user.id)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const serviceSupabase = createServiceClient()
+    const { data: connRow } = await serviceSupabase
+      .from('klaviyo_connections')
+      .select('user_id')
+      .eq('id', connectionId)
+      .maybeSingle()
+
+    if (!connRow) {
+      return NextResponse.json({ error: 'Invalid connection.' }, { status: 400 })
+    }
+
+    const canReport = await userCanAccessKlaviyoConnectionForReporting(
+      supabase,
+      user.id,
+      connRow.user_id
+    )
+    if (!canReport) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

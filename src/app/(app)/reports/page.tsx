@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { canAccessReports } from '@/lib/feature-access'
 import { redirect } from 'next/navigation'
 import { ReportsPageClient } from '@/components/reports-page-client'
@@ -33,9 +34,9 @@ export default async function ReportsPage() {
 
   const { data: teamMembership } = await supabase
     .from('team_members')
-    .select('team_id, role')
+    .select('team_id')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   const { data: ownConnections } = await supabase
     .from('klaviyo_connections')
@@ -43,14 +44,10 @@ export default async function ReportsPage() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 
-  let teamConnections: typeof ownConnections = []
-  if (teamMembership?.role === 'admin') {
-    const { data: team } = await supabase
-      .from('teams')
-      .select('name')
-      .eq('id', teamMembership.team_id)
-      .single()
+  type ConnectionRow = NonNullable<typeof ownConnections>[number] & { owner_name?: string }
+  let teamConnections: ConnectionRow[] = []
 
+  if (teamMembership) {
     const { data: teammates } = await supabase
       .from('team_members')
       .select('user_id')
@@ -59,16 +56,28 @@ export default async function ReportsPage() {
 
     const teammateIds = teammates?.map((m) => m.user_id) || []
     if (teammateIds.length > 0) {
-      const { data: tc } = await supabase
+      const serviceSupabase = createServiceClient()
+      const { data: tc } = await serviceSupabase
         .from('klaviyo_connections')
-        .select('id, account_name, store_url, scope')
+        .select('id, account_name, store_url, scope, user_id')
         .in('user_id', teammateIds)
         .order('created_at', { ascending: false })
 
-      const ownerName = team?.name || 'Team'
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', teammateIds)
+
+      const nameByUserId = Object.fromEntries(
+        (profiles || []).map((p) => [p.id, p.full_name?.trim() || 'Team member'])
+      )
+
       teamConnections = (tc || []).map((conn) => ({
-        ...conn,
-        owner_name: ownerName,
+        id: conn.id,
+        account_name: conn.account_name,
+        store_url: conn.store_url,
+        scope: conn.scope,
+        owner_name: nameByUserId[conn.user_id] ?? 'Team member',
       }))
     }
   }
