@@ -756,7 +756,7 @@ export function EmailSlicer({
       canvas.toBlob(blob => {
         if (blob) resolve(blob)
         else reject(new Error('Canvas toBlob failed'))
-      }, 'image/jpeg', 0.92)
+      }, 'image/jpeg', 0.94)
     })
   }
 

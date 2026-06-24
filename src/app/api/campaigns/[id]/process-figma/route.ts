@@ -191,16 +191,27 @@ export async function POST(
                     process.env.SUPABASE_SERVICE_ROLE_KEY!
                   )
 
-                  const oldPath = `${user.id}/${existingProject.id}/full.png`
-                  const newPath = `${user.id}/${newProject.id}/full.png`
-                  const { error: copyError } = await supabaseAdmin.storage
-                    .from('frame-images')
-                    .copy(oldPath, newPath)
+                  const masterFilenames = ['full.jpg', 'full.png'] as const
+                  let copyError: { message: string } | null = { message: 'not found' }
+                  let copiedPath: string | null = null
+                  for (const filename of masterFilenames) {
+                    const oldPath = `${user.id}/${existingProject.id}/${filename}`
+                    const newPath = `${user.id}/${newProject.id}/${filename}`
+                    const result = await supabaseAdmin.storage
+                      .from('frame-images')
+                      .copy(oldPath, newPath)
+                    if (!result.error) {
+                      copyError = null
+                      copiedPath = newPath
+                      break
+                    }
+                    copyError = result.error
+                  }
 
-                  if (!copyError) {
+                  if (!copyError && copiedPath) {
                     const { data: publicUrlData } = supabaseAdmin.storage
                       .from('frame-images')
-                      .getPublicUrl(newPath)
+                      .getPublicUrl(copiedPath)
                     clonedImageUrl = publicUrlData.publicUrl
                   }
                   // If copy fails, keep referencing the existing URL
@@ -390,7 +401,7 @@ export async function POST(
           let imagesResponse: Response
           try {
             imagesResponse = await figmaApiFetch(
-              `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIdsForScale.join(','))}&format=png&scale=${scale}`,
+              `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIdsForScale.join(','))}&format=jpg&scale=${scale}`,
               {
                 accessToken: figmaToken,
                 cooldownKey: figmaCooldownKey,
@@ -495,12 +506,12 @@ export async function POST(
           }
 
           const imageBlob = await imageResponse.arrayBuffer()
-          const storagePath = `${user.id}/${project.id}/full.png`
+          const storagePath = `${user.id}/${project.id}/full.jpg`
 
           const { error: uploadError } = await supabaseAdmin.storage
             .from('frame-images')
             .upload(storagePath, imageBlob, {
-              contentType: 'image/png',
+              contentType: 'image/jpeg',
               upsert: true,
             })
 

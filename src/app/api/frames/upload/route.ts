@@ -25,13 +25,13 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    const storagePath = `${user.id}/${projectId}/${fileName}.png`
+    const storagePath = `${user.id}/${projectId}/${fileName}.jpg`
     const arrayBuffer = await image.arrayBuffer()
 
     const { error: uploadError } = await supabaseAdmin.storage
       .from('frame-images')
       .upload(storagePath, arrayBuffer, {
-        contentType: 'image/png',
+        contentType: 'image/jpeg',
         upsert: true,
       })
 

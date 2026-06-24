@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
       let imagesResponse: Response
       try {
         imagesResponse = await figmaApiFetch(
-          `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIdsForScale.join(','))}&format=png&scale=${scale}`,
+          `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(nodeIdsForScale.join(','))}&format=jpg&scale=${scale}`,
           {
             accessToken: figmaToken,
             cooldownKey: figmaCooldownKey,
